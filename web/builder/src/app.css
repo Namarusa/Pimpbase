@@ -1,0 +1,75 @@
+:root {
+  --bg: #f7f7f9;
+  --panel: #ffffff;
+  --text: #1c1d22;
+  --muted: #6b6f7b;
+  --line: #e3e4ea;
+  --line-strong: #cfd1da;
+  --accent: #4f46e5;
+  --accent-soft: #eef0ff;
+  --danger: #c2343b;
+  --danger-soft: #fdecee;
+  --ok: #18794e;
+  --hover: #f1f2f6;
+  --radius: 8px;
+  --shadow: 0 8px 30px rgba(20, 22, 40, 0.14);
+  color-scheme: light;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--bg);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111216;
+    --panel: #191a20;
+    --text: #e8e9ee;
+    --muted: #9a9dab;
+    --line: #2a2c35;
+    --line-strong: #3a3d48;
+    --accent: #8b85ff;
+    --accent-soft: #24234a;
+    --danger: #ff7b82;
+    --danger-soft: #3a1d22;
+    --ok: #4cc38a;
+    --hover: #22232b;
+    --shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+h1, h2, h3 { margin: 0; font-weight: 650; }
+h1 { font-size: 22px; }
+h2 { font-size: 16px; }
+a { color: var(--accent); text-decoration: none; }
+code, .mono { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 13px; }
+
+button, .btn {
+  font: inherit; cursor: pointer; border-radius: var(--radius); border: 1px solid var(--line-strong);
+  background: var(--panel); color: var(--text); padding: 6px 12px; line-height: 20px; display: inline-flex;
+  align-items: center; gap: 6px; white-space: nowrap;
+}
+button:hover, .btn:hover { background: var(--hover); }
+button:disabled { opacity: 0.5; cursor: default; }
+button.primary { background: var(--accent); border-color: var(--accent); color: white; }
+button.primary:hover { filter: brightness(1.08); }
+button.danger { color: var(--danger); }
+button.ghost { border-color: transparent; background: transparent; }
+button.ghost:hover { background: var(--hover); }
+button.small, .btn.small { padding: 2px 8px; font-size: 13px; }
+
+input, select, textarea {
+  font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line-strong);
+  border-radius: var(--radius); padding: 6px 10px; line-height: 20px; width: 100%;
+}
+input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+input[type='checkbox'] { width: auto; }
+label { display: block; color: var(--muted); font-size: 13px; margin-bottom: 4px; }
+.field { margin-bottom: 14px; }
+.row { display: flex; gap: 8px; align-items: center; }
+.grow { flex: 1; }
+.muted { color: var(--muted); }
+.error { color: var(--danger); background: var(--danger-soft); border-radius: var(--radius); padding: 8px 12px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+.badge { font-size: 11px; padding: 1px 6px; border-radius: 99px; background: var(--hover); color: var(--muted); }

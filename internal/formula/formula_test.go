@@ -156,12 +156,12 @@ func TestRenameField(t *testing.T) {
 
 func TestTypes(t *testing.T) {
 	for src, want := range map[string]Type{
-		"[Qty] * 2":           Number,
+		"[Qty] * 2":            Number,
 		`IF([Done], "a", "b")`: Text,
-		`IF([Done], 1)`:       Number,
-		`IF([Done], 1, "a")`:  Any,
-		"[Due]":               Date,
-		"[Qty] > 1":           Bool,
+		`IF([Done], 1)`:        Number,
+		`IF([Done], 1, "a")`:   Any,
+		"[Due]":                Date,
+		"[Qty] > 1":            Bool,
 	} {
 		c, errs := Compile(src, scope)
 		if errs != nil {
