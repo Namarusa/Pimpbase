@@ -27,6 +27,16 @@ func (t Type) String() string {
 
 func (t Type) MarshalText() ([]byte, error) { return []byte(strings.ToLower(t.String())), nil }
 
+func (t *Type) UnmarshalText(b []byte) error {
+	for i := Any; i <= List; i++ {
+		if strings.EqualFold(i.String(), string(b)) {
+			*t = i
+			return nil
+		}
+	}
+	return fmt.Errorf("unknown formula type %q", b)
+}
+
 // DateLayout is how dates are stored and compared as text. It sorts in time
 // order, which lets SQL compare stored dates as plain strings.
 const DateLayout = "2006-01-02T15:04:05Z"
