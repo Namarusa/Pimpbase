@@ -125,7 +125,8 @@ func TestTablesEndToEnd(t *testing.T) {
 			{Query{Filter: `[Customer] = "Bob"`}, "[Lamp]", "go"},
 			{Query{Sort: "Unit price", Desc: true}, "[Desk Lamp Chair <nil>]", "sql"},
 			{Query{Sort: "Item"}, "[Chair Desk Lamp <nil>]", "sql"},
-			{Query{Sort: "Total", Desc: true}, "[Desk Chair Lamp <nil>]", "go"},
+			{Query{Sort: "Total", Desc: true}, "[Desk Chair Lamp <nil>]", "sql"},
+			{Query{Sort: "Who"}, "[<nil> Chair Desk Lamp]", "go"},
 			{Query{Sort: "Item", Limit: 2, Offset: 1}, "[Desk Lamp]", "sql"},
 		}
 		for _, c := range cases {

@@ -760,6 +760,13 @@ func (s *Service) ListRows(ctx context.Context, actor rbac.Actor, appID, tableID
 			sortSQL = false
 		}
 	}
+	var sortArgs []any
+	if sortField != nil && sortField.Type == TypeFormula && sortField.FormulaMode == Dynamic {
+		// Sort by the formula itself when it has an SQL form.
+		if expr, args, ok := (resolver{c: c, dialect: string(db.Dialect), env: env}).FieldSQL(sortField.Name); ok {
+			sortCol, sortArgs, sortSQL = expr, args, true
+		}
+	}
 
 	where, args := "", []any(nil)
 	pushed := true
@@ -786,7 +793,9 @@ func (s *Service) ListRows(ctx context.Context, actor rbac.Actor, appID, tableID
 			return nil, err
 		}
 		tail := fmt.Sprintf("ORDER BY (%s IS NULL), %s%s, _id%s LIMIT %d OFFSET %d", sortCol, order, dir, dir, q.Limit, q.Offset)
-		rows, err := selectRows(ctx, db, db, c, where, args, tail)
+		// The sort expression appears twice in the tail.
+		all := append(append(append([]any{}, args...), sortArgs...), sortArgs...)
+		rows, err := selectRows(ctx, db, db, c, where, all, tail)
 		if err != nil {
 			return nil, err
 		}
