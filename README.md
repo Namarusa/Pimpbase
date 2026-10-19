@@ -3,8 +3,10 @@
 Bubibase is a self-hosted low-code platform in the spirit of Budibase: one Go
 binary hosts many apps, each with its own data, and a browser builder to
 design them. This repository holds phase 1, the **data core** (built-in
-tables, the formula engine, the REST API and the data studio), and phase 2,
-the **UI builder**: screens composed from components and published as apps.
+tables, the formula engine, the REST API and the data studio), phase 2,
+the **UI builder**: screens composed from components and published as apps,
+and phase 5's **API studio**: REST and SOAP APIs as data sources whose
+query results feed screens.
 
 ## Run it
 
@@ -98,6 +100,63 @@ DELETE /api/apps/{app}/screens/{screen}
 GET    /api/apps/{app}/runtime                     screens and tables the caller may use
 ```
 
+## API studio
+
+Open an app and choose **APIs**. A **data source** is a REST API: its
+address, headers sent with every query, and sign-in (bearer token, user name
+and password, or an API key in a header or the query string). A **query**
+adds a method, a path, query string entries, headers and a body (JSON, form,
+XML or text). **Send** runs it and shows the rows, the body as a tree (click
+a list to use it as the rows, a name to copy its binding), the raw answer,
+the headers and the request as it was sent.
+
+Every text in a query can hold bindings, resolved on the server:
+
+| Binding | Value |
+| --- | --- |
+| `{{ params.id }}` | a parameter the screen passes (text, number, boolean or JSON, with a default and a test value) |
+| `{{ env.API_KEY }}` | an app variable; development values in the builder, production values in the published app |
+| `{{ user.email }}` | the signed-in user: `id`, `email`, `name`, `role` |
+| `{{ app.slug }}` | the app: `id`, `name`, `slug` |
+| `{{ queries.Login.body.token }}` | another query's answer (`body`, `rows`, `headers`, `status`); that query runs first, once per run, and circles are refused |
+| `{{ = CONCAT("Bearer ", env.TOKEN) }}` | a formula, with the functions of table formulas; `[id]` is `params.id` |
+
+Pipes format values: `upper`, `lower`, `trim`, `default:"x"`, `number:2`,
+`count`, `first`, `last`, `join:","`, `urlencode`, `base64`, `json`,
+`xml:"Item"` and `raw`. Each value is escaped for where it lands: path parts
+and query values are URL-encoded, headers lose line breaks, a JSON body gets
+an escaped string inside quotes and a typed JSON value outside them
+(`{"limit": {{ params.limit }}}` sends a number), an XML body gets escaped
+text. `{{ params.ids | xml:"Id" }}` writes a list or object as XML elements;
+`raw` skips the escaping. JSON and XML bodies are checked once filled, so a
+broken body fails with a clear message instead of reaching the API.
+
+Answers are read by their Content-Type (or as chosen). XML becomes the same
+data JSON gives: an element is a key named after its local name, attributes
+are `@name`, text next to children is `#text`, repeated elements are a list.
+The **rows** are found at the result path (`data.items`,
+`Envelope.Body.SearchResponse.Item`), or else at the first list; one XML
+element at that path is still one row.
+
+Variables marked secret are never sent to the browser and are hidden in the
+echoed request. Each query has the role needed to run it from a published
+app and an optional cache time (handy for sign-in queries other queries
+read).
+
+On screens, data providers, tables, lists, cards, charts and stats can use
+an API query instead of a table, passing its parameters from bindings such
+as `{{ state.category }}` or `{{ url.id }}`; the **Run API query** action
+calls a query from a button or form and gives its answer to later actions as
+`{{ result }}` and, if named, to `{{ state.<name> }}`.
+
+```
+GET    /api/apps/{app}/datasources                 POST, PATCH /{ds}, DELETE /{ds}
+GET    /api/apps/{app}/queries                     POST, GET /{query}, PATCH, DELETE
+POST   /api/apps/{app}/queries/test                {"query": {…unsaved}, "env"}   builders
+POST   /api/apps/{app}/queries/{query}/run         {"params": {…}}                app users
+GET    /api/apps/{app}/variables                   PUT /{name} {"secret", "development", "production"}, DELETE /{name}
+```
+
 ## REST API
 
 All endpoints are under `/api`. Rows of a table:
@@ -126,6 +185,9 @@ internal/auth/     users, Argon2id passwords, sessions, API keys
 internal/apps/     apps and app members
 internal/rbac/     roles and the request actor
 internal/screens/  app screens and their definitions
+internal/interp/   {{ binding }} templates for API queries, escaped per context
+internal/xmltree/  XML to JSON-like data and back
+internal/queries/  API data sources, queries, variables and the query runner
 internal/api/      HTTP API
 web/builder/       Svelte builder, embedded from web/builder/dist
 ```
