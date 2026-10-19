@@ -573,7 +573,7 @@ func toNumber(v any) (float64, bool) {
 // anyScope lets formulas name anything; values are checked as they run.
 type anyScope struct{}
 
-func (anyScope) FieldType(string) (formula.Type, bool)   { return formula.Any, true }
+func (anyScope) FieldType(string) (formula.Type, bool)  { return formula.Any, true }
 func (anyScope) NameType([]string) (formula.Type, bool) { return formula.Any, true }
 
 // formulaEnv feeds bound values to a formula, converted to formula types.
