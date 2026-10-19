@@ -86,7 +86,7 @@
   .top { margin-bottom: 8px; }
   .intro { margin: 0 0 20px; }
   table { width: 100%; border-collapse: collapse; }
-  th { text-align: left; color: var(--muted); font-weight: 500; font-size: 13px; }
+  th { text-align: left; color: var(--muted-foreground); font-weight: 500; font-size: 13px; }
   th, td { padding: 10px 14px; border-bottom: 1px solid var(--line); }
   tr:last-child td { border-bottom: none; }
   td select { width: auto; }

@@ -89,7 +89,7 @@
 </Modal>
 
 <style>
-  .icon { display: inline-block; width: 18px; color: var(--accent); }
+  .icon { display: inline-block; width: 18px; color: var(--primary); }
   .readonly { padding: 6px 0; }
   .bad input, .bad select, .bad textarea { border-color: var(--danger); }
   .opts { display: flex; flex-wrap: wrap; gap: 12px; }

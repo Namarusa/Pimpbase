@@ -1,4 +1,5 @@
 // A thin client for the Bubibase HTTP API.
+import type { Design, Node, Screen } from './screen/types'
 
 export type Role = 'PUBLIC' | 'BASIC' | 'POWER' | 'ADMIN'
 export type FieldType =
@@ -6,7 +7,7 @@ export type FieldType =
   | 'multi_select' | 'link' | 'autonumber' | 'formula'
 
 export interface User { id: string; email: string; name: string; role: string; createdAt: string }
-export interface App { id: string; slug: string; name: string; createdAt: string; updatedAt: string }
+export interface App { id: string; slug: string; name: string; design: Design; createdAt: string; updatedAt: string }
 export interface Field {
   id: string; name: string; type: FieldType; required?: boolean; options?: string[]
   linkTable?: string; linkMany?: boolean; formula?: string; formulaMode?: 'dynamic' | 'static'
@@ -21,6 +22,11 @@ export type Row = Record<string, any> & { _id: number }
 export interface Page { rows: Row[]; total: number; engine: 'sql' | 'go' }
 export interface FormulaError { start: number; end: number; message: string }
 export interface FunctionInfo { name: string; category: string; signature: string; description: string }
+
+export interface RuntimeInfo {
+  app: App; role: Role; builder: boolean; user: { id: string; email: string; name: string } | null
+  screens: Screen[]; tables: Table[]
+}
 
 export class ApiError extends Error {
   constructor(public status: number, message: string, public body: any) { super(message) }
@@ -58,7 +64,7 @@ export const api = {
   apps: () => call<App[]>('GET', '/apps'),
   createApp: (name: string) => call<App>('POST', '/apps', { name }),
   app: (app: string) => call<{ app: App; role: Role; builder: boolean }>('GET', `/apps/${enc(app)}`),
-  updateApp: (app: string, p: { name?: string; slug?: string }) => call<App>('PATCH', `/apps/${enc(app)}`, p),
+  updateApp: (app: string, p: { name?: string; slug?: string; design?: Design }) => call<App>('PATCH', `/apps/${enc(app)}`, p),
   deleteApp: (app: string) => call('DELETE', `/apps/${enc(app)}`),
   members: (app: string) => call<{ userId: string; email: string; name: string; role: Role }[]>('GET', `/apps/${enc(app)}/members`),
   setMember: (app: string, user: string, role: Role | 'NONE') => call('PUT', `/apps/${enc(app)}/members/${user}`, { role }),
@@ -83,6 +89,7 @@ export const api = {
     p.set('offset', String(q.offset ?? 0))
     return call<Page>('GET', `/apps/${enc(app)}/tables/${t}/rows?${p}`)
   },
+  row: (app: string, t: string, id: number) => call<Row>('GET', `/apps/${enc(app)}/tables/${t}/rows/${id}`),
   createRow: (app: string, t: string, v: object) => call<Row>('POST', `/apps/${enc(app)}/tables/${t}/rows`, v),
   updateRow: (app: string, t: string, id: number, v: object) => call<Row>('PATCH', `/apps/${enc(app)}/tables/${t}/rows/${id}`, v),
   deleteRows: (app: string, t: string, ids: number[]) => call<{ deleted: number }>('POST', `/apps/${enc(app)}/tables/${t}/rows/delete`, { ids }),
@@ -92,6 +99,12 @@ export const api = {
     return call<{ imported: number; skipped: number; errors: string[]; newFields: string[]; ignoredFields: string[] }>(
       'POST', `/apps/${enc(app)}/tables/${t}/import?addFields=${addFields}`, fd)
   },
+  screens: (app: string) => call<Screen[]>('GET', `/apps/${enc(app)}/screens`),
+  createScreen: (app: string, s: { name: string; route: string; role?: Role; definition?: Node }) => call<Screen>('POST', `/apps/${enc(app)}/screens`, s),
+  updateScreen: (app: string, id: string, s: Partial<{ name: string; route: string; role: Role; position: number; definition: Node }>) =>
+    call<Screen>('PATCH', `/apps/${enc(app)}/screens/${id}`, s),
+  deleteScreen: (app: string, id: string) => call('DELETE', `/apps/${enc(app)}/screens/${id}`),
+  runtime: (app: string) => call<RuntimeInfo>('GET', `/apps/${enc(app)}/runtime`),
   exportURL: (app: string, t: string, filter: string) =>
     `/api/apps/${enc(app)}/tables/${t}/export` + (filter ? `?filter=${enc(filter)}` : ''),
 }

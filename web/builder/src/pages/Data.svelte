@@ -90,7 +90,7 @@
   .side-head { display: flex; justify-content: space-between; align-items: center; padding: 0 8px 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
   aside a { display: block; padding: 6px 10px; border-radius: var(--radius); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   aside a:hover { background: var(--hover); }
-  aside a.active { background: var(--accent-soft); color: var(--accent); font-weight: 550; }
+  aside a.active { background: var(--accent-soft); color: var(--primary); font-weight: 550; }
   .hint { padding: 0 10px; font-size: 13px; }
   section { flex: 1; min-width: 0; }
   .check { display: flex; gap: 8px; align-items: center; color: var(--text); }

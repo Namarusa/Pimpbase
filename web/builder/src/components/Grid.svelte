@@ -257,21 +257,21 @@
   th, td { border-right: 1px solid var(--line); white-space: nowrap; }
   td { border-bottom: 1px solid var(--line); padding: 0 10px; height: 34px; max-width: 320px; overflow: hidden; text-overflow: ellipsis; background: var(--panel); }
   tr.picked td { background: var(--accent-soft); }
-  td.ro { color: var(--muted); }
+  td.ro { color: var(--muted-foreground); }
   td.t-number, td.t-autonumber { text-align: right; font-variant-numeric: tabular-nums; }
   td input, td select { border-radius: 0; padding: 4px 6px; margin: 0 -10px; width: calc(100% + 20px); }
   .th { display: flex; align-items: center; min-width: 140px; }
   .head { border: none; background: none; padding: 8px 10px; font-weight: 500; color: var(--text); border-radius: 0; }
-  .type { color: var(--accent); width: 16px; display: inline-block; text-align: center; }
-  .arrow { color: var(--accent); }
+  .type { color: var(--primary); width: 16px; display: inline-block; text-align: center; }
+  .arrow { color: var(--primary); }
   .edit { opacity: 0; margin-right: 4px; }
   th:hover .edit { opacity: 1; }
   .sel { width: 36px; text-align: center; padding: 0; }
-  .id { width: 56px; color: var(--muted); }
-  .id button { color: var(--muted); }
+  .id { width: 56px; color: var(--muted-foreground); }
+  .id button { color: var(--muted-foreground); }
   .fill { width: 100%; border-right: none; }
   .check { padding: 0 6px; color: var(--ok); font-weight: 700; }
-  .chip { display: inline-block; background: var(--accent-soft); color: var(--accent); border-radius: 99px; padding: 1px 8px; font-size: 12px; margin-right: 4px; }
+  .chip { display: inline-block; background: var(--accent-soft); color: var(--primary); border-radius: 99px; padding: 1px 8px; font-size: 12px; margin-right: 4px; }
   .empty { padding: 40px; text-align: center; }
   .footer { display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-top: 1px solid var(--line); background: var(--panel); font-size: 13px; }
   .check-label, .check { display: inline-flex; }

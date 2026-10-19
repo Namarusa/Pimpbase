@@ -52,10 +52,10 @@
 
 <style>
   .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; min-height: 26px; align-items: center; }
-  .chip { display: inline-flex; align-items: center; background: var(--accent-soft); color: var(--accent); border-radius: 99px; padding: 0 0 0 10px; font-size: 13px; }
+  .chip { display: inline-flex; align-items: center; background: var(--accent-soft); color: var(--primary); border-radius: 99px; padding: 0 0 0 10px; font-size: 13px; }
   .chip button { color: inherit; padding: 0 8px; }
   .results { max-height: 200px; overflow: auto; margin-top: 6px; border: 1px solid var(--line); border-radius: var(--radius); }
   .results button { width: 100%; border-radius: 0; justify-content: flex-start; }
   .results button.on { background: var(--accent-soft); }
-  .tick { width: 14px; color: var(--accent); }
+  .tick { width: 14px; color: var(--primary); }
 </style>

@@ -1,12 +1,19 @@
 <script lang="ts">
+  import { ModeWatcher } from 'mode-watcher'
+  import { Toaster } from '$lib/components/ui/sonner'
+  import * as DropdownMenu from '$lib/components/ui/dropdown-menu'
+  import * as Avatar from '$lib/components/ui/avatar'
+  import LogOutIcon from '@lucide/svelte/icons/log-out'
   import { api } from './lib/api'
   import { route, navigate, match } from './lib/router.svelte'
   import { session, isAdmin } from './lib/session.svelte'
   import Auth from './pages/Auth.svelte'
   import Apps from './pages/Apps.svelte'
   import Data from './pages/Data.svelte'
+  import Design from './pages/Design.svelte'
   import Users from './pages/Users.svelte'
   import AppSettings from './pages/AppSettings.svelte'
+  import Runtime from './pages/Runtime.svelte'
 
   let needsSetup = $state(false)
 
@@ -26,60 +33,66 @@
     navigate('/')
   }
 
+  // Published apps live under /app/<slug>; everything else is the builder.
+  const runtimeSlug = $derived(route.path.match(/^\/app\/([^/]+)/)?.[1])
   const dataRoute = $derived(match('/apps/:app/data/:table', route.path) ?? match('/apps/:app/data', route.path))
+  const designRoute = $derived(match('/apps/:app/design/:screen', route.path) ?? match('/apps/:app/design', route.path))
   const settingsRoute = $derived(match('/apps/:app/settings', route.path))
+  const initials = $derived((session.user?.name || session.user?.email || '?').split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase()).join(''))
+  const go = (e: MouseEvent, p: string) => { e.preventDefault(); navigate(p) }
 </script>
 
-{#if !session.ready}
-  <div class="center muted">Loading…</div>
+<ModeWatcher defaultMode="system" disableTransitions />
+<Toaster richColors position="top-right" />
+
+{#if runtimeSlug}
+  {#key runtimeSlug}<Runtime slug={decodeURIComponent(runtimeSlug)} />{/key}
+{:else if !session.ready}
+  <div class="text-muted-foreground grid h-screen place-items-center text-sm">Loading…</div>
 {:else if !session.user}
   <Auth setup={needsSetup} onDone={() => (needsSetup = false)} />
 {:else}
-  <div class="shell">
-    <header>
-      <a class="brand" href="/" onclick={(e) => { e.preventDefault(); navigate('/') }}>
-        <span class="logo">B</span> Bubibase
+  <div class="flex h-screen flex-col">
+    <header class="bg-card flex h-13 shrink-0 items-center gap-4 border-b px-4">
+      <a class="flex items-center gap-2 font-semibold" href="/" onclick={(e) => go(e, '/')}>
+        <span class="bg-primary text-primary-foreground grid size-7 place-items-center rounded-md text-sm">B</span> Bubibase
       </a>
-      <nav>
-        <a href="/" class:active={route.path === '/'} onclick={(e) => { e.preventDefault(); navigate('/') }}>Apps</a>
+      <nav class="flex gap-1">
+        <a href="/" onclick={(e) => go(e, '/')} class={['rounded-md px-2.5 py-1.5 text-sm font-medium', route.path === '/' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground']}>Apps</a>
         {#if isAdmin()}
-          <a href="/users" class:active={route.path === '/users'} onclick={(e) => { e.preventDefault(); navigate('/users') }}>Users</a>
+          <a href="/users" onclick={(e) => go(e, '/users')} class={['rounded-md px-2.5 py-1.5 text-sm font-medium', route.path === '/users' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground']}>Users</a>
         {/if}
       </nav>
-      <div class="grow"></div>
-      <span class="muted">{session.user.name}</span>
-      <button class="ghost small" onclick={logout}>Sign out</button>
+      <div class="ml-auto">
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger>
+            {#snippet child({ props })}
+              <button {...props} class="hover:bg-muted flex items-center gap-2 rounded-md py-1 pr-2 pl-1">
+                <Avatar.Root class="size-7"><Avatar.Fallback class="bg-primary/10 text-primary text-xs font-medium">{initials}</Avatar.Fallback></Avatar.Root>
+                <span class="text-sm">{session.user?.name || session.user?.email}</span>
+              </button>
+            {/snippet}
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Content align="end" class="w-56">
+            <DropdownMenu.Label class="font-normal"><div class="text-sm font-medium">{session.user.name}</div><div class="text-muted-foreground text-xs">{session.user.email}</div></DropdownMenu.Label>
+            <DropdownMenu.Separator />
+            <DropdownMenu.Item onclick={logout}><LogOutIcon />Sign out</DropdownMenu.Item>
+          </DropdownMenu.Content>
+        </DropdownMenu.Root>
+      </div>
     </header>
-    <main>
-      {#if dataRoute}
-        {#key dataRoute.app}
-          <Data app={dataRoute.app} tableId={dataRoute.table} />
-        {/key}
+    <main class="min-h-0 flex-1 overflow-auto">
+      {#if designRoute}
+        {#key designRoute.app}<Design app={designRoute.app} screenId={designRoute.screen} />{/key}
+      {:else if dataRoute}
+        <div class="studio h-full">{#key dataRoute.app}<Data app={dataRoute.app} tableId={dataRoute.table} />{/key}</div>
       {:else if settingsRoute}
-        <AppSettings app={settingsRoute.app} />
+        <div class="studio h-full"><AppSettings app={settingsRoute.app} /></div>
       {:else if route.path === '/users'}
-        <Users />
+        <div class="studio h-full"><Users /></div>
       {:else}
-        <Apps />
+        <div class="studio h-full"><Apps /></div>
       {/if}
     </main>
   </div>
 {/if}
-
-<style>
-  .center { display: grid; place-items: center; height: 100vh; }
-  .shell { display: flex; flex-direction: column; height: 100vh; }
-  header {
-    display: flex; align-items: center; gap: 16px; padding: 0 16px; height: 52px; flex: none;
-    background: var(--panel); border-bottom: 1px solid var(--line);
-  }
-  .brand { display: flex; align-items: center; gap: 8px; color: var(--text); font-weight: 650; }
-  .logo {
-    width: 26px; height: 26px; border-radius: 7px; background: var(--accent); color: white;
-    display: grid; place-items: center; font-size: 14px;
-  }
-  nav { display: flex; gap: 4px; }
-  nav a { color: var(--muted); padding: 6px 10px; border-radius: var(--radius); }
-  nav a.active, nav a:hover { color: var(--text); background: var(--hover); }
-  main { flex: 1; min-height: 0; overflow: auto; }
-</style>

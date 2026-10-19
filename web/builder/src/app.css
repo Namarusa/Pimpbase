@@ -1,75 +1,209 @@
-:root {
-  --bg: #f7f7f9;
-  --panel: #ffffff;
-  --text: #1c1d22;
-  --muted: #6b6f7b;
-  --line: #e3e4ea;
-  --line-strong: #cfd1da;
-  --accent: #4f46e5;
-  --accent-soft: #eef0ff;
-  --danger: #c2343b;
-  --danger-soft: #fdecee;
-  --ok: #18794e;
-  --hover: #f1f2f6;
-  --radius: 8px;
-  --shadow: 0 8px 30px rgba(20, 22, 40, 0.14);
-  color-scheme: light;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-  font-size: 14px;
-  color: var(--text);
-  background: var(--bg);
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+/* .theme-light inside a dark page (an app previewed in the builder) turns
+   dark styles back off. */
+@custom-variant dark (&:where(.dark, .dark *):not(:where(.theme-light, .theme-light *)));
+
+/* shadcn design tokens (neutral base, indigo primary). */
+:root,
+.theme-light {
+  --radius: 0.625rem;
+  --background: oklch(0.985 0.002 270);
+  --foreground: oklch(0.21 0.01 270);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.21 0.01 270);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.21 0.01 270);
+  --primary: oklch(0.51 0.23 277);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.967 0.003 270);
+  --secondary-foreground: oklch(0.21 0.01 270);
+  --muted: oklch(0.967 0.003 270);
+  --muted-foreground: oklch(0.52 0.015 270);
+  --accent: oklch(0.955 0.012 277);
+  --accent-foreground: oklch(0.21 0.01 270);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.92 0.006 270);
+  --input: oklch(0.88 0.008 270);
+  --ring: oklch(0.6 0.18 277);
+  --chart-1: oklch(0.55 0.22 277);
+  --chart-2: oklch(0.65 0.15 185);
+  --chart-3: oklch(0.75 0.16 75);
+  --chart-4: oklch(0.63 0.2 20);
+  --chart-5: oklch(0.6 0.15 145);
+  --sidebar: oklch(0.985 0.002 270);
+  --sidebar-foreground: oklch(0.21 0.01 270);
+  --sidebar-primary: oklch(0.51 0.23 277);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.955 0.012 277);
+  --sidebar-accent-foreground: oklch(0.21 0.01 270);
+  --sidebar-border: oklch(0.92 0.006 270);
+  --sidebar-ring: oklch(0.6 0.18 277);
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #111216;
-    --panel: #191a20;
-    --text: #e8e9ee;
-    --muted: #9a9dab;
-    --line: #2a2c35;
-    --line-strong: #3a3d48;
-    --accent: #8b85ff;
-    --accent-soft: #24234a;
-    --danger: #ff7b82;
-    --danger-soft: #3a1d22;
-    --ok: #4cc38a;
-    --hover: #22232b;
-    --shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
-    color-scheme: dark;
+
+.dark {
+  --background: oklch(0.17 0.008 270);
+  --foreground: oklch(0.94 0.005 270);
+  --card: oklch(0.205 0.01 270);
+  --card-foreground: oklch(0.94 0.005 270);
+  --popover: oklch(0.205 0.01 270);
+  --popover-foreground: oklch(0.94 0.005 270);
+  --primary: oklch(0.68 0.17 277);
+  --primary-foreground: oklch(0.15 0.01 270);
+  --secondary: oklch(0.26 0.01 270);
+  --secondary-foreground: oklch(0.94 0.005 270);
+  --muted: oklch(0.26 0.01 270);
+  --muted-foreground: oklch(0.7 0.015 270);
+  --accent: oklch(0.29 0.04 277);
+  --accent-foreground: oklch(0.94 0.005 270);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.6 0.15 277);
+  --chart-1: oklch(0.68 0.17 277);
+  --chart-2: oklch(0.7 0.13 185);
+  --chart-3: oklch(0.8 0.15 80);
+  --chart-4: oklch(0.68 0.19 20);
+  --chart-5: oklch(0.7 0.15 145);
+  --sidebar: oklch(0.205 0.01 270);
+  --sidebar-foreground: oklch(0.94 0.005 270);
+  --sidebar-primary: oklch(0.68 0.17 277);
+  --sidebar-primary-foreground: oklch(0.15 0.01 270);
+  --sidebar-accent: oklch(0.26 0.01 270);
+  --sidebar-accent-foreground: oklch(0.94 0.005 270);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.6 0.15 277);
+}
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+@layer base {
+  * { @apply border-border outline-ring/50; }
+  body { @apply bg-background text-foreground; }
+}
+
+/* The data studio's own names for the same tokens. */
+:root {
+  --bg: var(--background);
+  --panel: var(--card);
+  --text: var(--foreground);
+  --line: var(--border);
+  --line-strong: var(--input);
+  --accent-soft: color-mix(in oklch, var(--primary) 12%, transparent);
+  --danger: var(--destructive);
+  --danger-soft: color-mix(in oklch, var(--destructive) 12%, transparent);
+  --ok: oklch(0.55 0.13 155);
+  --hover: var(--muted);
+  --shadow: 0 8px 30px rgba(20, 22, 40, 0.14);
+  font-family: var(--font-sans);
+  font-size: 14px;
+}
+
+/* Element styles used by the data studio pages (marked with .studio). They
+   sit in the base layer so Tailwind utilities always win over them. */
+@layer base {
+  :where(.studio) {
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    h1, h2, h3 { margin: 0; font-weight: 650; }
+    h1 { font-size: 22px; }
+    h2 { font-size: 16px; }
+    a { color: var(--primary); text-decoration: none; }
+    code, .mono { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 13px; }
+
+    button, .btn {
+      font: inherit; cursor: pointer; border-radius: var(--radius); border: 1px solid var(--line-strong);
+      background: var(--panel); color: var(--text); padding: 6px 12px; line-height: 20px; display: inline-flex;
+      align-items: center; gap: 6px; white-space: nowrap;
+    }
+    button:hover, .btn:hover { background: var(--hover); }
+    button:disabled { opacity: 0.5; cursor: default; }
+    button.primary { background: var(--primary); border-color: var(--primary); color: white; }
+    button.primary:hover { filter: brightness(1.08); }
+    button.danger { color: var(--danger); }
+    button.ghost { border-color: transparent; background: transparent; }
+    button.ghost:hover { background: var(--hover); }
+    button.small, .btn.small { padding: 2px 8px; font-size: 13px; }
+
+    input, select, textarea {
+      font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line-strong);
+      border-radius: var(--radius); padding: 6px 10px; line-height: 20px; width: 100%;
+    }
+    input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px solid var(--primary); outline-offset: -1px; }
+    input[type='checkbox'] { width: auto; }
+    label { display: block; color: var(--muted-foreground); font-size: 13px; margin-bottom: 4px; }
+    .field { margin-bottom: 14px; }
+    .row { display: flex; gap: 8px; align-items: center; }
+    .grow { flex: 1; }
+    .muted { color: var(--muted-foreground); }
+    .error { color: var(--danger); background: var(--danger-soft); border-radius: var(--radius); padding: 8px 12px; }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+    .badge { font-size: 11px; padding: 1px 6px; border-radius: 99px; background: var(--hover); color: var(--muted-foreground); }
   }
 }
-* { box-sizing: border-box; }
-body { margin: 0; }
-h1, h2, h3 { margin: 0; font-weight: 650; }
-h1 { font-size: 22px; }
-h2 { font-size: 16px; }
-a { color: var(--accent); text-decoration: none; }
-code, .mono { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 13px; }
 
-button, .btn {
-  font: inherit; cursor: pointer; border-radius: var(--radius); border: 1px solid var(--line-strong);
-  background: var(--panel); color: var(--text); padding: 6px 12px; line-height: 20px; display: inline-flex;
-  align-items: center; gap: 6px; white-space: nowrap;
+/* The builder canvas: outlines for the hovered and selected component. */
+.bb-edit-node { outline: 1px dashed transparent; outline-offset: 2px; border-radius: 4px; }
+.bb-edit-node.bb-hovered { outline-color: color-mix(in oklch, var(--primary) 55%, transparent); }
+.bb-edit-node.bb-selected { outline: 2px solid var(--primary); }
+.bb-edit-node.bb-conditional { outline-color: color-mix(in oklch, var(--muted-foreground) 35%, transparent); }
+.bb-tag {
+  position: absolute; z-index: 20; left: -2px; top: -2px; transform: translateY(-100%);
+  background: var(--primary); color: var(--primary-foreground); font-size: 11px; font-weight: 500;
+  line-height: 1; padding: 3px 6px; border-radius: 4px 4px 0 0; pointer-events: none; white-space: nowrap;
 }
-button:hover, .btn:hover { background: var(--hover); }
-button:disabled { opacity: 0.5; cursor: default; }
-button.primary { background: var(--accent); border-color: var(--accent); color: white; }
-button.primary:hover { filter: brightness(1.08); }
-button.danger { color: var(--danger); }
-button.ghost { border-color: transparent; background: transparent; }
-button.ghost:hover { background: var(--hover); }
-button.small, .btn.small { padding: 2px 8px; font-size: 13px; }
 
-input, select, textarea {
-  font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line-strong);
-  border-radius: var(--radius); padding: 6px 10px; line-height: 20px; width: 100%;
+/* Chart legends: centred legends span the chart so long labels wrap
+   instead of overlapping. */
+.lc-legend-container[data-placement='bottom'],
+.lc-legend-container[data-placement='top'] {
+  left: 0;
+  right: 0;
+  transform: none;
 }
-input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
-input[type='checkbox'] { width: auto; }
-label { display: block; color: var(--muted); font-size: 13px; margin-bottom: 4px; }
-.field { margin-bottom: 14px; }
-.row { display: flex; gap: 8px; align-items: center; }
-.grow { flex: 1; }
-.muted { color: var(--muted); }
-.error { color: var(--danger); background: var(--danger-soft); border-radius: var(--radius); padding: 8px 12px; }
-.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
-.badge { font-size: 11px; padding: 1px 6px; border-radius: 99px; background: var(--hover); color: var(--muted); }
+.lc-legend-swatch-group {
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.25rem 1rem;
+}
+.lc-legend-swatch-button {
+  flex-shrink: 0;
+}

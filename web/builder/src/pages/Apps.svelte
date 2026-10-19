@@ -62,8 +62,8 @@
   .top { margin-bottom: 24px; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
   .app { display: flex; gap: 12px; align-items: center; padding: 16px; color: var(--text); }
-  .app:hover { border-color: var(--accent); }
-  .icon { width: 40px; height: 40px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; font-weight: 700; font-size: 18px; }
+  .app:hover { border-color: var(--primary); }
+  .icon { width: 40px; height: 40px; border-radius: 10px; background: var(--accent-soft); color: var(--primary); display: grid; place-items: center; font-weight: 700; font-size: 18px; }
   .name { font-weight: 600; }
   .empty { padding: 40px; text-align: center; }
 </style>

@@ -85,7 +85,7 @@
 
 <style>
   .formula { position: relative; flex: 1; }
-  .fx { color: var(--accent); font-style: italic; font-weight: 600; width: 14px; text-align: center; }
+  .fx { color: var(--primary); font-style: italic; font-weight: 600; width: 14px; text-align: center; }
   .bad { border-color: var(--danger); }
   .msg { font-size: 12px; margin: 4px 0 0 22px; }
   .bad-msg { color: var(--danger); }
