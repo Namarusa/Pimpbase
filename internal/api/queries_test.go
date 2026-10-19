@@ -217,6 +217,12 @@ func TestQueries(t *testing.T) {
 			"parameters": []any{map[string]any{"name": "n", "test": "<b>"}},
 		}}, 400)
 
+		// A saved query tested while being edited is not its own duplicate.
+		edited := owner.do("POST", base+"/queries/test", map[string]any{"query": map[string]any{"id": itemsID, "name": "Items", "datasourceId": dsID, "path": "/echo"}}, 200)
+		if edited["ok"] != true {
+			t.Errorf("editing test = %v", edited)
+		}
+
 		// Queries that read each other in a circle fail clearly.
 		owner.do("POST", base+"/queries", map[string]any{"name": "A", "datasourceId": dsID, "path": "/echo?x={{ queries.B.status }}"}, 201)
 		owner.do("POST", base+"/queries", map[string]any{"name": "B", "datasourceId": dsID, "path": "/echo?x={{ queries.A.status }}"}, 201)

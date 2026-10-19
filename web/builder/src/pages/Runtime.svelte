@@ -66,7 +66,7 @@
   onDestroy(() => setMode('system'))
 
   const rt = $derived(info ? new Runtime({
-    appId: info.app.id, appSlug: info.app.slug, tables: info.tables, editing: false,
+    appId: info.app.id, appSlug: info.app.slug, tables: info.tables, queries: info.queries, editing: false,
     navigate: (to) => navigate(base + (to === '/' ? '' : to)),
     toast: (kind, message) => (kind === 'error' ? toast.error(message) : kind === 'info' ? toast.info(message) : toast.success(message)),
     confirm: (t, m) => confirmHost?.ask(t, m) ?? Promise.resolve(window.confirm(t)),

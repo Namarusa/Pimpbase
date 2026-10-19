@@ -176,7 +176,9 @@ func (st *run) query(ctx context.Context, q *Query, given map[string]any) (*Resu
 	}
 	// The cache key above uses the real values; what is shown hides them.
 	st.redact(echo)
-	if key != "" {
+	// A test run sends the query being tested even when an answer is
+	// cached; the queries it reads may still come from the cache.
+	if key != "" && !(st.in.Test && len(st.stack) == 1) {
 		if res := st.r.cached(key); res != nil {
 			res.Request = echo
 			st.done[q.ID] = res

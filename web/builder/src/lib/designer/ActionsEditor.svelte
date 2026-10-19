@@ -79,6 +79,24 @@
                     {#if f.kind === 'dialog' && dialogs.length === 0}<div class="text-muted-foreground px-2 py-1.5 text-xs">Add a Dialog or Side panel to this screen first.</div>{/if}
                   </Select.Content>
                 </Select.Root>
+              {:else if f.kind === 'query'}
+                <Select.Root type="single" value={a.query ?? ''} onValueChange={(v) => onChange(list.map((x, j) => (j === i ? { ...x, query: v, params: {} } : x)))}>
+                  <Select.Trigger size="sm" class="w-full">{d.queries.find((q) => q.id === a.query)?.name ?? 'Choose a query'}</Select.Trigger>
+                  <Select.Content>
+                    {#each d.queries as q (q.id)}<Select.Item value={q.id} label={q.name}>{q.name}<span class="text-muted-foreground ml-auto font-mono text-[10px]">{q.method}</span></Select.Item>{/each}
+                    {#if !d.queries.length}<div class="text-muted-foreground px-2 py-1.5 text-xs">Add a query in the APIs tab first.</div>{/if}
+                  </Select.Content>
+                </Select.Root>
+              {:else if f.kind === 'params'}
+                {@const q = d.queries.find((x) => x.id === a.query)}
+                {#each q?.parameters ?? [] as qp (qp.name)}
+                  <div class="flex items-center gap-1">
+                    <span class="w-2/5 shrink-0 truncate font-mono text-xs">{qp.name}</span>
+                    <div class="min-w-0 flex-1"><BindingInput value={a.params?.[qp.name] ?? ''} {groups} placeholder={qp.default || 'default'} onChange={(v) => set(i, 'params', { ...(a.params ?? {}), [qp.name]: v })} /></div>
+                  </div>
+                {:else}
+                  <span class="text-muted-foreground text-xs">{q ? 'This query takes no parameters.' : 'Choose a query first.'}</span>
+                {/each}
               {:else if f.kind === 'values'}
                 {@const t = d.table(a.table)}
                 {@const vals = (a.values ?? []) as { field: string; value: string }[]}

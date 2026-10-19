@@ -5,11 +5,11 @@
   import { navigate } from '../lib/router.svelte'
   import { isBuilder } from '../lib/session.svelte'
 
-  let { app, active }: { app: App; active: 'data' | 'design' | 'settings' } = $props()
+  let { app, active }: { app: App; active: 'data' | 'design' | 'apis' | 'settings' } = $props()
   const go = (e: MouseEvent, path: string) => { e.preventDefault(); navigate(path) }
   const tabs = $derived([
     { key: 'data', label: 'Data', path: `/apps/${app.slug}/data` },
-    ...(isBuilder() ? [{ key: 'design', label: 'Design', path: `/apps/${app.slug}/design` }, { key: 'settings', label: 'Settings', path: `/apps/${app.slug}/settings` }] : []),
+    ...(isBuilder() ? [{ key: 'design', label: 'Design', path: `/apps/${app.slug}/design` }, { key: 'apis', label: 'APIs', path: `/apps/${app.slug}/apis` }, { key: 'settings', label: 'Settings', path: `/apps/${app.slug}/settings` }] : []),
   ])
 </script>
 

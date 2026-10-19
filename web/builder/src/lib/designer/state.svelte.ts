@@ -1,13 +1,15 @@
 // The designer's working state: the screen being edited, the selection,
 // undo history and saving.
 import { getContext, setContext } from 'svelte'
-import { api, type App, type Table } from '../api'
+import { api, type App, type Query, type Table } from '../api'
+import { queryTable } from '../apis/bindings'
 import type { Node, Screen } from '../screen/types'
 import { findIn } from './tree'
 
 export class Designer {
   app = $state<App>(null!)
   tables = $state<Table[]>([])
+  queries = $state<Query[]>([])
   screens = $state<Screen[]>([])
   screen = $state<Screen | null>(null)
   selected = $state<string | null>('root')
@@ -25,7 +27,13 @@ export class Designer {
 
   get root(): Node | null { return this.screen?.definition ?? null }
   get node(): Node | null { return this.root && this.selected ? findIn(this.root, this.selected) : null }
-  table(id?: string) { return this.tables.find((t) => t.id === id) }
+  table(id?: string): Table | undefined {
+    if (id?.startsWith('query:')) {
+      const q = this.queries.find((x) => x.id === id.slice(6))
+      return q ? queryTable(q, this.app?.id) : undefined
+    }
+    return this.tables.find((t) => t.id === id)
+  }
 
   open(s: Screen | null) {
     this.flush()

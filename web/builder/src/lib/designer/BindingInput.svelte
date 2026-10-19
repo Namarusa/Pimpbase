@@ -8,9 +8,9 @@
   import { pipeHelp } from './context'
 
   // BindingInput is a text box with a picker that inserts {{ bindings }}.
-  let { value, onChange, groups, multiline = false, placeholder = '', mono = false, id }: {
+  let { value, onChange, groups, multiline = false, placeholder = '', mono = false, id, help = pipeHelp, class: className = '' }: {
     value: string; onChange: (v: string) => void; groups: BindingGroup[]
-    multiline?: boolean; placeholder?: string; mono?: boolean; id?: string
+    multiline?: boolean; placeholder?: string; mono?: boolean; id?: string; help?: string; class?: string
   } = $props()
   let open = $state(false)
   let el = $state<HTMLInputElement | HTMLTextAreaElement | null>(null)
@@ -29,7 +29,7 @@
   {#if multiline}
     <Textarea {id} bind:ref={el as HTMLTextAreaElement} rows={3} class={['pr-9 text-sm', mono ? 'font-mono text-xs' : '']} {placeholder} value={value ?? ''} oninput={(e) => onChange(e.currentTarget.value)} />
   {:else}
-    <Input {id} bind:ref={el as HTMLInputElement} class={['h-8 pr-9 text-sm', mono ? 'font-mono text-xs' : '']} {placeholder} value={value ?? ''} oninput={(e) => onChange(e.currentTarget.value)} />
+    <Input {id} bind:ref={el as HTMLInputElement} class={['h-8 pr-9 text-sm', mono ? 'font-mono text-xs' : '', className]} {placeholder} value={value ?? ''} oninput={(e) => onChange(e.currentTarget.value)} />
   {/if}
   <Popover.Root bind:open>
     <Popover.Trigger class="text-muted-foreground hover:text-primary hover:bg-muted absolute top-1 right-1 grid size-6 place-items-center rounded" title="Insert a binding">
@@ -51,7 +51,7 @@
             </Command.Group>
           {/each}
         </Command.List>
-        <p class="text-muted-foreground border-t p-2 text-xs">{pipeHelp}</p>
+        <p class="text-muted-foreground border-t p-2 text-xs">{help}</p>
       </Command.Root>
     </Popover.Content>
   </Popover.Root>

@@ -9,7 +9,7 @@ export interface ActionInfo {
   type: string
   label: string
   // fields are the settings the action editor shows.
-  fields: { key: string; label: string; kind: 'text' | 'table' | 'dialog' | 'select' | 'values' | 'boolean' | 'component'; options?: { value: string; label: string }[]; placeholder?: string }[]
+  fields: { key: string; label: string; kind: 'text' | 'table' | 'dialog' | 'select' | 'values' | 'boolean' | 'component' | 'query' | 'params'; options?: { value: string; label: string }[]; placeholder?: string }[]
 }
 
 export const actionTypes: ActionInfo[] = [
@@ -23,6 +23,11 @@ export const actionTypes: ActionInfo[] = [
   { type: 'delete_row', label: 'Delete row', fields: [
     { key: 'table', label: 'Table', kind: 'table' },
     { key: 'rowId', label: 'Row id', kind: 'text', placeholder: '{{ row._id }}' },
+  ] },
+  { type: 'run_query', label: 'Run API query', fields: [
+    { key: 'query', label: 'Query', kind: 'query' },
+    { key: 'params', label: 'Parameters', kind: 'params' },
+    { key: 'stateKey', label: 'Keep the answer in state (name)', kind: 'text', placeholder: 'weather' },
   ] },
   { type: 'open_dialog', label: 'Open dialog', fields: [{ key: 'target', label: 'Dialog', kind: 'dialog' }] },
   { type: 'close_dialog', label: 'Close dialog', fields: [{ key: 'target', label: 'Dialog (blank closes all)', kind: 'dialog' }] },
@@ -41,6 +46,7 @@ export const actionInfo = (type: string) => actionTypes.find((a) => a.type === t
 
 // describe summarises an action for the action list.
 export function describe(a: Action, rt?: { table: (id?: string) => { name: string } | undefined }): string {
+  if (a.type === 'run_query') return `Run ${(a.query && rt?.table(`query:${a.query}`)?.name) || 'API query'}`
   switch (a.type) {
     case 'navigate': return `Go to ${a.route || '…'}`
     case 'open_url': return `Open ${a.url || '…'}`
@@ -109,6 +115,19 @@ export async function runActions(actions: Action[] | undefined, rt: Runtime, bas
           const id = idOf(resolve(a.rowId, scope))
           if (!t || !id) throw new Error('the delete action needs a table and a row id')
           await api.deleteRows(rt.appId, t.id, [id])
+          rt.reload()
+          break
+        }
+        case 'run_query': {
+          const q = rt.query(a.query)
+          if (!q) throw new Error('choose the API query this action runs')
+          const params: Record<string, any> = {}
+          for (const [k, v] of Object.entries((a.params ?? {}) as Record<string, string>)) if (v !== '' && v !== undefined) params[k] = resolve(v, scope)
+          const res = await api.runQuery(rt.appId, q.id, params, rt.env)
+          if (!res.ok) throw new Error(`${q.name} answered ${res.status} ${res.statusText}`.trim())
+          // Later actions read the answer as {{ result }}.
+          scope.result = res.body
+          if (a.stateKey) rt.state[a.stateKey] = res.body
           rt.reload()
           break
         }

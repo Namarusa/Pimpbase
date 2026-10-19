@@ -588,9 +588,16 @@ func (s *Service) UpdateQuery(ctx context.Context, appID, id string, data []byte
 	return s.Query(ctx, appID, q.ID)
 }
 
-// Check validates a query that is not saved, for test runs.
+// CheckQuery validates a query that may not be saved, for test runs.
 func (s *Service) CheckQuery(ctx context.Context, appID string, data []byte) (*Query, error) {
 	q := NewQuery()
+	// A saved query being edited keeps its id, so its own name is no
+	// conflict.
+	var head struct {
+		ID string `json:"id"`
+	}
+	json.Unmarshal(data, &head)
+	q.ID = head.ID
 	if err := s.prepare(ctx, appID, q, data); err != nil {
 		return nil, err
 	}

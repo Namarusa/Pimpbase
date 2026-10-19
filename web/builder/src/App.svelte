@@ -11,6 +11,7 @@
   import Apps from './pages/Apps.svelte'
   import Data from './pages/Data.svelte'
   import Design from './pages/Design.svelte'
+  import Apis from './pages/Apis.svelte'
   import Users from './pages/Users.svelte'
   import AppSettings from './pages/AppSettings.svelte'
   import Runtime from './pages/Runtime.svelte'
@@ -37,6 +38,7 @@
   const runtimeSlug = $derived(route.path.match(/^\/app\/([^/]+)/)?.[1])
   const dataRoute = $derived(match('/apps/:app/data/:table', route.path) ?? match('/apps/:app/data', route.path))
   const designRoute = $derived(match('/apps/:app/design/:screen', route.path) ?? match('/apps/:app/design', route.path))
+  const apisRoute = $derived(match('/apps/:app/apis/:item', route.path) ?? match('/apps/:app/apis', route.path))
   const settingsRoute = $derived(match('/apps/:app/settings', route.path))
   const initials = $derived((session.user?.name || session.user?.email || '?').split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase()).join(''))
   const go = (e: MouseEvent, p: string) => { e.preventDefault(); navigate(p) }
@@ -84,6 +86,8 @@
     <main class="min-h-0 flex-1 overflow-auto">
       {#if designRoute}
         {#key designRoute.app}<Design app={designRoute.app} screenId={designRoute.screen} />{/key}
+      {:else if apisRoute}
+        {#key apisRoute.app}<Apis app={apisRoute.app} item={apisRoute.item} />{/key}
       {:else if dataRoute}
         <div class="studio h-full">{#key dataRoute.app}<Data app={dataRoute.app} tableId={dataRoute.table} />{/key}</div>
       {:else if settingsRoute}

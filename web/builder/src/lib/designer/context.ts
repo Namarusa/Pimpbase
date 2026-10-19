@@ -3,8 +3,13 @@
 import { registry } from '../screen/registry'
 import { pathTo } from '../screen/context.svelte'
 import { all } from './tree'
-import type { Table } from '../api'
+import type { Query, Table } from '../api'
 import type { Node } from '../screen/types'
+import { queryTable } from '../apis/bindings'
+
+// queryTables describes API queries as tables ("query:<id>"), so field
+// pickers offer their columns.
+export const withQueries = (tables: Table[], queries: Query[]): Table[] => [...tables, ...queries.map((q) => queryTable(q))]
 
 const tableOf = (n: Node, tables: Table[]) => tables.find((t) => t.id === n.props.table)
 

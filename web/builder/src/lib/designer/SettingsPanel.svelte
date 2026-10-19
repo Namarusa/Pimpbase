@@ -9,6 +9,7 @@
   import CopyIcon from '@lucide/svelte/icons/copy'
   import TrashIcon from '@lucide/svelte/icons/trash'
   import WandIcon from '@lucide/svelte/icons/wand-sparkles'
+  import PlugIcon from '@lucide/svelte/icons/plug'
   import BindingInput from './BindingInput.svelte'
   import FieldSelect from './FieldSelect.svelte'
   import FieldsPicker from './FieldsPicker.svelte'
@@ -18,7 +19,7 @@
   import { conditionOps } from '../screen/bindings'
   import { iconNames, icons } from '../screen/icons'
   import { getDesigner } from './state.svelte'
-  import { bindingsFor, contextTable } from './context'
+  import { bindingsFor, contextTable, withQueries } from './context'
   import { duplicate, remove, findIn } from './tree'
   import { formFields } from './templates'
   import { roles, type Role } from '../api'
@@ -28,9 +29,11 @@
   const node = $derived(d.node)
   const def = $derived(node ? registry[node.type] : undefined)
   const props = $derived(node ? { ...def?.defaults(), ...node.props } : {})
-  const table = $derived(node && d.root ? contextTable(d.root, node.id, d.tables) : undefined)
-  const groups = $derived(node && d.root && d.screen ? bindingsFor(d.root, node.id, d.tables, d.screen.route) : [])
-  const actionGroups = $derived(node && d.root && d.screen ? bindingsFor(d.root, node.id, d.tables, d.screen.route, true) : [])
+  const sources = $derived(withQueries(d.tables, d.queries))
+  const table = $derived(node && d.root ? contextTable(d.root, node.id, sources) : undefined)
+  const groups = $derived(node && d.root && d.screen ? bindingsFor(d.root, node.id, sources, d.screen.route) : [])
+  const actionGroups = $derived(node && d.root && d.screen ? bindingsFor(d.root, node.id, sources, d.screen.route, true) : [])
+  const nodeQuery = $derived(String(props.table ?? '').startsWith('query:') ? d.queries.find((q) => q.id === String(props.table).slice(6)) : undefined)
   const order = ['Data', '', 'Validation', 'Layout', 'Style', 'Conditions']
   const sections = $derived.by(() => {
     const visible = (def?.settings ?? []).filter((s) => !s.show || s.show(props))
@@ -171,9 +174,25 @@
                     <Select.Trigger id={sid(s)} size="sm" class="w-full">{d.table(props[s.key])?.name ?? (def.tableSource ? 'From the data provider' : 'Choose a table')}</Select.Trigger>
                     <Select.Content>
                       {#if def.tableSource}<Select.Item value={'\u0000'} label="None"><span class="text-muted-foreground">From the data provider</span></Select.Item>{/if}
-                      {#each d.tables as t (t.id)}<Select.Item value={t.id} label={t.name}>{t.name}</Select.Item>{/each}
+                      <Select.Group><Select.GroupHeading>Tables</Select.GroupHeading>
+                        {#each d.tables as t (t.id)}<Select.Item value={t.id} label={t.name}>{t.name}</Select.Item>{/each}
+                      </Select.Group>
+                      {#if s.queries && d.queries.length}
+                        <Select.Group><Select.GroupHeading>API queries</Select.GroupHeading>
+                          {#each d.queries as q (q.id)}<Select.Item value={`query:${q.id}`} label={q.name}><PlugIcon class="opacity-60" />{q.name}<span class="text-muted-foreground ml-auto font-mono text-[10px]">{q.method}</span></Select.Item>{/each}
+                        </Select.Group>
+                      {/if}
                     </Select.Content>
                   </Select.Root>
+                  {#if nodeQuery}
+                    {#if !nodeQuery.fields.length}<p class="text-muted-foreground text-xs">Send this query once in the API studio so its columns can be picked here.</p>{/if}
+                    {#each nodeQuery.parameters as qp (qp.name)}
+                      <div class="flex flex-col gap-1 pl-2">
+                        <Label class="text-muted-foreground text-xs font-normal"><span class="font-mono">{qp.name}</span> · {qp.type}</Label>
+                        <BindingInput value={props.params?.[qp.name] ?? ''} {groups} placeholder={qp.default || 'default'} onChange={(v) => set('params', { ...(props.params ?? {}), [qp.name]: v })} />
+                      </div>
+                    {/each}
+                  {/if}
                 {:else if s.kind === 'field'}
                   <FieldSelect id={sid(s)} value={props[s.key] ?? ''} onChange={(v) => set(s.key, v)} fields={table?.fields ?? []} types={s.fieldTypes} />
                 {:else if s.kind === 'fields'}

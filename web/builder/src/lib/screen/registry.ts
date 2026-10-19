@@ -99,9 +99,11 @@ export const commonSettings: Setting[] = [
 ]
 
 // Where a data component's rows come from.
+const isQuery = (p: Record<string, any>) => String(p.table ?? '').startsWith('query:')
+
 const source: Setting[] = [
-  { key: 'table', label: 'Table', kind: 'table', section: 'Data', help: 'Leave empty to use the rows of the data provider around this component.' },
-  { key: 'filter', label: 'Filter', kind: 'filter', section: 'Data', show: (p) => !!p.table },
+  { key: 'table', label: 'Table', kind: 'table', section: 'Data', queries: true, help: 'Leave empty to use the rows of the data provider around this component.' },
+  { key: 'filter', label: 'Filter', kind: 'filter', section: 'Data', show: (p) => !!p.table && !isQuery(p) },
   { key: 'sort', label: 'Sort by', kind: 'field', section: 'Data', show: (p) => !!p.table },
   { key: 'desc', label: 'Largest or newest first', kind: 'boolean', section: 'Data', show: (p) => !!p.table && !!p.sort },
 ]
@@ -361,11 +363,11 @@ const defs: ComponentDef[] = [
   // Data
   {
     type: 'data_provider', label: 'Data provider', category: 'Data', icon: DatabaseIcon, container: true, component: DataProvider,
-    description: 'Loads rows once for the tables, lists, charts and stats inside it ({{ data.rows }}, {{ data.total }}).',
+    description: 'Loads rows from a table or an API query once, for the tables, lists, charts and stats inside it ({{ data.rows }}, {{ data.total }}).',
     defaults: () => ({ table: '', filter: '', sort: '', desc: false, limit: 100, paginate: false, gap: 'md' }),
     settings: [
-      { key: 'table', label: 'Table', kind: 'table', section: 'Data' },
-      { key: 'filter', label: 'Filter', kind: 'filter', section: 'Data' },
+      { key: 'table', label: 'Table or query', kind: 'table', section: 'Data', queries: true },
+      { key: 'filter', label: 'Filter', kind: 'filter', section: 'Data', show: (p) => !isQuery(p) },
       { key: 'sort', label: 'Sort by', kind: 'field', section: 'Data' },
       { key: 'desc', label: 'Largest or newest first', kind: 'boolean', section: 'Data', show: (p) => !!p.sort },
       { key: 'limit', label: 'Rows to load', kind: 'number', section: 'Data' },

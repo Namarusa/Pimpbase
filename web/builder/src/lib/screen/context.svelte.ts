@@ -1,13 +1,18 @@
 // The runtime every rendered screen shares, and the scope each component
 // sees. Both travel through Svelte context.
 import { getContext, setContext } from 'svelte'
-import type { Table } from '../api'
+import type { RuntimeQuery, Table } from '../api'
+import { queryTable } from '../apis/bindings'
 import type { Node, Scope } from './types'
 
 export class Runtime {
   appId: string
   appSlug: string
   tables: Table[]
+  // queries are the API queries the visitor may run.
+  queries: RuntimeQuery[]
+  // env picks the variables queries use: development in the builder.
+  env: 'development' | 'production'
   // editing is true inside the builder's canvas.
   editing: boolean
   state = $state<Record<string, any>>({})
@@ -28,6 +33,7 @@ export class Runtime {
 
   constructor(o: {
     appId: string; appSlug: string; tables: Table[]; editing: boolean
+    queries?: RuntimeQuery[]; env?: 'development' | 'production'
     navigate: (path: string) => void
     toast: (kind: 'success' | 'error' | 'info', message: string) => void
     confirm: (title: string, message: string) => Promise<boolean>
@@ -36,6 +42,8 @@ export class Runtime {
     this.appId = o.appId
     this.appSlug = o.appSlug
     this.tables = o.tables
+    this.queries = o.queries ?? []
+    this.env = o.env ?? 'production'
     this.editing = o.editing
     this.navigate = o.navigate
     this.toast = o.toast
@@ -43,8 +51,19 @@ export class Runtime {
     this.select = o.select ?? (() => {})
   }
 
+  // table finds a table, or an API query's rows described as one
+  // ("query:<id>").
   table(id?: string): Table | undefined {
-    return id ? this.tables.find((t) => t.id === id || t.name === id) : undefined
+    if (!id) return undefined
+    if (id.startsWith('query:')) {
+      const q = this.query(id.slice(6))
+      return q ? queryTable(q, this.appId) : undefined
+    }
+    return this.tables.find((t) => t.id === id || t.name === id)
+  }
+
+  query(id?: string): RuntimeQuery | undefined {
+    return id ? this.queries.find((q) => q.id === id || q.name === id) : undefined
   }
 
   reload(target?: string) {

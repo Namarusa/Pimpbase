@@ -64,6 +64,8 @@ export interface Setting {
   help?: string
   // fieldTypes limits field pickers to these types.
   fieldTypes?: FieldType[]
+  // queries lets a table setting pick an API query's rows too.
+  queries?: boolean
   // show hides the setting unless it returns true.
   show?: (props: Record<string, any>) => boolean
 }

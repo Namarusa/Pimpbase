@@ -53,7 +53,7 @@
   let params = $state<Record<string, string>>({})
 
   const rt = new Runtime({
-    appId: '', appSlug: slug, tables: [], editing: true,
+    appId: '', appSlug: slug, tables: [], editing: true, env: 'development',
     navigate: () => {},
     toast: (kind, m) => (kind === 'error' ? toast.error(m) : toast.success(m)),
     confirm: (t, m) => confirmHost?.ask(t, m) ?? Promise.resolve(true),
@@ -67,9 +67,11 @@
       const res = await api.app(slug)
       if (!res.builder) { error = 'Only builders can design screens.'; return }
       d.app = res.app
-      const [tables, screens] = await Promise.all([api.tables(res.app.id), api.screens(res.app.id)])
+      const [tables, screens, queries] = await Promise.all([api.tables(res.app.id), api.screens(res.app.id), api.queries(res.app.id)])
       d.tables = tables
       d.screens = screens
+      d.queries = queries
+      rt.queries = queries
       rt.appId = res.app.id
       rt.appSlug = res.app.slug
       rt.tables = tables

@@ -25,7 +25,34 @@ export interface FunctionInfo { name: string; category: string; signature: strin
 
 export interface RuntimeInfo {
   app: App; role: Role; builder: boolean; user: { id: string; email: string; name: string } | null
-  screens: Screen[]; tables: Table[]
+  screens: Screen[]; tables: Table[]; queries: RuntimeQuery[]
+}
+
+// API connectors.
+export interface Pair { key: string; value: string; off?: boolean }
+export interface Auth { type: 'none' | 'basic' | 'bearer' | 'header' | 'query'; username?: string; password?: string; token?: string; name?: string; value?: string }
+export interface Datasource {
+  id: string; appId: string; name: string; kind: 'rest'
+  config: { baseUrl: string; headers: Pair[]; auth: Auth; timeoutSeconds: number }
+}
+export type ParamType = 'text' | 'number' | 'boolean' | 'json'
+export interface QueryParam { name: string; type: ParamType; default: string; test: string }
+export interface QueryField { name: string; type: 'text' | 'number' | 'boolean' | 'date' | 'object' }
+export type BodyType = 'none' | 'json' | 'form' | 'xml' | 'text'
+export interface Query {
+  id: string; appId: string; datasourceId: string; name: string
+  method: string; path: string; query: Pair[]; headers: Pair[]
+  bodyType: BodyType; body: string; form: Pair[]; parameters: QueryParam[]
+  responseType: 'auto' | 'json' | 'xml' | 'text'; resultPath: string; role: Role; cacheSeconds: number
+  fields: QueryField[]; createdAt?: string; updatedAt?: string
+}
+export interface RuntimeQuery { id: string; name: string; parameters: { name: string; type: ParamType; default: string }[]; fields: QueryField[] }
+export interface Variable { name: string; secret: boolean; development: string; production: string; hasDevelopment: boolean; hasProduction: boolean }
+export interface QueryResult {
+  ok: boolean; status: number; statusText: string; headers: Record<string, string>
+  format: 'json' | 'xml' | 'text'; body: any; rows: Record<string, any>[]; fields: QueryField[]
+  parseError?: string; raw?: string; size: number; durationMs: number; cached: boolean
+  request?: { method: string; url: string; headers: Pair[]; body: string }
 }
 
 export class ApiError extends Error {
@@ -105,6 +132,22 @@ export const api = {
     call<Screen>('PATCH', `/apps/${enc(app)}/screens/${id}`, s),
   deleteScreen: (app: string, id: string) => call('DELETE', `/apps/${enc(app)}/screens/${id}`),
   runtime: (app: string) => call<RuntimeInfo>('GET', `/apps/${enc(app)}/runtime`),
+
+  datasources: (app: string) => call<Datasource[]>('GET', `/apps/${enc(app)}/datasources`),
+  createDatasource: (app: string, d: Partial<Datasource>) => call<Datasource>('POST', `/apps/${enc(app)}/datasources`, d),
+  updateDatasource: (app: string, id: string, d: Partial<Datasource>) => call<Datasource>('PATCH', `/apps/${enc(app)}/datasources/${id}`, d),
+  deleteDatasource: (app: string, id: string) => call('DELETE', `/apps/${enc(app)}/datasources/${id}`),
+  queries: (app: string) => call<Query[]>('GET', `/apps/${enc(app)}/queries`),
+  createQuery: (app: string, q: Partial<Query>) => call<Query>('POST', `/apps/${enc(app)}/queries`, q),
+  updateQuery: (app: string, id: string, q: Partial<Query>) => call<Query>('PATCH', `/apps/${enc(app)}/queries/${id}`, q),
+  deleteQuery: (app: string, id: string) => call('DELETE', `/apps/${enc(app)}/queries/${id}`),
+  testQuery: (app: string, q: Partial<Query>, env: 'development' | 'production') => call<QueryResult>('POST', `/apps/${enc(app)}/queries/test`, { query: q, env }),
+  runQuery: (app: string, id: string, params: Record<string, any>, env?: 'development' | 'production') =>
+    call<QueryResult>('POST', `/apps/${enc(app)}/queries/${enc(id)}/run`, { params, env }),
+  variables: (app: string) => call<Variable[]>('GET', `/apps/${enc(app)}/variables`),
+  setVariable: (app: string, name: string, v: Partial<{ secret: boolean; development: string; production: string }>) =>
+    call<Variable>('PUT', `/apps/${enc(app)}/variables/${enc(name)}`, v),
+  deleteVariable: (app: string, name: string) => call('DELETE', `/apps/${enc(app)}/variables/${enc(name)}`),
   exportURL: (app: string, t: string, filter: string) =>
     `/api/apps/${enc(app)}/tables/${t}/export` + (filter ? `?filter=${enc(filter)}` : ''),
 }
