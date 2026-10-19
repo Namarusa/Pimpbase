@@ -111,12 +111,16 @@ func (s *Server) runtime(w http.ResponseWriter, r *http.Request) error {
 			readable = append(readable, t)
 		}
 	}
+	qs, err := s.runtimeQueries(r, a.ID, act)
+	if err != nil {
+		return err
+	}
 	var user any
 	if u := userFrom(r); u != nil {
 		user = map[string]any{"id": u.ID, "email": u.Email, "name": u.Name}
 	}
 	return writeJSON(w, 200, map[string]any{
 		"app": a, "role": act.Role, "builder": act.Builder, "user": user,
-		"screens": visible, "tables": readable,
+		"screens": visible, "tables": readable, "queries": qs,
 	})
 }

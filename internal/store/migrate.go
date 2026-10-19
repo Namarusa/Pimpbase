@@ -63,6 +63,35 @@ var metaMigrations = []string{
 		UNIQUE (app_id, route)
 	);
 	ALTER TABLE apps ADD COLUMN design TEXT NOT NULL DEFAULT '{}';`,
+	// Phase 5: API data sources, queries and app variables.
+	`CREATE TABLE app_datasources (
+		id TEXT PRIMARY KEY,
+		app_id TEXT NOT NULL REFERENCES apps(id) ON DELETE CASCADE,
+		name TEXT NOT NULL,
+		kind TEXT NOT NULL,
+		config TEXT NOT NULL,
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL,
+		UNIQUE (app_id, name)
+	);
+	CREATE TABLE app_queries (
+		id TEXT PRIMARY KEY,
+		app_id TEXT NOT NULL REFERENCES apps(id) ON DELETE CASCADE,
+		datasource_id TEXT NOT NULL REFERENCES app_datasources(id) ON DELETE CASCADE,
+		name TEXT NOT NULL,
+		definition TEXT NOT NULL,
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL,
+		UNIQUE (app_id, name)
+	);
+	CREATE TABLE app_variables (
+		app_id TEXT NOT NULL REFERENCES apps(id) ON DELETE CASCADE,
+		name TEXT NOT NULL,
+		secret INTEGER NOT NULL DEFAULT 0,
+		dev_value TEXT NOT NULL,
+		prod_value TEXT NOT NULL,
+		PRIMARY KEY (app_id, name)
+	);`,
 }
 
 func migrateMeta(ctx context.Context, db *DB) error {

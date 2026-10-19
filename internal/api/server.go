@@ -16,6 +16,7 @@ import (
 
 	"github.com/bubibase/bubibase/internal/apps"
 	"github.com/bubibase/bubibase/internal/auth"
+	"github.com/bubibase/bubibase/internal/queries"
 	"github.com/bubibase/bubibase/internal/rbac"
 	"github.com/bubibase/bubibase/internal/screens"
 	"github.com/bubibase/bubibase/internal/store"
@@ -29,6 +30,8 @@ type Server struct {
 	Apps    *apps.Service
 	Tables  *tables.Service
 	Screens *screens.Service
+	Queries *queries.Service
+	Runner  *queries.Runner
 	Log     *slog.Logger
 	// UI is the built builder, served at /. It may be nil.
 	UI fs.FS
@@ -39,7 +42,10 @@ type Server struct {
 }
 
 func New(s *store.Store, ui fs.FS, log *slog.Logger) *Server {
+	qs := queries.NewService(s)
 	return &Server{
+		Queries: qs,
+		Runner:  queries.NewRunner(qs),
 		Auth:    auth.NewService(s),
 		Apps:    apps.NewService(s),
 		Tables:  tables.NewService(s),
@@ -119,6 +125,21 @@ func (s *Server) Handler() http.Handler {
 	h("PATCH /api/apps/{app}/screens/{screen}", s.updateScreen)
 	h("DELETE /api/apps/{app}/screens/{screen}", s.deleteScreen)
 	h("GET /api/apps/{app}/runtime", s.runtime)
+
+	h("GET /api/apps/{app}/datasources", s.listDatasources)
+	h("POST /api/apps/{app}/datasources", s.createDatasource)
+	h("PATCH /api/apps/{app}/datasources/{ds}", s.updateDatasource)
+	h("DELETE /api/apps/{app}/datasources/{ds}", s.deleteDatasource)
+	h("GET /api/apps/{app}/queries", s.listQueries)
+	h("POST /api/apps/{app}/queries", s.createQuery)
+	h("POST /api/apps/{app}/queries/test", s.testQuery)
+	h("GET /api/apps/{app}/queries/{query}", s.getQuery)
+	h("PATCH /api/apps/{app}/queries/{query}", s.updateQuery)
+	h("DELETE /api/apps/{app}/queries/{query}", s.deleteQuery)
+	h("POST /api/apps/{app}/queries/{query}/run", s.runQuery)
+	h("GET /api/apps/{app}/variables", s.listVariables)
+	h("PUT /api/apps/{app}/variables/{name}", s.setVariable)
+	h("DELETE /api/apps/{app}/variables/{name}", s.deleteVariable)
 
 	h("GET /api/formula/functions", s.functions)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
@@ -211,6 +232,8 @@ func (s *Server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 	var ai *apps.InvalidError
 	var au *auth.InvalidError
 	var si *screens.InvalidError
+	var qi *queries.InvalidError
+	var qr *queries.RunError
 	switch {
 	case errors.As(err, &he):
 		writeJSON(w, he.status, map[string]any{"error": he.msg})
@@ -222,13 +245,21 @@ func (s *Server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 		writeJSON(w, 400, map[string]any{"error": au.Message})
 	case errors.As(err, &si):
 		writeJSON(w, 400, map[string]any{"error": si.Message})
+	case errors.As(err, &qi):
+		writeJSON(w, 400, map[string]any{"error": qi.Message, "field": qi.Field})
+	case errors.As(err, &qr):
+		status := 502
+		if qr.Binding {
+			status = 400
+		}
+		writeJSON(w, status, map[string]any{"error": qr.Message})
 	case errors.Is(err, rbac.ErrForbidden):
 		if userFrom(r) == nil {
 			writeJSON(w, 401, map[string]any{"error": "sign in first"})
 			return
 		}
 		writeJSON(w, 403, map[string]any{"error": "you do not have access: " + strings.TrimPrefix(err.Error(), "forbidden: ")})
-	case errors.Is(err, tables.ErrNotFound), errors.Is(err, apps.ErrNotFound), errors.Is(err, auth.ErrNotFound), errors.Is(err, screens.ErrNotFound):
+	case errors.Is(err, tables.ErrNotFound), errors.Is(err, apps.ErrNotFound), errors.Is(err, auth.ErrNotFound), errors.Is(err, screens.ErrNotFound), errors.Is(err, queries.ErrNotFound):
 		writeJSON(w, 404, map[string]any{"error": err.Error()})
 	case errors.Is(err, auth.ErrBadCredentials):
 		writeJSON(w, 401, map[string]any{"error": err.Error()})
