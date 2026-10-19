@@ -49,6 +49,20 @@ var metaMigrations = []string{
 		updated_at TEXT NOT NULL,
 		UNIQUE (app_id, name)
 	);`,
+	// Phase 2: app screens and the app's design settings.
+	`CREATE TABLE app_screens (
+		id TEXT PRIMARY KEY,
+		app_id TEXT NOT NULL REFERENCES apps(id) ON DELETE CASCADE,
+		name TEXT NOT NULL,
+		route TEXT NOT NULL,
+		role TEXT NOT NULL,
+		position INTEGER NOT NULL,
+		definition TEXT NOT NULL,
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL,
+		UNIQUE (app_id, route)
+	);
+	ALTER TABLE apps ADD COLUMN design TEXT NOT NULL DEFAULT '{}';`,
 }
 
 func migrateMeta(ctx context.Context, db *DB) error {

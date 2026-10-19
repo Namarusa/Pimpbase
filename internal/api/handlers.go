@@ -314,11 +314,14 @@ func (s *Server) updateApp(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	var in struct{ Name, Slug *string }
+	var in struct {
+		Name, Slug *string
+		Design     *apps.Design
+	}
 	if err := readJSON(r, &in); err != nil {
 		return err
 	}
-	a, err = s.Apps.Update(r.Context(), a.ID, in.Name, in.Slug)
+	a, err = s.Apps.Update(r.Context(), a.ID, in.Name, in.Slug, in.Design)
 	if err != nil {
 		return err
 	}

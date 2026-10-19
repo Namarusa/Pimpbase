@@ -5,6 +5,7 @@ package apps
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -20,8 +21,48 @@ type App struct {
 	ID        string    `json:"id"`
 	Slug      string    `json:"slug"`
 	Name      string    `json:"name"`
+	Design    Design    `json:"design"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// Design holds the look of a published app.
+type Design struct {
+	// Theme is "light", "dark" or "system".
+	Theme string `json:"theme"`
+	// Accent is the primary colour, as #rrggbb; empty uses the default.
+	Accent string `json:"accent"`
+	// Navigation is "sidebar", "top" or "none".
+	Navigation string `json:"navigation"`
+	// Title replaces the app name in the published app's header.
+	Title string `json:"title"`
+}
+
+var accentRe = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
+
+func (d *Design) normalize() error {
+	switch d.Theme {
+	case "":
+		d.Theme = "system"
+	case "light", "dark", "system":
+	default:
+		return &InvalidError{"the theme is light, dark or system"}
+	}
+	switch d.Navigation {
+	case "":
+		d.Navigation = "sidebar"
+	case "sidebar", "top", "none":
+	default:
+		return &InvalidError{"navigation is sidebar, top or none"}
+	}
+	if d.Accent != "" && !accentRe.MatchString(d.Accent) {
+		return &InvalidError{"the accent colour is written #rrggbb"}
+	}
+	d.Title = strings.TrimSpace(d.Title)
+	if len(d.Title) > 100 {
+		return &InvalidError{"the title has at most 100 characters"}
+	}
+	return nil
 }
 
 var (
@@ -67,8 +108,8 @@ func Slugify(name string) string {
 
 func scanApp(row interface{ Scan(...any) error }) (*App, error) {
 	var a App
-	var created, updated string
-	if err := row.Scan(&a.ID, &a.Slug, &a.Name, &created, &updated); err != nil {
+	var created, updated, design string
+	if err := row.Scan(&a.ID, &a.Slug, &a.Name, &design, &created, &updated); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -76,10 +117,12 @@ func scanApp(row interface{ Scan(...any) error }) (*App, error) {
 	}
 	a.CreatedAt, _ = time.Parse(time.RFC3339, created)
 	a.UpdatedAt, _ = time.Parse(time.RFC3339, updated)
+	json.Unmarshal([]byte(design), &a.Design)
+	a.Design.normalize()
 	return &a, nil
 }
 
-const cols = `id, slug, name, created_at, updated_at`
+const cols = `id, slug, name, design, created_at, updated_at`
 
 func (s *Service) List(ctx context.Context) ([]*App, error) {
 	rows, err := s.store.Meta.Query(ctx, `SELECT `+cols+` FROM apps ORDER BY name`)
@@ -121,7 +164,7 @@ func (s *Service) Create(ctx context.Context, name, slug string) (*App, error) {
 	now := s.now().UTC().Format(time.RFC3339)
 	id := ids.New("app")
 	for i := 2; ; i++ {
-		_, err := s.store.Meta.Exec(ctx, `INSERT INTO apps (`+cols+`) VALUES (?, ?, ?, ?, ?)`, id, slug, name, now, now)
+		_, err := s.store.Meta.Exec(ctx, `INSERT INTO apps (`+cols+`) VALUES (?, ?, ?, '{}', ?, ?)`, id, slug, name, now, now)
 		if err == nil {
 			break
 		}
@@ -139,7 +182,7 @@ func (s *Service) Create(ctx context.Context, name, slug string) (*App, error) {
 	return s.Get(ctx, id)
 }
 
-func (s *Service) Update(ctx context.Context, id string, name, slug *string) (*App, error) {
+func (s *Service) Update(ctx context.Context, id string, name, slug *string, design *Design) (*App, error) {
 	a, err := s.Get(ctx, id)
 	if err != nil {
 		return nil, err
@@ -157,7 +200,14 @@ func (s *Service) Update(ctx context.Context, id string, name, slug *string) (*A
 		}
 		a.Slug = *slug
 	}
-	_, err = s.store.Meta.Exec(ctx, `UPDATE apps SET name = ?, slug = ?, updated_at = ? WHERE id = ?`, a.Name, a.Slug, s.now().UTC().Format(time.RFC3339), a.ID)
+	if design != nil {
+		if err := design.normalize(); err != nil {
+			return nil, err
+		}
+		a.Design = *design
+	}
+	dj, _ := json.Marshal(a.Design)
+	_, err = s.store.Meta.Exec(ctx, `UPDATE apps SET name = ?, slug = ?, design = ?, updated_at = ? WHERE id = ?`, a.Name, a.Slug, string(dj), s.now().UTC().Format(time.RFC3339), a.ID)
 	if err != nil && strings.Contains(strings.ToLower(err.Error()), "unique") {
 		return nil, &InvalidError{fmt.Sprintf("the URL name %q is taken", a.Slug)}
 	}
@@ -181,7 +231,7 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 		return err
 	}
 	defer tx.Rollback()
-	for _, q := range []string{`DELETE FROM app_tables WHERE app_id = ?`, `DELETE FROM app_users WHERE app_id = ?`, `DELETE FROM apps WHERE id = ?`} {
+	for _, q := range []string{`DELETE FROM app_screens WHERE app_id = ?`, `DELETE FROM app_tables WHERE app_id = ?`, `DELETE FROM app_users WHERE app_id = ?`, `DELETE FROM apps WHERE id = ?`} {
 		if _, err := tx.Exec(ctx, q, a.ID); err != nil {
 			return err
 		}

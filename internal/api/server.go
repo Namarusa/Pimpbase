@@ -17,6 +17,7 @@ import (
 	"github.com/bubibase/bubibase/internal/apps"
 	"github.com/bubibase/bubibase/internal/auth"
 	"github.com/bubibase/bubibase/internal/rbac"
+	"github.com/bubibase/bubibase/internal/screens"
 	"github.com/bubibase/bubibase/internal/store"
 	"github.com/bubibase/bubibase/internal/tables"
 )
@@ -24,10 +25,11 @@ import (
 const sessionCookie = "bubibase_session"
 
 type Server struct {
-	Auth   *auth.Service
-	Apps   *apps.Service
-	Tables *tables.Service
-	Log    *slog.Logger
+	Auth    *auth.Service
+	Apps    *apps.Service
+	Tables  *tables.Service
+	Screens *screens.Service
+	Log     *slog.Logger
 	// UI is the built builder, served at /. It may be nil.
 	UI fs.FS
 	// Secure marks cookies as HTTPS only.
@@ -41,6 +43,7 @@ func New(s *store.Store, ui fs.FS, log *slog.Logger) *Server {
 		Auth:    auth.NewService(s),
 		Apps:    apps.NewService(s),
 		Tables:  tables.NewService(s),
+		Screens: screens.NewService(s),
 		Log:     log,
 		UI:      ui,
 		limiter: &limiter{hits: map[string][]time.Time{}},
@@ -109,6 +112,13 @@ func (s *Server) Handler() http.Handler {
 	h("POST /api/apps/{app}/tables/{table}/rows/delete", s.deleteRows)
 	h("POST /api/apps/{app}/tables/{table}/import", s.importCSV)
 	h("GET /api/apps/{app}/tables/{table}/export", s.exportCSV)
+
+	h("GET /api/apps/{app}/screens", s.listScreens)
+	h("POST /api/apps/{app}/screens", s.createScreen)
+	h("GET /api/apps/{app}/screens/{screen}", s.getScreen)
+	h("PATCH /api/apps/{app}/screens/{screen}", s.updateScreen)
+	h("DELETE /api/apps/{app}/screens/{screen}", s.deleteScreen)
+	h("GET /api/apps/{app}/runtime", s.runtime)
 
 	h("GET /api/formula/functions", s.functions)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
@@ -200,6 +210,7 @@ func (s *Server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 	var tv *tables.ValidationError
 	var ai *apps.InvalidError
 	var au *auth.InvalidError
+	var si *screens.InvalidError
 	switch {
 	case errors.As(err, &he):
 		writeJSON(w, he.status, map[string]any{"error": he.msg})
@@ -209,13 +220,15 @@ func (s *Server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 		writeJSON(w, 400, map[string]any{"error": ai.Message})
 	case errors.As(err, &au):
 		writeJSON(w, 400, map[string]any{"error": au.Message})
+	case errors.As(err, &si):
+		writeJSON(w, 400, map[string]any{"error": si.Message})
 	case errors.Is(err, rbac.ErrForbidden):
 		if userFrom(r) == nil {
 			writeJSON(w, 401, map[string]any{"error": "sign in first"})
 			return
 		}
 		writeJSON(w, 403, map[string]any{"error": "you do not have access: " + strings.TrimPrefix(err.Error(), "forbidden: ")})
-	case errors.Is(err, tables.ErrNotFound), errors.Is(err, apps.ErrNotFound), errors.Is(err, auth.ErrNotFound):
+	case errors.Is(err, tables.ErrNotFound), errors.Is(err, apps.ErrNotFound), errors.Is(err, auth.ErrNotFound), errors.Is(err, screens.ErrNotFound):
 		writeJSON(w, 404, map[string]any{"error": err.Error()})
 	case errors.Is(err, auth.ErrBadCredentials):
 		writeJSON(w, 401, map[string]any{"error": err.Error()})
