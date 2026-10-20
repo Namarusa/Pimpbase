@@ -172,6 +172,18 @@ var metaMigrations = []string{
 		value TEXT NOT NULL,
 		updated_at TEXT NOT NULL
 	);`,
+	// External database connectors: tables imported from a database
+	// data source.
+	`CREATE TABLE app_ext_tables (
+		id TEXT PRIMARY KEY,
+		app_id TEXT NOT NULL REFERENCES apps(id) ON DELETE CASCADE,
+		datasource_id TEXT NOT NULL,
+		name TEXT NOT NULL,
+		definition TEXT NOT NULL,
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL,
+		UNIQUE (app_id, name)
+	);`,
 }
 
 func migrateMeta(ctx context.Context, db *DB) error {

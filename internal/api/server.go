@@ -17,6 +17,7 @@ import (
 	"github.com/bubibase/bubibase/internal/ai"
 	"github.com/bubibase/bubibase/internal/apps"
 	"github.com/bubibase/bubibase/internal/auth"
+	"github.com/bubibase/bubibase/internal/exttables"
 	"github.com/bubibase/bubibase/internal/files"
 	"github.com/bubibase/bubibase/internal/flows"
 	"github.com/bubibase/bubibase/internal/queries"
@@ -38,8 +39,10 @@ type Server struct {
 	Files   *files.Service
 	Runner  *queries.Runner
 	Flows   *flows.Service
-	SSO     *sso.Service
-	AI      *ai.Service
+	// Ext serves tables imported from external databases.
+	Ext *exttables.Service
+	SSO *sso.Service
+	AI  *ai.Service
 	// Engine runs flows; call Engine.Start to begin schedules.
 	Engine *flows.Engine
 	Log    *slog.Logger
@@ -70,6 +73,7 @@ func New(s *store.Store, ui fs.FS, log *slog.Logger) *Server {
 		UI:      ui,
 		limiter: &limiter{hits: map[string][]time.Time{}},
 	}
+	srv.Ext = exttables.NewService(s, qs, srv.Runner)
 	srv.SSO = sso.NewService(s, srv.Auth, srv.Apps)
 	srv.AI = ai.NewService(s)
 	srv.Engine = flows.NewEngine(srv.Flows, srv.Tables, srv.Queries, srv.Runner, srv.Files, srv.Apps, log)
@@ -143,23 +147,26 @@ func (s *Server) Handler() http.Handler {
 
 	h("GET /api/apps/{app}/tables", s.listTables)
 	h("POST /api/apps/{app}/tables", s.createTable)
-	h("GET /api/apps/{app}/tables/{table}", s.getTable)
-	h("PATCH /api/apps/{app}/tables/{table}", s.updateTable)
-	h("DELETE /api/apps/{app}/tables/{table}", s.deleteTable)
-	h("POST /api/apps/{app}/tables/{table}/fields", s.addField)
-	h("PATCH /api/apps/{app}/tables/{table}/fields/{field}", s.updateField)
-	h("DELETE /api/apps/{app}/tables/{table}/fields/{field}", s.deleteField)
+	h("GET /api/apps/{app}/tables/{table}", s.ext("get", s.getTable))
+	h("PATCH /api/apps/{app}/tables/{table}", s.ext("update", s.updateTable))
+	h("DELETE /api/apps/{app}/tables/{table}", s.ext("delete", s.deleteTable))
+	h("POST /api/apps/{app}/tables/{table}/fields", s.ext("fields", s.addField))
+	h("PATCH /api/apps/{app}/tables/{table}/fields/{field}", s.ext("fields", s.updateField))
+	h("DELETE /api/apps/{app}/tables/{table}/fields/{field}", s.ext("fields", s.deleteField))
 	h("POST /api/apps/{app}/tables/{table}/formula/check", s.checkFormula)
+	h("POST /api/apps/{app}/tables/{table}/refresh", s.ext("refresh", func(w http.ResponseWriter, r *http.Request) error {
+		return errStatus(400, "only external tables are refreshed from their database")
+	}))
 
-	h("GET /api/apps/{app}/tables/{table}/rows", s.listRows)
-	h("POST /api/apps/{app}/tables/{table}/rows", s.createRow)
-	h("GET /api/apps/{app}/tables/{table}/rows/{id}", s.getRow)
-	h("PATCH /api/apps/{app}/tables/{table}/rows/{id}", s.updateRow)
-	h("DELETE /api/apps/{app}/tables/{table}/rows/{id}", s.deleteRow)
-	h("POST /api/apps/{app}/tables/{table}/rows/delete", s.deleteRows)
-	h("POST /api/apps/{app}/tables/{table}/import", s.importCSV)
-	h("GET /api/apps/{app}/tables/{table}/export", s.exportCSV)
-	h("POST /api/apps/{app}/tables/{table}/files", s.uploadFile)
+	h("GET /api/apps/{app}/tables/{table}/rows", s.ext("list", s.listRows))
+	h("POST /api/apps/{app}/tables/{table}/rows", s.ext("create", s.createRow))
+	h("GET /api/apps/{app}/tables/{table}/rows/{id}", s.ext("row", s.getRow))
+	h("PATCH /api/apps/{app}/tables/{table}/rows/{id}", s.ext("updateRow", s.updateRow))
+	h("DELETE /api/apps/{app}/tables/{table}/rows/{id}", s.ext("deleteRow", s.deleteRow))
+	h("POST /api/apps/{app}/tables/{table}/rows/delete", s.ext("deleteRows", s.deleteRows))
+	h("POST /api/apps/{app}/tables/{table}/import", s.ext("csv", s.importCSV))
+	h("GET /api/apps/{app}/tables/{table}/export", s.ext("csv", s.exportCSV))
+	h("POST /api/apps/{app}/tables/{table}/files", s.ext("files", s.uploadFile))
 	h("GET /api/apps/{app}/files/{file}", s.getFile)
 
 	h("GET /api/apps/{app}/screens", s.listScreens)
@@ -170,7 +177,12 @@ func (s *Server) Handler() http.Handler {
 	h("GET /api/apps/{app}/runtime", s.runtime)
 	h("GET /api/apps/{app}/brand", s.brand)
 
+	h("GET /api/connectors", s.connectors)
 	h("GET /api/apps/{app}/datasources", s.listDatasources)
+	h("POST /api/apps/{app}/datasources/test", s.testConnection)
+	h("GET /api/apps/{app}/datasources/{ds}/schema", s.datasourceSchema)
+	h("GET /api/apps/{app}/datasources/{ds}/schema/table", s.describeTable)
+	h("POST /api/apps/{app}/datasources/{ds}/tables", s.importTable)
 	h("POST /api/apps/{app}/datasources", s.createDatasource)
 	h("PATCH /api/apps/{app}/datasources/{ds}", s.updateDatasource)
 	h("DELETE /api/apps/{app}/datasources/{ds}", s.deleteDatasource)

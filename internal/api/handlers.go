@@ -14,6 +14,7 @@ import (
 
 	"github.com/bubibase/bubibase/internal/apps"
 	"github.com/bubibase/bubibase/internal/auth"
+	"github.com/bubibase/bubibase/internal/exttables"
 	"github.com/bubibase/bubibase/internal/formula"
 	"github.com/bubibase/bubibase/internal/rbac"
 	"github.com/bubibase/bubibase/internal/tables"
@@ -473,11 +474,18 @@ func (s *Server) listTables(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	visible := []*tables.Table{}
+	visible := []any{}
 	for _, t := range all {
 		if act.Has(t.Permissions.Read) {
 			visible = append(visible, t)
 		}
+	}
+	ext, err := s.extViews(r, a.ID, act)
+	if err != nil {
+		return err
+	}
+	for _, t := range ext {
+		visible = append(visible, t)
 	}
 	return writeJSON(w, 200, visible)
 }
@@ -613,7 +621,13 @@ func (s *Server) checkFormula(w http.ResponseWriter, r *http.Request) error {
 	if err := readJSON(r, &in); err != nil {
 		return err
 	}
-	typ, errs, err := s.Tables.CheckFormula(r.Context(), a.ID, r.PathValue("table"), in.Formula, in.Static)
+	check := s.Tables.CheckFormula
+	if exttables.Is(r.PathValue("table")) {
+		check = func(ctx context.Context, appID, id, src string, _ bool) (formula.Type, []*formula.Error, error) {
+			return s.Ext.CheckFormula(ctx, appID, id, src)
+		}
+	}
+	typ, errs, err := check(r.Context(), a.ID, r.PathValue("table"), in.Formula, in.Static)
 	if err != nil {
 		return err
 	}

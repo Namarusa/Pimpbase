@@ -202,7 +202,7 @@ func (p *Pool) Get(id, kind string, s Settings) (Source, error) {
 		return nil, err
 	}
 	h := sha256.New()
-	fmt.Fprintf(h, "%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00%d", kind, s.Host, s.Port, s.Database, s.User, s.Password, s.Schema, s.SSL, s.URI, s.MaxConnections)
+	fmt.Fprintf(h, "%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00%d\x00%t", kind, s.Host, s.Port, s.Database, s.User, s.Password, s.Schema, s.SSL, s.URI, s.MaxConnections, s.ReadOnly)
 	for _, o := range s.Options {
 		fmt.Fprintf(h, "\x00%s=%s", o.Key, o.Value)
 	}

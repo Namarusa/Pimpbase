@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bubibase/bubibase/internal/extdb"
 	"github.com/bubibase/bubibase/internal/interp"
 	"github.com/bubibase/bubibase/internal/xmltree"
 )
@@ -57,6 +58,11 @@ type Result struct {
 	Cached     bool        `json:"cached"`
 	// Request is what was sent, with secrets hidden; only builders see it.
 	Request *Echo `json:"request,omitempty"`
+	// Database queries: rows changed by a statement, whether rows were cut
+	// at the limit, and the column names in order.
+	RowsAffected int64    `json:"rowsAffected,omitempty"`
+	Truncated    bool     `json:"truncated,omitempty"`
+	Columns      []string `json:"columns,omitempty"`
 }
 
 // Echo is a request as sent.
@@ -65,6 +71,8 @@ type Echo struct {
 	URL     string `json:"url"`
 	Headers []Pair `json:"headers"`
 	Body    string `json:"body"`
+	// Params are a database query's parameters, in placeholder order.
+	Params []any `json:"params,omitempty"`
 }
 
 // RunError is a query that could not be sent or read; its message is safe
@@ -81,6 +89,7 @@ func (e *RunError) Error() string { return e.Message }
 type Runner struct {
 	svc    *Service
 	client *http.Client
+	pool   *extdb.Pool
 
 	mu    sync.Mutex
 	cache map[string]cached
@@ -101,8 +110,12 @@ func NewRunner(svc *Service) *Runner {
 			return nil
 		}},
 		cache: map[string]cached{},
+		pool:  extdb.NewPool(),
 	}
 }
+
+// Close closes the database connections the runner keeps.
+func (r *Runner) Close() { r.pool.Close() }
 
 // run is one Run call: queries read by other queries are sent once.
 type run struct {
@@ -160,6 +173,9 @@ func (st *run) query(ctx context.Context, q *Query, given map[string]any) (*Resu
 	ds, err := st.r.svc.Datasource(ctx, st.appID, q.DatasourceID)
 	if err != nil {
 		return nil, err
+	}
+	if ds.Database() {
+		return st.runDB(ctx, ds, q, scope)
 	}
 	req, echo, err := build(ctx, ds, q, scope)
 	if err != nil {
