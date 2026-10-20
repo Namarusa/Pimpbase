@@ -76,6 +76,7 @@ func serve(args []string) error {
 	mailFrom := fs.String("mail-from", env("BUBIBASE_MAIL_FROM", ""), "sender address of flow emails (BUBIBASE_MAIL_FROM)")
 	secure := fs.Bool("secure-cookies", env("BUBIBASE_SECURE_COOKIES", "") == "true", "mark session cookies HTTPS-only (BUBIBASE_SECURE_COOKIES)")
 	publicURL := fs.String("public-url", env("BUBIBASE_PUBLIC_URL", ""), "address people reach Bubibase at, e.g. https://apps.example.com; single sign-on sends people back there (BUBIBASE_PUBLIC_URL)")
+	anthropicKey := fs.String("anthropic-key", env("BUBIBASE_ANTHROPIC_KEY", os.Getenv("ANTHROPIC_API_KEY")), "Anthropic API key for the builder's AI assistant; kept on the server (BUBIBASE_ANTHROPIC_KEY or ANTHROPIC_API_KEY). Admins can also save one in the builder")
 	fs.Parse(args)
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -91,6 +92,7 @@ func serve(args []string) error {
 	srv := api.New(st, web.Builder(), log)
 	srv.Secure = *secure
 	srv.PublicURL = *publicURL
+	srv.AI.EnvKey = *anthropicKey
 	mailer, err := flows.NewMailer(*smtp, *mailFrom)
 	if err != nil {
 		return err

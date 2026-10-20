@@ -36,14 +36,14 @@ func (e *InvalidError) Error() string { return e.Message }
 // File describes a stored file. TableID is the table it was uploaded for:
 // reading the file needs read access to that table.
 type File struct {
-	ID        string    `json:"id"`
-	TableID   string    `json:"-"`
+	ID      string `json:"id"`
+	TableID string `json:"-"`
 	// UploadedBy is the id of the user who uploaded the file, if signed in.
 	UploadedBy string    `json:"-"`
-	Name      string    `json:"name"`
-	Type      string    `json:"type"`
-	Size      int64     `json:"size"`
-	CreatedAt time.Time `json:"createdAt"`
+	Name       string    `json:"name"`
+	Type       string    `json:"type"`
+	Size       int64     `json:"size"`
+	CreatedAt  time.Time `json:"createdAt"`
 }
 
 type Service struct {

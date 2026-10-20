@@ -831,3 +831,36 @@ func (s *Service) DeleteField(ctx context.Context, appID, tableID, fieldID strin
 		return t, nil
 	})
 }
+
+// CheckFields reports whether fields could be added to a table: to base,
+// or to a new table named name when base is nil. Link fields name their
+// table by id; ids listed in drafted stand for tables not made yet. It
+// changes nothing.
+func (s *Service) CheckFields(ctx context.Context, appID string, base *Table, name string, fields []FieldInput, drafted map[string]bool) error {
+	t := &Table{ID: "tbl_draft", AppID: appID, Name: name, Fields: []*Field{}}
+	if base != nil {
+		cp := *base
+		cp.Fields = slices.Clone(base.Fields)
+		t = &cp
+	} else if err := validName("table", name); err != nil {
+		return err
+	}
+	for _, in := range fields {
+		if in.Type == TypeLink && drafted[in.LinkTable] {
+			in.LinkTable = t.ID // stands in for the table to come
+		}
+		f, err := s.buildField(ctx, t, in)
+		if err != nil {
+			var v *ValidationError
+			if errors.As(err, &v) {
+				v.Message = fmt.Sprintf("field %q: %s", in.Name, v.Message)
+			}
+			return err
+		}
+		t.Fields = append(t.Fields, f)
+	}
+	if _, err := compile(t); err != nil {
+		return err
+	}
+	return nil
+}

@@ -166,6 +166,12 @@ var metaMigrations = []string{
 		return_to TEXT NOT NULL,
 		expires_at TEXT NOT NULL
 	);`,
+	// Phase 6: workspace settings, such as the AI assistant's API key.
+	`CREATE TABLE settings (
+		key TEXT PRIMARY KEY,
+		value TEXT NOT NULL,
+		updated_at TEXT NOT NULL
+	);`,
 }
 
 func migrateMeta(ctx context.Context, db *DB) error {

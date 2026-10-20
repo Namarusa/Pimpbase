@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bubibase/bubibase/internal/ai"
 	"github.com/bubibase/bubibase/internal/apps"
 	"github.com/bubibase/bubibase/internal/auth"
 	"github.com/bubibase/bubibase/internal/files"
@@ -38,6 +39,7 @@ type Server struct {
 	Runner  *queries.Runner
 	Flows   *flows.Service
 	SSO     *sso.Service
+	AI      *ai.Service
 	// Engine runs flows; call Engine.Start to begin schedules.
 	Engine *flows.Engine
 	Log    *slog.Logger
@@ -69,6 +71,7 @@ func New(s *store.Store, ui fs.FS, log *slog.Logger) *Server {
 		limiter: &limiter{hits: map[string][]time.Time{}},
 	}
 	srv.SSO = sso.NewService(s, srv.Auth, srv.Apps)
+	srv.AI = ai.NewService(s)
 	srv.Engine = flows.NewEngine(srv.Flows, srv.Tables, srv.Queries, srv.Runner, srv.Files, srv.Apps, log)
 	return srv
 }
@@ -198,6 +201,12 @@ func (s *Server) Handler() http.Handler {
 	h("GET /api/hooks/{token}", s.webhook)
 
 	h("GET /api/formula/functions", s.functions)
+
+	h("GET /api/ai", s.aiStatus)
+	h("PATCH /api/ai", s.aiUpdate)
+	h("POST /api/apps/{app}/ai/draft", s.aiDraft)
+	h("POST /api/apps/{app}/ai/formula", s.aiFormula)
+	h("POST /api/apps/{app}/ai/ask", s.aiAsk)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 404, map[string]any{"error": "no such API endpoint"})
 	})
@@ -286,7 +295,7 @@ var errLogin = errStatus(401, "sign in first")
 func (s *Server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 	var he *httpError
 	var tv *tables.ValidationError
-	var ai *apps.InvalidError
+	var appErr *apps.InvalidError
 	var au *auth.InvalidError
 	var si *screens.InvalidError
 	var qi *queries.InvalidError
@@ -295,7 +304,12 @@ func (s *Server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 	var fl *flows.InvalidError
 	var ri *rbac.InvalidError
 	var ssoErr *sso.InvalidError
+	var aiErr *ai.Error
 	switch {
+	case errors.Is(err, ai.ErrNoKey):
+		writeJSON(w, 409, map[string]any{"error": err.Error(), "code": "ai_not_configured"})
+	case errors.As(err, &aiErr):
+		writeJSON(w, 400, map[string]any{"error": aiErr.Message})
 	case errors.As(err, &ri):
 		writeJSON(w, 400, map[string]any{"error": ri.Message})
 	case errors.As(err, &ssoErr):
@@ -306,8 +320,8 @@ func (s *Server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 		writeJSON(w, he.status, map[string]any{"error": he.msg})
 	case errors.As(err, &tv):
 		writeJSON(w, 400, map[string]any{"error": tv.Error(), "field": tv.Field, "formulaErrors": tv.Formula})
-	case errors.As(err, &ai):
-		writeJSON(w, 400, map[string]any{"error": ai.Message})
+	case errors.As(err, &appErr):
+		writeJSON(w, 400, map[string]any{"error": appErr.Message})
 	case errors.As(err, &au):
 		writeJSON(w, 400, map[string]any{"error": au.Message})
 	case errors.As(err, &si):
