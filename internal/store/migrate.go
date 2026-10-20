@@ -92,6 +92,33 @@ var metaMigrations = []string{
 		prod_value TEXT NOT NULL,
 		PRIMARY KEY (app_id, name)
 	);`,
+	// Phase 3: flows (automations) and their runs.
+	`CREATE TABLE app_flows (
+		id TEXT PRIMARY KEY,
+		app_id TEXT NOT NULL REFERENCES apps(id) ON DELETE CASCADE,
+		name TEXT NOT NULL,
+		enabled INTEGER NOT NULL DEFAULT 0,
+		definition TEXT NOT NULL,
+		hook_token TEXT NOT NULL UNIQUE,
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL,
+		UNIQUE (app_id, name)
+	);
+	CREATE TABLE app_flow_runs (
+		id TEXT PRIMARY KEY,
+		app_id TEXT NOT NULL REFERENCES apps(id) ON DELETE CASCADE,
+		flow_id TEXT NOT NULL REFERENCES app_flows(id) ON DELETE CASCADE,
+		status TEXT NOT NULL,
+		test INTEGER NOT NULL DEFAULT 0,
+		trigger_kind TEXT NOT NULL,
+		trigger_data TEXT NOT NULL,
+		steps TEXT NOT NULL,
+		output TEXT NOT NULL,
+		error TEXT NOT NULL,
+		started_at TEXT NOT NULL,
+		finished_at TEXT NOT NULL
+	);
+	CREATE INDEX app_flow_runs_flow ON app_flow_runs (flow_id, started_at);`,
 }
 
 func migrateMeta(ctx context.Context, db *DB) error {

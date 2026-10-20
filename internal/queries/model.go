@@ -738,3 +738,9 @@ func (s *Service) values(ctx context.Context, appID, env string) (map[string]any
 	sort.Slice(secrets, func(i, j int) bool { return len(secrets[i]) > len(secrets[j]) })
 	return vals, secrets, nil
 }
+
+// Values returns the variables of one environment, as {{ env.NAME }}
+// reads them, and the secret values to hide from logs.
+func (s *Service) Values(ctx context.Context, appID, env string) (map[string]any, []string, error) {
+	return s.values(ctx, appID, env)
+}

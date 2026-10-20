@@ -24,6 +24,25 @@ type Service struct {
 
 	// mu serialises schema changes, which touch two databases.
 	mu sync.Mutex
+
+	// OnRow, when set, hears every row created, changed or deleted through
+	// CreateRow, UpdateRow and DeleteRows, after the change is committed.
+	// Flows use it to start their row triggers. CSV imports do not call it.
+	OnRow func(ctx context.Context, ev RowEvent)
+}
+
+// RowEvent is a committed row change.
+type RowEvent struct {
+	AppID   string
+	TableID string
+	// Kind is "created", "updated" or "deleted".
+	Kind string
+	// Row is the row after the change; for "deleted", the row as it was.
+	Row map[string]any
+	// Old is the row before an update.
+	Old map[string]any
+	// Actor made the change.
+	Actor rbac.Actor
 }
 
 func NewService(s *store.Store) *Service {

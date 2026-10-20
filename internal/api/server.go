@@ -17,6 +17,7 @@ import (
 	"github.com/bubibase/bubibase/internal/apps"
 	"github.com/bubibase/bubibase/internal/auth"
 	"github.com/bubibase/bubibase/internal/files"
+	"github.com/bubibase/bubibase/internal/flows"
 	"github.com/bubibase/bubibase/internal/queries"
 	"github.com/bubibase/bubibase/internal/rbac"
 	"github.com/bubibase/bubibase/internal/screens"
@@ -34,7 +35,10 @@ type Server struct {
 	Queries *queries.Service
 	Files   *files.Service
 	Runner  *queries.Runner
-	Log     *slog.Logger
+	Flows   *flows.Service
+	// Engine runs flows; call Engine.Start to begin schedules.
+	Engine *flows.Engine
+	Log    *slog.Logger
 	// UI is the built builder, served at /. It may be nil.
 	UI fs.FS
 	// Secure marks cookies as HTTPS only.
@@ -45,7 +49,7 @@ type Server struct {
 
 func New(s *store.Store, ui fs.FS, log *slog.Logger) *Server {
 	qs := queries.NewService(s)
-	return &Server{
+	srv := &Server{
 		Queries: qs,
 		Runner:  queries.NewRunner(qs),
 		Auth:    auth.NewService(s),
@@ -53,10 +57,13 @@ func New(s *store.Store, ui fs.FS, log *slog.Logger) *Server {
 		Tables:  tables.NewService(s),
 		Screens: screens.NewService(s),
 		Files:   files.NewService(s),
+		Flows:   flows.NewService(s),
 		Log:     log,
 		UI:      ui,
 		limiter: &limiter{hits: map[string][]time.Time{}},
 	}
+	srv.Engine = flows.NewEngine(srv.Flows, srv.Tables, srv.Queries, srv.Runner, srv.Files, srv.Apps, log)
+	return srv
 }
 
 type ctxKey int
@@ -145,6 +152,21 @@ func (s *Server) Handler() http.Handler {
 	h("GET /api/apps/{app}/variables", s.listVariables)
 	h("PUT /api/apps/{app}/variables/{name}", s.setVariable)
 	h("DELETE /api/apps/{app}/variables/{name}", s.deleteVariable)
+
+	h("GET /api/apps/{app}/flows", s.listFlows)
+	h("POST /api/apps/{app}/flows", s.createFlow)
+	h("GET /api/apps/{app}/flows/{flow}", s.getFlow)
+	h("PATCH /api/apps/{app}/flows/{flow}", s.updateFlow)
+	h("DELETE /api/apps/{app}/flows/{flow}", s.deleteFlow)
+	h("POST /api/apps/{app}/flows/{flow}/hook", s.newHook)
+	h("POST /api/apps/{app}/flows/{flow}/test", s.testFlow)
+	h("POST /api/apps/{app}/flows/{flow}/run", s.runFlow)
+	h("GET /api/apps/{app}/flows/{flow}/runs", s.flowRuns)
+	h("GET /api/apps/{app}/runs/{run}", s.flowRun)
+	h("GET /api/flows/schedule", s.nextRuns)
+	h("POST /api/hooks/{token}", s.webhook)
+	h("PUT /api/hooks/{token}", s.webhook)
+	h("GET /api/hooks/{token}", s.webhook)
 
 	h("GET /api/formula/functions", s.functions)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
@@ -240,6 +262,7 @@ func (s *Server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 	var qi *queries.InvalidError
 	var qr *queries.RunError
 	var fi *files.InvalidError
+	var fl *flows.InvalidError
 	switch {
 	case errors.As(err, &he):
 		writeJSON(w, he.status, map[string]any{"error": he.msg})
@@ -253,6 +276,8 @@ func (s *Server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 		writeJSON(w, 400, map[string]any{"error": si.Message})
 	case errors.As(err, &fi):
 		writeJSON(w, 400, map[string]any{"error": fi.Message})
+	case errors.As(err, &fl):
+		writeJSON(w, 400, map[string]any{"error": fl.Message, "step": fl.Step})
 	case errors.As(err, &qi):
 		writeJSON(w, 400, map[string]any{"error": qi.Message, "field": qi.Field})
 	case errors.As(err, &qr):
@@ -267,7 +292,7 @@ func (s *Server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 			return
 		}
 		writeJSON(w, 403, map[string]any{"error": "you do not have access: " + strings.TrimPrefix(err.Error(), "forbidden: ")})
-	case errors.Is(err, tables.ErrNotFound), errors.Is(err, apps.ErrNotFound), errors.Is(err, auth.ErrNotFound), errors.Is(err, screens.ErrNotFound), errors.Is(err, queries.ErrNotFound), errors.Is(err, files.ErrNotFound):
+	case errors.Is(err, tables.ErrNotFound), errors.Is(err, apps.ErrNotFound), errors.Is(err, auth.ErrNotFound), errors.Is(err, screens.ErrNotFound), errors.Is(err, queries.ErrNotFound), errors.Is(err, files.ErrNotFound), errors.Is(err, flows.ErrNotFound):
 		writeJSON(w, 404, map[string]any{"error": err.Error()})
 	case errors.Is(err, auth.ErrBadCredentials):
 		writeJSON(w, 401, map[string]any{"error": err.Error()})

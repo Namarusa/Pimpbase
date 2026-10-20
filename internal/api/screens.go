@@ -115,12 +115,16 @@ func (s *Server) runtime(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	fl, err := s.runtimeFlows(r, a.ID, act)
+	if err != nil {
+		return err
+	}
 	var user any
 	if u := userFrom(r); u != nil {
 		user = map[string]any{"id": u.ID, "email": u.Email, "name": u.Name}
 	}
 	return writeJSON(w, 200, map[string]any{
 		"app": a, "role": act.Role, "builder": act.Builder, "user": user,
-		"screens": visible, "tables": readable, "queries": qs,
+		"screens": visible, "tables": readable, "queries": qs, "flows": fl,
 	})
 }

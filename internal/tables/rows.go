@@ -1095,7 +1095,18 @@ func (s *Service) CreateRow(ctx context.Context, actor rbac.Actor, appID, tableI
 	if err != nil {
 		return nil, err
 	}
-	return row, tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	s.emit(ctx, RowEvent{AppID: appID, TableID: c.ID, Kind: "created", Row: row, Actor: actor})
+	return row, nil
+}
+
+// emit tells OnRow about a change.
+func (s *Service) emit(ctx context.Context, ev RowEvent) {
+	if s.OnRow != nil {
+		s.OnRow(ctx, ev)
+	}
 }
 
 func (s *Service) insert(ctx context.Context, tx *store.Tx, c *compiled, values map[string]any, lenient bool) (int64, error) {
@@ -1149,6 +1160,12 @@ func (s *Service) UpdateRow(ctx context.Context, actor rbac.Actor, appID, tableI
 		return nil, err
 	}
 	defer tx.Rollback()
+	var old map[string]any
+	if s.OnRow != nil {
+		if old, err = s.getRow(ctx, tx, db, c, actor, id); err != nil {
+			return nil, err
+		}
+	}
 	p, err := s.prepare(ctx, tx, db, c, values, false, false)
 	if err != nil {
 		return nil, err
@@ -1177,7 +1194,11 @@ func (s *Service) UpdateRow(ctx context.Context, actor rbac.Actor, appID, tableI
 	if err != nil {
 		return nil, err
 	}
-	return row, tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	s.emit(ctx, RowEvent{AppID: appID, TableID: c.ID, Kind: "updated", Row: row, Old: old, Actor: actor})
+	return row, nil
 }
 
 // DeleteRows deletes rows and every link that points at them.
@@ -1202,6 +1223,20 @@ func (s *Service) DeleteRows(ctx context.Context, actor rbac.Actor, appID, table
 		return 0, err
 	}
 	defer tx.Rollback()
+	// Flows hear about deleted rows as they were, up to 1000 of them.
+	var gone []map[string]any
+	if s.OnRow != nil {
+		for _, id := range ids {
+			if len(gone) >= 1000 {
+				break
+			}
+			if row, err := s.getRow(ctx, tx, db, c, actor, id); err == nil {
+				gone = append(gone, row)
+			} else if !IsNotFound(err) {
+				return 0, err
+			}
+		}
+	}
 	deleted := 0
 	for _, chunk := range chunks(ids, 500) {
 		in, args := inList(len(chunk)), toArgs(chunk)
@@ -1234,7 +1269,13 @@ func (s *Service) DeleteRows(ctx context.Context, actor rbac.Actor, appID, table
 		n, _ := res.RowsAffected()
 		deleted += int(n)
 	}
-	return deleted, tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	for _, row := range gone {
+		s.emit(ctx, RowEvent{AppID: appID, TableID: c.ID, Kind: "deleted", Row: row, Actor: actor})
+	}
+	return deleted, nil
 }
 
 // IsNotFound reports whether err means something does not exist.
