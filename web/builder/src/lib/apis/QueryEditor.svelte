@@ -25,9 +25,17 @@
   } = $props()
 
   const ds = $derived(datasources.find((d) => d.id === query.datasourceId))
+  // Queries on a database are SQL, or a MongoDB operation.
+  const db = $derived(!!ds && ds.kind !== 'rest')
+  const mongo = $derived(ds?.kind === 'mongodb')
+  const mongoOps = ['find', 'findOne', 'aggregate', 'count', 'insertOne', 'insertMany', 'updateOne', 'updateMany', 'deleteOne', 'deleteMany']
+  const usesDocument = $derived(['insertOne', 'insertMany', 'updateOne', 'updateMany'].includes(query.operation || 'find'))
+  const sqlStarter = 'SELECT *\nFROM customers\nWHERE country = {{ params.country }}\nORDER BY name\nLIMIT 100'
+  const sqlHelp = 'Bindings are sent as parameters, never pasted into the SQL: write them without quotes, as in WHERE id = {{ params.id }}. A list fills IN ({{ params.ids }}).'
+  const mongoHelp = 'Extended JSON. Bindings inside quotes are escaped text; outside quotes they are JSON values.'
   const groups = $derived(queryBindings(query, variables, queries))
-  const missing = $derived(paramsUsed(query).filter((n) => !query.parameters.some((p) => p.name === n)))
-  let tab = $state(query.parameters.length ? 'params' : 'query')
+  const missing = $derived(paramsUsed({ ...query, path: [query.path, query.sql, query.collection, query.filter, query.document, query.options].join('\n') }).filter((n) => !query.parameters.some((p) => p.name === n)))
+  let tab = $state(query.parameters.length ? 'params' : datasources.find((d) => d.id === query.datasourceId && d.kind !== 'rest') ? 'statement' : 'query')
   let env = $state<'development' | 'production'>('development')
   let running = $state(false)
   let result = $state<QueryResult | null>(null)
@@ -97,6 +105,21 @@
         <ToggleGroup.Item value="production" class="px-2.5 text-xs">Production</ToggleGroup.Item>
       </ToggleGroup.Root>
     </div>
+    {#if db}
+      <div class="flex items-center gap-2">
+        <Badge variant="secondary" class="font-mono text-[11px] uppercase">{mongo ? 'MongoDB' : 'SQL'}</Badge>
+        {#if mongo}
+          <Select.Root type="single" value={query.operation || 'find'} onValueChange={(v) => onChange({ operation: v })}>
+            <Select.Trigger size="sm" class="w-36 font-mono text-xs">{query.operation || 'find'}</Select.Trigger>
+            <Select.Content>{#each mongoOps as o (o)}<Select.Item value={o} label={o} class="font-mono text-xs">{o}</Select.Item>{/each}</Select.Content>
+          </Select.Root>
+          <div class="min-w-0 flex-1"><BindingInput mono value={query.collection} {groups} help={apiHelp} placeholder="Collection, such as orders" onChange={(v) => onChange({ collection: v })} /></div>
+        {:else}
+          <span class="text-muted-foreground min-w-0 flex-1 truncate text-xs">{sqlHelp}</span>
+        {/if}
+        <Button onclick={run} disabled={running || !ds} title="Run (Ctrl+Enter)">{#if running}<Spinner />{:else}<SendIcon />{/if}Run</Button>
+      </div>
+    {:else}
     <div class="flex items-center gap-2">
       <Select.Root type="single" value={query.method} onValueChange={(v) => onChange({ method: v })}>
         <Select.Trigger size="sm" class={['w-28 font-mono text-xs font-semibold', methodColor[query.method]]}>{query.method}</Select.Trigger>
@@ -108,6 +131,7 @@
       </div>
       <Button onclick={run} disabled={running || !ds} title="Send (Ctrl+Enter)">{#if running}<Spinner />{:else}<SendIcon />{/if}Send</Button>
     </div>
+    {/if}
     {#if missing.length}
       <div class="flex items-center gap-2 text-xs">
         <span class="text-muted-foreground">Used but not declared:</span>
@@ -122,14 +146,34 @@
     <Tabs.Root bind:value={tab} class="flex min-h-0 flex-col gap-0 border-b">
       <div class="px-4 pt-2">
         <Tabs.List class="h-8">
+          {#if db}<Tabs.Trigger value="statement" class="text-xs">{mongo ? 'Filter' : 'SQL'}</Tabs.Trigger>{/if}
           <Tabs.Trigger value="params" class="text-xs">Parameters {#if query.parameters.length}<Badge variant="secondary" class="h-4 px-1 text-[10px]">{query.parameters.length}</Badge>{/if}</Tabs.Trigger>
+          {#if !db}
           <Tabs.Trigger value="query" class="text-xs">Query string {#if countOn(query.query)}<Badge variant="secondary" class="h-4 px-1 text-[10px]">{countOn(query.query)}</Badge>{/if}</Tabs.Trigger>
           <Tabs.Trigger value="headers" class="text-xs">Headers {#if countOn(query.headers)}<Badge variant="secondary" class="h-4 px-1 text-[10px]">{countOn(query.headers)}</Badge>{/if}</Tabs.Trigger>
           <Tabs.Trigger value="body" class="text-xs">Body {#if query.bodyType !== 'none'}<Badge variant="secondary" class="h-4 px-1 text-[10px] uppercase">{query.bodyType}</Badge>{/if}</Tabs.Trigger>
+          {/if}
           <Tabs.Trigger value="settings" class="text-xs">Settings</Tabs.Trigger>
         </Tabs.List>
       </div>
       <div class="min-h-0 flex-1 overflow-y-auto p-4">
+        {#if db}
+          <Tabs.Content value="statement" class="flex flex-col gap-3">
+            {#if mongo}
+              <div class="flex flex-col gap-1.5"><Label class="text-xs">{query.operation === 'aggregate' ? 'Pipeline' : 'Filter'}</Label>
+                <TemplateEditor value={query.filter} onChange={(v) => onChange({ filter: v })} {groups} minRows={5} placeholder={query.operation === 'aggregate' ? '[{ "$match": { "status": "{{ params.status }}" } }]' : '{ "status": "{{ params.status }}" }'} help={mongoHelp} /></div>
+              {#if usesDocument}
+                <div class="flex flex-col gap-1.5"><Label class="text-xs">{query.operation?.startsWith('update') ? 'Update' : 'Document'}</Label>
+                  <TemplateEditor value={query.document} onChange={(v) => onChange({ document: v })} {groups} minRows={4} placeholder={query.operation?.startsWith('update') ? '{ "$set": { "status": "{{ params.status }}" } }' : '{ "name": "{{ params.name }}" }'} help={mongoHelp} /></div>
+              {/if}
+              <div class="flex flex-col gap-1.5"><Label class="text-xs">Options</Label>
+                <TemplateEditor value={query.options} onChange={(v) => onChange({ options: v })} {groups} minRows={2} placeholder={'{ "sort": { "createdAt": -1 }, "limit": 50 }'} help="sort, limit, skip and projection for find; upsert for updates." /></div>
+            {:else}
+              <TemplateEditor value={query.sql} onChange={(v) => onChange({ sql: v })} {groups} minRows={9} placeholder={sqlStarter} help={sqlHelp} />
+              <p class="text-muted-foreground text-xs">{sqlHelp} Statements that do not read rows report how many rows they changed.</p>
+            {/if}
+          </Tabs.Content>
+        {/if}
         <Tabs.Content value="params">
           <p class="text-muted-foreground mb-3 text-xs">Parameters are what screens pass in, read as <code>{'{{ params.name }}'}</code>. Test values are used when you send from here.</p>
           {#if query.parameters.length}
@@ -181,6 +225,7 @@
           {/if}
         </Tabs.Content>
         <Tabs.Content value="settings" class="grid max-w-2xl grid-cols-2 gap-4">
+          {#if !db}
           <div class="flex flex-col gap-1.5"><Label class="text-xs">Read the answer as</Label>
             <ToggleGroup.Root type="single" variant="outline" size="sm" class="w-full" value={query.responseType} onValueChange={(v) => v && onChange({ responseType: v as Query['responseType'] })}>
               {#each [['auto', 'Auto'], ['json', 'JSON'], ['xml', 'XML'], ['text', 'Text']] as [v, l] (v)}<ToggleGroup.Item value={v} class="flex-1 text-xs">{l}</ToggleGroup.Item>{/each}
@@ -189,6 +234,7 @@
           <div class="flex flex-col gap-1.5"><Label for="q-rows" class="text-xs">Rows are at</Label>
             <Input id="q-rows" class="h-8 font-mono text-xs" value={query.resultPath} placeholder="data.items" oninput={(e) => onChange({ resultPath: e.currentTarget.value })} />
             <p class="text-muted-foreground text-xs">A path into the body. Empty uses the first list found.</p></div>
+          {/if}
           <div class="flex flex-col gap-1.5"><Label class="text-xs">Who can run it in the app</Label>
             <RoleSelect {roles} value={query.role} onChange={(v) => onChange({ role: v })} /></div>
           <div class="flex flex-col gap-1.5"><Label for="q-cache" class="text-xs">Reuse answers for (seconds)</Label>

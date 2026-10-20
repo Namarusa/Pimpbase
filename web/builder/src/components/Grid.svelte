@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { api, typeInfo, type Field, type Page, type Row, type Table } from '../lib/api'
+  import { api, typeInfo, type Field, type Page, type Row, type RowId, type Table } from '../lib/api'
   import { display, toDateInput, writable } from '../lib/format'
   import FormulaInput from './FormulaInput.svelte'
   import FieldEditor from './FieldEditor.svelte'
@@ -20,8 +20,8 @@
   let sort = $state('')
   let desc = $state(false)
   let offset = $state(0)
-  let selected = $state<Set<number>>(new Set())
-  let editing = $state<{ id: number; field: string } | null>(null)
+  let selected = $state<Set<RowId>>(new Set())
+  let editing = $state<{ id: RowId; field: string } | null>(null)
   let editValue = $state<any>(null)
   let fieldModal = $state<Field | 'new' | null>(null)
   let settingsOpen = $state(false)
@@ -109,12 +109,20 @@
   }
 
   const canWrite = true // the server enforces table permissions on every write
+  // External tables take their columns from their database.
+  const ext = $derived(table.external)
+  let refreshing = $state(false)
+  async function refresh() {
+    refreshing = true
+    try { onTable(await api.refreshTable(app, table.id)); load() } catch (e: any) { error = e.message } finally { refreshing = false }
+  }
 </script>
 
 <div class="grid-wrap">
   <div class="toolbar">
     <h2>{table.name}</h2>
     {#if builder}<button class="ghost small" onclick={() => (settingsOpen = true)} title="Table settings">⚙</button>{/if}
+    {#if ext}<span class="ext-chip" title={`${ext.schema ? ext.schema + '.' : ''}${ext.source}`}>{({ postgres: 'PostgreSQL', mysql: 'MySQL', mssql: 'SQL Server', mongodb: 'MongoDB' })[ext.kind]} · {ext.source}{ext.readOnly ? ' · read only' : ''}</span>{/if}
     <div class="filter">
       <FormulaInput bind:value={filterDraft} {app} table={table.id} placeholder={'Filter, e.g. [Status] = "Open"'} onSubmit={applyFilter} />
     </div>
@@ -122,10 +130,15 @@
     {#if filter}<button class="small ghost" onclick={() => { filterDraft = ''; applyFilter() }}>Clear</button>{/if}
     <div class="grow"></div>
     {#if selected.size}<button class="danger small" onclick={deleteSelected}>Delete {selected.size}</button>{/if}
+    {#if ext}
+      {#if builder}<button class="small" disabled={refreshing} onclick={refresh} title="Read the columns from the database again">{refreshing ? 'Refreshing…' : 'Refresh columns'}</button>{/if}
+      {#if !ext.readOnly}<button class="primary small" onclick={() => (rowModal = 'new')}>+ Row</button>{/if}
+    {:else}
     <button class="small" onclick={() => { importOpen = true; importResult = null; importFile = null }}>Import</button>
     <a class="btn small" href={api.exportURL(app, table.id, filter)}>Export</a>
     {#if builder}<button class="small" onclick={() => (fieldModal = 'new')}>+ Field</button>{/if}
     <button class="primary small" onclick={() => (rowModal = 'new')}>+ Row</button>
+    {/if}
   </div>
   {#if error}<p class="error banner">{error}</p>{/if}
 
@@ -142,7 +155,7 @@
                   <span class="type">{typeInfo(f.type).icon}</span>{f.name}
                   {#if sort === f.name}<span class="arrow">{desc ? '↓' : '↑'}</span>{/if}
                 </button>
-                {#if builder}<button class="ghost small edit" onclick={() => (fieldModal = f)} aria-label={`Edit ${f.name}`}>⋯</button>{/if}
+                {#if builder && !ext}<button class="ghost small edit" onclick={() => (fieldModal = f)} aria-label={`Edit ${f.name}`}>⋯</button>{/if}
               </div>
             </th>
           {/each}
@@ -250,6 +263,7 @@
   .grid-wrap { display: flex; flex-direction: column; height: 100%; min-width: 0; }
   .toolbar { display: flex; align-items: flex-start; gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; }
   .toolbar h2 { line-height: 32px; }
+  .ext-chip { align-self: center; font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--hover); color: var(--muted); white-space: nowrap; max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
   .toolbar > button, .toolbar > a { margin-top: 3px; }
   .filter { flex: 1 1 320px; max-width: 560px; display: flex; }
   .banner { margin: 8px 16px 0; }

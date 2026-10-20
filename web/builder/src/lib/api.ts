@@ -34,17 +34,44 @@ export interface Field {
   id: string; name: string; type: FieldType; required?: boolean; options?: string[]
   linkTable?: string; linkMany?: boolean; formula?: string; formulaMode?: 'dynamic' | 'static'
   resultType?: string
+  // readOnly fields of external tables are filled by their database.
+  readOnly?: boolean
 }
 export interface Table {
   id: string; appId: string; name: string; fields: Field[]; primaryField?: string
   permissions: Permissions
+  // external is set on tables imported from a database data source.
+  external?: ExternalInfo
 }
+export type DbKind = 'postgres' | 'mysql' | 'mssql' | 'mongodb'
+export interface DbColumn {
+  name: string; type: FieldType; dbType: string; nullable: boolean; options?: string[]
+  auto?: boolean; generated?: boolean; binary?: boolean; hidden?: boolean
+}
+export interface ExternalInfo {
+  datasourceId: string; kind: DbKind; schema: string; source: string; sourceKind: 'table' | 'view' | 'collection'
+  primaryKey: string[]; readOnly: boolean; columns: DbColumn[]
+}
+export interface DbTableInfo { schema: string; name: string; kind: 'table' | 'view' | 'collection'; imported?: string; columns?: DbColumn[]; primaryKey?: string[] }
+export interface Connector { kind: DbKind; label: string; port: string }
+export interface ConnectionTest { ok: boolean; message: string; tables: number; durationMs: number }
 export interface RowRule { role: Role; filter: string }
 export interface Permissions { read: Role; write: Role; delete: Role; rows: RowRule[] }
-export interface LinkRef { _id: number; label: string; hidden?: boolean }
+export interface LinkRef { _id: RowId; label: string; hidden?: boolean }
 // FileRef is one file of an attachment field.
 export interface FileRef { id: string; name: string; type: string; size: number; url: string }
-export type Row = Record<string, any> & { _id: number }
+// RowId is a built-in row's number, or an external row's key.
+export type RowId = number | string
+export type Row = Record<string, any> & { _id: RowId }
+
+// rowKey reads a row id from a row, a number or text; null when blank.
+export function rowKey(v: any): RowId | null {
+  if (v && typeof v === 'object' && '_id' in v) v = v._id
+  if (v === null || v === undefined || v === '') return null
+  if (typeof v === 'number') return v
+  const s = String(v).trim()
+  return /^-?\d+$/.test(s) && s.length < 16 ? Number(s) : s
+}
 export interface Page { rows: Row[]; total: number; engine: 'sql' | 'go' }
 export interface FormulaError { start: number; end: number; message: string }
 export interface FunctionInfo { name: string; category: string; signature: string; description: string }
@@ -62,9 +89,14 @@ export interface RuntimeInfo {
 // API connectors.
 export interface Pair { key: string; value: string; off?: boolean }
 export interface Auth { type: 'none' | 'basic' | 'bearer' | 'header' | 'query'; username?: string; password?: string; token?: string; name?: string; value?: string }
+export interface DbSettings {
+  host: string; port: string; database: string; user: string; password: string; schema?: string
+  ssl?: '' | 'disable' | 'require' | 'verify'; uri?: string; options: { key: string; value: string }[]
+  maxConnections?: number; readOnly?: boolean
+}
 export interface Datasource {
-  id: string; appId: string; name: string; kind: 'rest'
-  config: { baseUrl: string; headers: Pair[]; auth: Auth; timeoutSeconds: number }
+  id: string; appId: string; name: string; kind: 'rest' | DbKind
+  config: { baseUrl: string; headers: Pair[]; auth: Auth; timeoutSeconds: number; db?: DbSettings }
 }
 export type ParamType = 'text' | 'number' | 'boolean' | 'json'
 export interface QueryParam { name: string; type: ParamType; default: string; test: string }
@@ -76,6 +108,8 @@ export interface Query {
   bodyType: BodyType; body: string; form: Pair[]; parameters: QueryParam[]
   responseType: 'auto' | 'json' | 'xml' | 'text'; resultPath: string; role: Role; cacheSeconds: number
   fields: QueryField[]; createdAt?: string; updatedAt?: string
+  // Database queries: SQL, or a MongoDB operation on a collection.
+  sql: string; collection: string; operation: string; filter: string; document: string; options: string
 }
 export interface RuntimeQuery { id: string; name: string; parameters: { name: string; type: ParamType; default: string }[]; fields: QueryField[] }
 export interface Variable { name: string; secret: boolean; development: string; production: string; hasDevelopment: boolean; hasProduction: boolean }
@@ -83,7 +117,8 @@ export interface QueryResult {
   ok: boolean; status: number; statusText: string; headers: Record<string, string>
   format: 'json' | 'xml' | 'text'; body: any; rows: Record<string, any>[]; fields: QueryField[]
   parseError?: string; raw?: string; size: number; durationMs: number; cached: boolean
-  request?: { method: string; url: string; headers: Pair[]; body: string }
+  request?: { method: string; url: string; headers: Pair[]; body: string; params?: any[] }
+  rowsAffected?: number; truncated?: boolean; columns?: string[]
 }
 
 // Flows.
@@ -122,6 +157,8 @@ export const preview = { role: '' }
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const init: RequestInit = { method, headers: {} }
   if (preview.role) (init.headers as Record<string, string>)['X-Bubibase-Preview-Role'] = preview.role
+  // The builder reads external tables with the development connection.
+  if (typeof location !== 'undefined' && !location.pathname.startsWith('/app/')) (init.headers as Record<string, string>)['X-Bubibase-Env'] = 'development'
   if (body instanceof FormData) {
     init.body = body
   } else if (body !== undefined) {
@@ -192,10 +229,11 @@ export const api = {
     p.set('offset', String(q.offset ?? 0))
     return call<Page>('GET', `/apps/${enc(app)}/tables/${t}/rows?${p}`)
   },
-  row: (app: string, t: string, id: number) => call<Row>('GET', `/apps/${enc(app)}/tables/${t}/rows/${id}`),
+  row: (app: string, t: string, id: RowId) => call<Row>('GET', `/apps/${enc(app)}/tables/${t}/rows/${enc(String(id))}`),
   createRow: (app: string, t: string, v: object) => call<Row>('POST', `/apps/${enc(app)}/tables/${t}/rows`, v),
-  updateRow: (app: string, t: string, id: number, v: object) => call<Row>('PATCH', `/apps/${enc(app)}/tables/${t}/rows/${id}`, v),
-  deleteRows: (app: string, t: string, ids: number[]) => call<{ deleted: number }>('POST', `/apps/${enc(app)}/tables/${t}/rows/delete`, { ids }),
+  updateRow: (app: string, t: string, id: RowId, v: object) => call<Row>('PATCH', `/apps/${enc(app)}/tables/${t}/rows/${enc(String(id))}`, v),
+  deleteRows: (app: string, t: string, ids: RowId[]) => call<{ deleted: number }>('POST', `/apps/${enc(app)}/tables/${t}/rows/delete`, { ids }),
+  refreshTable: (app: string, t: string) => call<Table>('POST', `/apps/${enc(app)}/tables/${t}/refresh`),
   uploadFile: (app: string, t: string, file: File) => {
     const fd = new FormData()
     fd.append('file', file)
@@ -219,6 +257,13 @@ export const api = {
   createDatasource: (app: string, d: Partial<Datasource>) => call<Datasource>('POST', `/apps/${enc(app)}/datasources`, d),
   updateDatasource: (app: string, id: string, d: Partial<Datasource>) => call<Datasource>('PATCH', `/apps/${enc(app)}/datasources/${id}`, d),
   deleteDatasource: (app: string, id: string) => call('DELETE', `/apps/${enc(app)}/datasources/${id}`),
+  connectors: () => call<Connector[]>('GET', '/connectors'),
+  testConnection: (app: string, kind: DbKind, config: Datasource['config'], env: 'development' | 'production') =>
+    call<ConnectionTest>('POST', `/apps/${enc(app)}/datasources/test`, { kind, config, env }),
+  dbTables: (app: string, ds: string) => call<DbTableInfo[]>('GET', `/apps/${enc(app)}/datasources/${ds}/schema`),
+  dbTable: (app: string, ds: string, schema: string, table: string) =>
+    call<DbTableInfo>('GET', `/apps/${enc(app)}/datasources/${ds}/schema/table?schema=${enc(schema)}&table=${enc(table)}`),
+  importTable: (app: string, ds: string, t: { schema: string; source: string; name: string }) => call<Table>('POST', `/apps/${enc(app)}/datasources/${ds}/tables`, t),
   queries: (app: string) => call<Query[]>('GET', `/apps/${enc(app)}/queries`),
   createQuery: (app: string, q: Partial<Query>) => call<Query>('POST', `/apps/${enc(app)}/queries`, q),
   updateQuery: (app: string, id: string, q: Partial<Query>) => call<Query>('PATCH', `/apps/${enc(app)}/queries/${id}`, q),

@@ -2,7 +2,7 @@
   import { Button } from '$lib/components/ui/button'
   import { Spinner } from '$lib/components/ui/spinner'
   import { Skeleton } from '$lib/components/ui/skeleton'
-  import { api } from '../../api'
+  import { api, rowKey } from '../../api'
   import { writable } from '../../format'
   import Children from '../Children.svelte'
   import { FormState, extendScope, getRuntime, getScope, setForm } from '../context.svelte'
@@ -18,7 +18,7 @@
   extendScope(() => ({ form: form.values }))
   $effect(() => { form.table = rt.table(p.table) })
 
-  const rowId = $derived(Number(typeof p.rowId === 'object' && p.rowId ? p.rowId._id : p.rowId) || 0)
+  const rowId = $derived(rowKey(p.rowId))
   const updating = $derived(p.mode === 'update')
   let loading = $state(false)
   let loadError = $state('')

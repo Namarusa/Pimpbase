@@ -30,7 +30,7 @@ export function formatDate(iso: string): string {
 // toDateInput turns a stored date into the value of an <input type="date">.
 export const toDateInput = (v: any) => (typeof v === 'string' ? v.slice(0, 10) : '')
 
-export const writable = (f: Field) => f.type !== 'formula' && f.type !== 'autonumber'
+export const writable = (f: Field) => f.type !== 'formula' && f.type !== 'autonumber' && !f.readOnly
 
 // fileSize formats a byte count, e.g. 1.2 MB.
 export function fileSize(n: number): string {

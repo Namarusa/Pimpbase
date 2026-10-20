@@ -1,6 +1,6 @@
 // Actions run in order when a button is clicked, a row is chosen or a form
 // is saved. A failing action stops the rest.
-import { api } from '../api'
+import { api, rowKey } from '../api'
 import { resolve, resolveText } from './bindings'
 import type { Runtime } from './context.svelte'
 import type { Action, Scope } from './types'
@@ -113,14 +113,14 @@ export async function runActions(actions: Action[] | undefined, rt: Runtime, bas
             if (f?.type === 'boolean' && typeof val === 'string') val = val === 'true' || val === 'Yes'
             values[v.field] = val
           }
-          const id = idOf(resolve(a.rowId, scope))
+          const id = rowKey(resolve(a.rowId, scope))
           scope.result = id ? await api.updateRow(rt.appId, t.id, id, values) : await api.createRow(rt.appId, t.id, values)
           rt.reload()
           break
         }
         case 'delete_row': {
           const t = rt.table(a.table)
-          const id = idOf(resolve(a.rowId, scope))
+          const id = rowKey(resolve(a.rowId, scope))
           if (!t || !id) throw new Error('the delete action needs a table and a row id')
           await api.deleteRows(rt.appId, t.id, [id])
           rt.reload()
