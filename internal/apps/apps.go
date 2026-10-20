@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -36,7 +37,16 @@ type Design struct {
 	Navigation string `json:"navigation"`
 	// Title replaces the app name in the published app's header.
 	Title string `json:"title"`
+	// ChartPalette names the colours charts use: one of ChartPalettes.
+	ChartPalette string `json:"chartPalette"`
+	// ChartColors are the five #rrggbb colours of the "custom" palette.
+	ChartColors []string `json:"chartColors"`
 }
+
+// ChartPalettes are the chart palettes an app may choose. "theme" follows
+// the accent colour, "custom" uses ChartColors; the builder holds the
+// colours of the others.
+var ChartPalettes = []string{"theme", "ocean", "sunset", "forest", "berry", "mono", "custom"}
 
 var accentRe = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 
@@ -57,6 +67,22 @@ func (d *Design) normalize() error {
 	}
 	if d.Accent != "" && !accentRe.MatchString(d.Accent) {
 		return &InvalidError{"the accent colour is written #rrggbb"}
+	}
+	if d.ChartPalette == "" {
+		d.ChartPalette = "theme"
+	} else if !slices.Contains(ChartPalettes, d.ChartPalette) {
+		return &InvalidError{"the chart palette is one of " + strings.Join(ChartPalettes, ", ")}
+	}
+	if len(d.ChartColors) > 5 {
+		return &InvalidError{"a chart palette has at most five colours"}
+	}
+	for _, c := range d.ChartColors {
+		if !accentRe.MatchString(c) {
+			return &InvalidError{"chart colours are written #rrggbb"}
+		}
+	}
+	if d.ChartPalette == "custom" && len(d.ChartColors) == 0 {
+		return &InvalidError{"a custom chart palette needs its colours"}
 	}
 	d.Title = strings.TrimSpace(d.Title)
 	if len(d.Title) > 100 {

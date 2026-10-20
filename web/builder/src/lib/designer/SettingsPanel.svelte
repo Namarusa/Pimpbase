@@ -14,6 +14,8 @@
   import FieldSelect from './FieldSelect.svelte'
   import FieldsPicker from './FieldsPicker.svelte'
   import OptionsInput from './OptionsInput.svelte'
+  import ChartColors from './ChartColors.svelte'
+  import { colorItems } from '../screen/chart'
   import ActionsEditor from './ActionsEditor.svelte'
   import { registry } from '../screen/registry'
   import { conditionOps } from '../screen/bindings'
@@ -210,6 +212,8 @@
                   </Select.Root>
                 {:else if s.kind === 'color'}
                   <Input id={sid(s)} type="color" class="h-8 w-16 p-1" value={props[s.key] || '#4f46e5'} oninput={(e) => set(s.key, e.currentTarget.value)} />
+                {:else if s.kind === 'chartColors'}
+                  <ChartColors value={props[s.key] ?? {}} onChange={(v) => set(s.key, v)} items={colorItems(props, table?.fields ?? [])} />
                 {:else if s.kind === 'actions'}
                   <ActionsEditor value={props[s.key] ?? []} onChange={(v) => set(s.key, v)} groups={actionGroups} />
                 {:else if s.kind === 'condition'}

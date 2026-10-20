@@ -8,6 +8,8 @@
   import { getRuntime, getScope } from '../context.svelte'
   import { RowSource, aggregate } from '../rows.svelte'
   import { toText } from '../bindings'
+  import { seriesLabel } from '../chart'
+  import { paletteVars, styleString } from '../theme'
   import type { Row } from '../../api'
   import type { Node } from '../types'
 
@@ -26,7 +28,11 @@
   ]
   const kind = $derived(p.chartType ?? 'bar')
   const values = $derived<string[]>(Array.isArray(p.valueFields) && p.valueFields.length ? p.valueFields : [''])
-  const opLabel: Record<string, string> = { count: 'Count', sum: 'Total', avg: 'Average', min: 'Minimum', max: 'Maximum' }
+  // A chart may use another palette than the app's, and set the colour
+  // of single slices or series (props.colors, by label).
+  const own = $derived<Record<string, string>>(p.colors && typeof p.colors === 'object' ? p.colors : {})
+  const colorOf = (label: string, i: number) => own[label] || colors[i % colors.length]
+  const paletteStyle = $derived(p.palette && p.palette !== 'app' ? styleString(paletteVars(p.palette)) : undefined)
 
   // bucket turns a value into its group label and a key that sorts in
   // time order for dates.
@@ -63,14 +69,13 @@
     else out.sort((a, b) => a.key.localeCompare(b.key, undefined, { numeric: true }))
     const top = Number(p.limitGroups) || 0
     if (top > 0) out = out.slice(0, top)
-    return out.map((pt, i) => ({ ...pt, color: colors[i % colors.length] }))
+    return out.map((pt, i) => ({ ...pt, color: colorOf(pt.label, i) }))
   })
 
-  const series = $derived(values.map((f, j) => ({
-    key: `v${j}`,
-    label: (p.op ?? 'count') === 'count' ? 'Rows' : `${opLabel[p.op] ?? ''} ${f}`.trim(),
-    color: colors[j % colors.length],
-  })))
+  const series = $derived(values.map((f, j) => {
+    const label = seriesLabel(p.op, f)
+    return { key: `v${j}`, label, color: colorOf(label, j) }
+  }))
   const config = $derived(Object.fromEntries([
     ...series.map((s) => [s.key, { label: s.label, color: s.color }]),
     ...points.map((pt) => [pt.label, { label: pt.label, color: pt.color }]),
@@ -118,7 +123,7 @@
   const labelRoom = $derived(Math.max(40, Math.min(maxLabel, Math.max(0, ...points.map((pt) => String(pt.label).length))) * 6.5 + 12))
 </script>
 
-<Card.Root class="h-full gap-4">
+<Card.Root class="h-full gap-4" style={paletteStyle}>
   {#if p.title || p.description}
     <Card.Header>
       {#if p.title}<Card.Title>{toText(p.title)}</Card.Title>{/if}

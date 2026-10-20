@@ -27,6 +27,8 @@ export interface Design {
   accent: string
   navigation: 'sidebar' | 'top' | 'none'
   title: string
+  chartPalette?: string
+  chartColors?: string[]
 }
 
 // Action is one step run when a button is clicked, a row is chosen or a
@@ -47,6 +49,7 @@ export type SettingKind =
   | 'field'
   | 'fields'
   | 'color'
+  | 'chartColors' // colours by slice or series label
   | 'icon'
   | 'actions'
   | 'filter'

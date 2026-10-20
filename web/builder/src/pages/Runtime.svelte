@@ -10,7 +10,7 @@
   import { session } from '../lib/session.svelte'
   import { Runtime } from '../lib/screen/context.svelte'
   import { matchRoute } from '../lib/screen/bindings'
-  import { accentVars } from '../lib/screen/theme'
+  import { themeVars } from '../lib/screen/theme'
   import ScreenHost from '../lib/screen/ScreenHost.svelte'
   import ConfirmHost from '../lib/screen/ConfirmHost.svelte'
   import AppFrame from '../lib/screen/AppFrame.svelte'
@@ -59,7 +59,7 @@
     if (!info) return
     const theme = info.app.design.theme
     untrack(() => setMode(theme === 'dark' ? 'dark' : theme === 'light' ? 'light' : 'system'))
-    const vars = accentVars(info.app.design.accent)
+    const vars = themeVars(info.app.design)
     for (const [k, v] of Object.entries(vars)) document.documentElement.style.setProperty(k, v)
     return () => { for (const k of Object.keys(vars)) document.documentElement.style.removeProperty(k) }
   })

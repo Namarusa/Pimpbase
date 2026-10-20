@@ -84,6 +84,7 @@ import SliderField from './components/SliderField.svelte'
 import LinkField from './components/LinkField.svelte'
 
 import { sizes } from './styles'
+import { chartPalettes } from './theme'
 import { aggregateOptions } from './rows.svelte'
 import type { ComponentDef, Setting } from './types'
 
@@ -443,7 +444,7 @@ const defs: ComponentDef[] = [
   {
     type: 'chart', label: 'Chart', category: 'Data', icon: ChartColumnIcon, component: Chart, tableSource: true,
     description: 'Bar, line, area, pie and donut charts that group and total rows.',
-    defaults: () => ({ table: '', title: 'Chart', description: '', chartType: 'bar', labelField: '', op: 'count', valueFields: [], dateGroup: 'month', sortBy: 'label', limitGroups: 0, height: 'md', legend: true }),
+    defaults: () => ({ table: '', title: 'Chart', description: '', chartType: 'bar', labelField: '', op: 'count', valueFields: [], dateGroup: 'month', sortBy: 'label', limitGroups: 0, height: 'md', legend: true, palette: 'app' }),
     settings: [
       ...source,
       { key: 'title', label: 'Title', kind: 'text' },
@@ -457,6 +458,8 @@ const defs: ComponentDef[] = [
       { key: 'limitGroups', label: 'Show at most (0 shows all)', kind: 'number' },
       { key: 'height', label: 'Height', kind: 'segmented', options: opts(['sm', 'S'], ['md', 'M'], ['lg', 'L'], ['xl', 'XL']), section: 'Style' },
       { key: 'legend', label: 'Legend', kind: 'boolean', section: 'Style' },
+      { key: 'palette', label: 'Colours', kind: 'select', section: 'Style', options: [{ value: 'app', label: "The app's chart colours" }, ...chartPalettes.map((x) => ({ value: x.id, label: x.label }))] },
+      { key: 'colors', label: 'Colour of each', kind: 'chartColors', section: 'Style' },
     ],
   },
   {

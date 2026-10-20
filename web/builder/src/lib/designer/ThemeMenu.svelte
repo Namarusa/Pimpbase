@@ -7,7 +7,7 @@
   import PaletteIcon from '@lucide/svelte/icons/palette'
   import CheckIcon from '@lucide/svelte/icons/check'
   import { api } from '../api'
-  import { accentChoices } from '../screen/theme'
+  import { accentChoices, chartPalettes, paletteVars, accentVars, styleString } from '../screen/theme'
   import { getDesigner } from './state.svelte'
   import type { Design } from '../screen/types'
 
@@ -15,6 +15,17 @@
   const d = getDesigner()
   let error = $state('')
   let title = $state(d.app.design.title)
+
+  const palette = $derived(d.app.design.chartPalette || 'theme')
+  // Custom colours start from five evenly spread hues.
+  const startColors = ['#4f46e5', '#0d9488', '#d97706', '#e11d48', '#16a34a']
+  const custom = $derived(d.app.design.chartColors?.length ? d.app.design.chartColors : startColors)
+  const swatches = (id: string) => Object.values(paletteVars(id, custom))
+  function setCustom(i: number, c: string) {
+    const next = [...custom]
+    next[i] = c
+    save({ chartPalette: 'custom', chartColors: next })
+  }
 
   async function save(p: Partial<Design>) {
     const design = { ...d.app.design, ...p }
@@ -50,6 +61,28 @@
         {/each}
         <Input type="color" class="size-7 cursor-pointer rounded-full p-0" value={d.app.design.accent || '#4f46e5'} onchange={(e) => save({ accent: e.currentTarget.value })} aria-label="Another colour" />
       </div>
+    </div>
+    <div class="flex flex-col gap-2">
+      <Label class="text-xs">Chart colours</Label>
+      <!-- The swatches use the app's accent, as its charts do. -->
+      <div class="grid grid-cols-2 gap-1.5" style={styleString(accentVars(d.app.design.accent))}>
+        {#each [...chartPalettes.map((x) => ({ id: x.id, label: x.label })), { id: 'custom', label: 'Custom' }] as x (x.id)}
+          <button type="button" aria-pressed={palette === x.id} onclick={() => save({ chartPalette: x.id, chartColors: x.id === 'custom' ? custom : d.app.design.chartColors })}
+            class={['hover:bg-accent flex items-center gap-2 rounded-md border px-2 py-1.5 text-left text-xs', palette === x.id && 'border-primary ring-primary/30 ring-2']}>
+            <span class="flex shrink-0 -space-x-1">
+              {#each swatches(x.id) as c, i (i)}<span class="ring-background size-3 rounded-full ring-2" style:background={c}></span>{/each}
+            </span>
+            <span class="truncate">{x.label}</span>
+          </button>
+        {/each}
+      </div>
+      {#if palette === 'custom'}
+        <div class="flex items-center gap-2">
+          {#each custom as c, i (i)}
+            <Input type="color" class="size-7 cursor-pointer rounded-full p-0" value={c} onchange={(e) => setCustom(i, e.currentTarget.value)} aria-label={`Chart colour ${i + 1}`} />
+          {/each}
+        </div>
+      {/if}
     </div>
     <div class="flex flex-col gap-2">
       <Label class="text-xs">Navigation</Label>

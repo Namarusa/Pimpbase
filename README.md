@@ -62,7 +62,10 @@ Published apps live at `/app/<app-url-name>/<screen route>`. Each screen has
 a route (`/jobs/:id` passes `url.id`) and a minimum role; anonymous visitors
 see Public screens only and are asked to sign in otherwise. The app's theme
 (light, dark or system), accent colour and navigation (sidebar, top bar or
-none) are set in the designer's theme menu.
+none) are set in the designer's theme menu, as are the chart colours: a
+preset palette (each with light and dark variants), shades of the accent, or
+five custom colours. A chart can use another palette than the app's and set
+the colour of single slices or series.
 
 Components (40):
 

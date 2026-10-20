@@ -27,6 +27,16 @@ func TestScreens(t *testing.T) {
 			t.Errorf("design = %v", d)
 		}
 		owner.do("PATCH", base, map[string]any{"design": map[string]any{"accent": "blue"}}, 400)
+		app = owner.do("PATCH", base, map[string]any{"design": map[string]any{"chartPalette": "custom", "chartColors": []string{"#112233", "#445566"}}}, 200)
+		if d := app["design"].(map[string]any); d["chartPalette"] != "custom" || len(d["chartColors"].([]any)) != 2 {
+			t.Errorf("design = %v", d)
+		}
+		owner.do("PATCH", base, map[string]any{"design": map[string]any{"chartPalette": "neon"}}, 400)
+		owner.do("PATCH", base, map[string]any{"design": map[string]any{"chartPalette": "custom"}}, 400)
+		owner.do("PATCH", base, map[string]any{"design": map[string]any{"chartPalette": "custom", "chartColors": []string{"red"}}}, 400)
+		if d := owner.do("PATCH", base, map[string]any{"design": map[string]any{}}, 200)["design"].(map[string]any); d["chartPalette"] != "theme" {
+			t.Errorf("default palette = %v", d["chartPalette"])
+		}
 
 		home := owner.do("POST", base+"/screens", map[string]any{"name": "Home", "route": "home/"}, 201)
 		if home["route"] != "/home" || home["role"] != "BASIC" {
