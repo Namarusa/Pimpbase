@@ -168,6 +168,12 @@ func (ch *checker) typeOf(n Node) Type {
 			ch.fail(n, "%s takes %s", n.Name, f.arity())
 			return f.result(args)
 		}
+		if f.check != nil {
+			if msg := f.check(args); msg != "" {
+				ch.fail(n, "%s", msg)
+				return f.result(args)
+			}
+		}
 		for i, t := range args {
 			want := f.param(i)
 			if !accepts(want, t) {

@@ -1,0 +1,993 @@
+{
+ "cases": [
+  {
+   "src": "1 + 2 * 3",
+   "want": 7
+  },
+  {
+   "src": "2 ^ 3 ^ 2",
+   "want": 512
+  },
+  {
+   "src": "-[qty] + 1",
+   "want": -2
+  },
+  {
+   "src": "[qty] / 0",
+   "want": null
+  },
+  {
+   "src": "\"a\" \u0026 1 \u0026 TRUE",
+   "want": "a1true"
+  },
+  {
+   "src": "[qty] * [price]",
+   "want": 7.5
+  },
+  {
+   "src": "[blank] + 1",
+   "want": 1
+  },
+  {
+   "src": "[note] \u0026 \"!\"",
+   "want": "!"
+  },
+  {
+   "src": "[qty] \u003e 2 AND NOT [done]",
+   "want": false
+  },
+  {
+   "src": "[qty] IN (1, 2, 3)",
+   "want": true
+  },
+  {
+   "src": "[name] NOT IN (\"Bo\")",
+   "want": true
+  },
+  {
+   "src": "[blank] = 0",
+   "want": true
+  },
+  {
+   "src": "[due] = NULL",
+   "want": false
+  },
+  {
+   "src": "[due] \u003c \"2026-10-02\"",
+   "want": true
+  },
+  {
+   "src": "\"10\" \u003e 9",
+   "want": true
+  },
+  {
+   "src": "\"abc\" \u003c \"abd\"",
+   "want": true
+  },
+  {
+   "src": "[unit price] * 2",
+   "want": 8
+  },
+  {
+   "src": "Current.User.Email",
+   "want": "ada@example.com"
+  },
+  {
+   "src": "VALUE(\"x\") + 1",
+   "want": {
+    "error": true
+   }
+  },
+  {
+   "src": "[nodate] \u003c [due]",
+   "want": false
+  },
+  {
+   "src": "[nodate] = NULL",
+   "want": false
+  },
+  {
+   "src": "IF([done], \"y\", \"n\")",
+   "want": "y"
+  },
+  {
+   "src": "IF(FALSE, 1)",
+   "want": null
+  },
+  {
+   "src": "AND([done], [qty] \u003e 1)",
+   "want": true
+  },
+  {
+   "src": "OR(FALSE, [blank] \u003e 0)",
+   "want": false
+  },
+  {
+   "src": "NOT([done])",
+   "want": false
+  },
+  {
+   "src": "ISBLANK([note])",
+   "want": true
+  },
+  {
+   "src": "ISBLANK(\"\")",
+   "want": true
+  },
+  {
+   "src": "ISBLANK([tags])",
+   "want": false
+  },
+  {
+   "src": "BLANKVALUE([note], \"-\")",
+   "want": "-"
+  },
+  {
+   "src": "IFERROR(VALUE(\"x\"), 0)",
+   "want": 0
+  },
+  {
+   "src": "IFERROR(1, 0)",
+   "want": 1
+  },
+  {
+   "src": "SWITCH([qty], 1, \"one\", 3, \"three\", \"many\")",
+   "want": "three"
+  },
+  {
+   "src": "SWITCH([qty], 1, \"one\", \"many\")",
+   "want": "many"
+  },
+  {
+   "src": "SWITCH([qty], 1, \"one\")",
+   "want": null
+  },
+  {
+   "src": "SWITCH([name], \"ada\", 1, \"Ada\", 2)",
+   "want": 2
+  },
+  {
+   "src": "IFS([qty] \u003e 5, \"big\", [qty] \u003e 1, \"mid\", TRUE, \"small\")",
+   "want": "mid"
+  },
+  {
+   "src": "IFS(FALSE, 1)",
+   "want": null
+  },
+  {
+   "src": "COALESCE([note], [blank], [name])",
+   "want": "Ada"
+  },
+  {
+   "src": "COALESCE(\"\", [note])",
+   "want": null
+  },
+  {
+   "src": "COALESCE([blank], 5)",
+   "want": 5
+  },
+  {
+   "src": "ISNUMBER([qty])",
+   "want": true
+  },
+  {
+   "src": "ISNUMBER(\" 12.5 \")",
+   "want": true
+  },
+  {
+   "src": "ISNUMBER(\"1e3\")",
+   "want": true
+  },
+  {
+   "src": "ISNUMBER(\"12a\")",
+   "want": false
+  },
+  {
+   "src": "ISNUMBER(\"0x10\")",
+   "want": false
+  },
+  {
+   "src": "ISNUMBER([note])",
+   "want": false
+  },
+  {
+   "src": "CONCAT(\"a\", 1, [blank], TRUE)",
+   "want": "a1true"
+  },
+  {
+   "src": "UPPER([name])",
+   "want": "ADA"
+  },
+  {
+   "src": "LOWER([name])",
+   "want": "ada"
+  },
+  {
+   "src": "TRIM(\"  a b  \")",
+   "want": "a b"
+  },
+  {
+   "src": "LEN([word])",
+   "want": 11
+  },
+  {
+   "src": "LEN(\"éé\")",
+   "want": 2
+  },
+  {
+   "src": "LEFT([word], 4)",
+   "want": "hell"
+  },
+  {
+   "src": "RIGHT([word], 3)",
+   "want": "rld"
+  },
+  {
+   "src": "MID([word], 7, 3)",
+   "want": "wor"
+  },
+  {
+   "src": "MID(\"abc\", 0, 2)",
+   "want": "ab"
+  },
+  {
+   "src": "LEFT(\"abc\", -1)",
+   "want": ""
+  },
+  {
+   "src": "CONTAINS([word], \"lo w\")",
+   "want": true
+  },
+  {
+   "src": "CONTAINS([tags], \"blue\")",
+   "want": true
+  },
+  {
+   "src": "STARTSWITH([word], \"he\")",
+   "want": true
+  },
+  {
+   "src": "ENDSWITH([word], \"x\")",
+   "want": false
+  },
+  {
+   "src": "REPLACE([word], \"o\", \"0\")",
+   "want": "hell0 w0rld"
+  },
+  {
+   "src": "TEXT(1.50)",
+   "want": "1.5"
+  },
+  {
+   "src": "TEXT([due])",
+   "want": "2026-10-01"
+  },
+  {
+   "src": "TEXT([at])",
+   "want": "2026-10-18T15:30:45Z"
+  },
+  {
+   "src": "VALUE(\" 42 \")",
+   "want": 42
+  },
+  {
+   "src": "VALUE(\"\")",
+   "want": null
+  },
+  {
+   "src": "SPLIT(\"a,b,,c\", \",\")",
+   "want": [
+    "a",
+    "b",
+    "",
+    "c"
+   ]
+  },
+  {
+   "src": "SPLIT(\"\", \",\")",
+   "want": []
+  },
+  {
+   "src": "JOIN([tags], \"/\")",
+   "want": "red/blue/red"
+  },
+  {
+   "src": "PROPER([word])",
+   "want": "Hello World"
+  },
+  {
+   "src": "PROPER(\"o'neil MCDONALD 2nd\")",
+   "want": "O'neil Mcdonald 2nd"
+  },
+  {
+   "src": "PADLEFT(\"7\", 3, \"0\")",
+   "want": "007"
+  },
+  {
+   "src": "PADLEFT(\"abcd\", 3, \"0\")",
+   "want": "abcd"
+  },
+  {
+   "src": "PADRIGHT(\"ab\", 5, \"xy\")",
+   "want": "abxyx"
+  },
+  {
+   "src": "PADLEFT(\"a\", 3)",
+   "want": "  a"
+  },
+  {
+   "src": "REPT(\"ab\", 3)",
+   "want": "ababab"
+  },
+  {
+   "src": "REPT(\"x\", 0)",
+   "want": ""
+  },
+  {
+   "src": "REPT(\"x\", -2)",
+   "want": ""
+  },
+  {
+   "src": "FIND(\"o\", [word])",
+   "want": 5
+  },
+  {
+   "src": "FIND(\"o\", [word], 6)",
+   "want": 8
+  },
+  {
+   "src": "FIND(\"z\", [word])",
+   "want": 0
+  },
+  {
+   "src": "FIND(\"\", \"abc\")",
+   "want": 1
+  },
+  {
+   "src": "FIND(\"é\", \"aéb\")",
+   "want": 2
+  },
+  {
+   "src": "FIND(\"a\", \"abc\", 9)",
+   "want": 0
+  },
+  {
+   "src": "REGEXMATCH([word], \"^h.*d$\")",
+   "want": true
+  },
+  {
+   "src": "REGEXMATCH([name], \"(?i)^ADA$\")",
+   "want": true
+  },
+  {
+   "src": "REGEXMATCH([name], \"^ADA$\")",
+   "want": false
+  },
+  {
+   "src": "REGEXEXTRACT(\"Order #1234 shipped\", \"[0-9]+\")",
+   "want": "1234"
+  },
+  {
+   "src": "REGEXEXTRACT(\"id=42;\", \"id=([0-9]+)\")",
+   "want": "42"
+  },
+  {
+   "src": "REGEXEXTRACT(\"abc\", \"[0-9]\")",
+   "want": null
+  },
+  {
+   "src": "REGEXREPLACE(\"2026-10-18\", \"([0-9]+)-([0-9]+)-([0-9]+)\", \"$3/$2/$1\")",
+   "want": "18/10/2026"
+  },
+  {
+   "src": "REGEXREPLACE(\"a.b.c\", \"\\.\", \"$$\")",
+   "want": "a$b$c"
+  },
+  {
+   "src": "REGEXREPLACE(\"aaa\", \"a\", \"$0$0\")",
+   "want": "aaaaaa"
+  },
+  {
+   "src": "REGEXMATCH(\"a\", \"(\")",
+   "want": {
+    "error": true
+   }
+  },
+  {
+   "src": "FORMATDATE([at], \"YYYY-MM-DD HH:mm:ss\")",
+   "want": "2026-10-18 15:30:45"
+  },
+  {
+   "src": "FORMATDATE([at], \"D MMM YY\")",
+   "want": "18 Oct 26"
+  },
+  {
+   "src": "FORMATDATE([at], \"dddd D MMMM YYYY\")",
+   "want": "Sunday 18 October 2026"
+  },
+  {
+   "src": "FORMATDATE([at], \"ddd h:mm A\")",
+   "want": "Sun 3:30 PM"
+  },
+  {
+   "src": "FORMATDATE([at], \"[Week of] M/D\")",
+   "want": "Week of 10/18"
+  },
+  {
+   "src": "FORMATDATE([due], \"hh a\")",
+   "want": "12 am"
+  },
+  {
+   "src": "FORMATDATE([at], \"HH:mm\", \"Europe/Paris\")",
+   "want": "17:30"
+  },
+  {
+   "src": "FORMATDATE([at], \"D HH:mm\", \"America/New_York\")",
+   "want": "18 11:30"
+  },
+  {
+   "src": "FORMATDATE([at], \"HH\", \"Mars/Base\")",
+   "want": {
+    "error": true
+   }
+  },
+  {
+   "src": "FORMATDATE([nodate], \"YYYY\")",
+   "want": null
+  },
+  {
+   "src": "FORMATNUMBER(1234567.891, 2)",
+   "want": "1,234,567.89"
+  },
+  {
+   "src": "FORMATNUMBER(-0.004, 2)",
+   "want": "0.00"
+  },
+  {
+   "src": "FORMATNUMBER(-1234.5)",
+   "want": "-1,235"
+  },
+  {
+   "src": "FORMATNUMBER(1234.5, 1, \" \")",
+   "want": "1 234.5"
+  },
+  {
+   "src": "FORMATNUMBER(999, 0, \"\")",
+   "want": "999"
+  },
+  {
+   "src": "FORMATNUMBER(0.125, 2)",
+   "want": "0.13"
+  },
+  {
+   "src": "FORMATNUMBER([blank], 2)",
+   "want": null
+  },
+  {
+   "src": "ROUND(2.345, 2)",
+   "want": 2.35
+  },
+  {
+   "src": "ROUND(-2.5)",
+   "want": -3
+  },
+  {
+   "src": "ROUND(1234, -2)",
+   "want": 1200
+  },
+  {
+   "src": "FLOOR(-1.5)",
+   "want": -2
+  },
+  {
+   "src": "CEILING(1.2)",
+   "want": 2
+  },
+  {
+   "src": "ABS(-3)",
+   "want": 3
+  },
+  {
+   "src": "SQRT(16)",
+   "want": 4
+  },
+  {
+   "src": "SQRT(-1)",
+   "want": {
+    "error": true
+   }
+  },
+  {
+   "src": "POWER(2, 10)",
+   "want": 1024
+  },
+  {
+   "src": "MOD(-7, 3)",
+   "want": 2
+  },
+  {
+   "src": "MOD(7, 0)",
+   "want": null
+  },
+  {
+   "src": "SUM([nums], 4)",
+   "want": 10
+  },
+  {
+   "src": "AVERAGE([nums])",
+   "want": 2
+  },
+  {
+   "src": "MIN([nums], 0.5)",
+   "want": 0.5
+  },
+  {
+   "src": "MAX(1, [qty])",
+   "want": 3
+  },
+  {
+   "src": "COUNT([nums])",
+   "want": 3
+  },
+  {
+   "src": "ROUNDUP(1.1, 1)",
+   "want": 1.1
+  },
+  {
+   "src": "ROUNDUP(1.11, 1)",
+   "want": 1.2
+  },
+  {
+   "src": "ROUNDUP(-1.11, 1)",
+   "want": -1.2
+  },
+  {
+   "src": "ROUNDUP(2)",
+   "want": 2
+  },
+  {
+   "src": "ROUNDUP(2.0001)",
+   "want": 3
+  },
+  {
+   "src": "ROUNDDOWN(1.99, 1)",
+   "want": 1.9
+  },
+  {
+   "src": "ROUNDDOWN(-1.99)",
+   "want": -1
+  },
+  {
+   "src": "ROUNDDOWN(1234, -2)",
+   "want": 1200
+  },
+  {
+   "src": "ROUNDDOWN(0.3 * 3, 1)",
+   "want": 0.9
+  },
+  {
+   "src": "SIGN(-4)",
+   "want": -1
+  },
+  {
+   "src": "SIGN(0)",
+   "want": 0
+  },
+  {
+   "src": "SIGN([qty])",
+   "want": 1
+  },
+  {
+   "src": "LN(1)",
+   "want": 0
+  },
+  {
+   "src": "LN(0)",
+   "want": {
+    "error": true
+   }
+  },
+  {
+   "src": "LOG(1000)",
+   "want": 3
+  },
+  {
+   "src": "LOG(8, 2)",
+   "want": 3
+  },
+  {
+   "src": "LOG(8, 1)",
+   "want": {
+    "error": true
+   }
+  },
+  {
+   "src": "EXP(0)",
+   "want": 1
+  },
+  {
+   "src": "ROUND(PI(), 4)",
+   "want": 3.1416
+  },
+  {
+   "src": "RANDBETWEEN(5, 5)",
+   "want": 5
+  },
+  {
+   "src": "RANDBETWEEN(3, 1)",
+   "want": {
+    "error": true
+   }
+  },
+  {
+   "src": "TODAY()",
+   "want": {
+    "date": "2026-10-18T00:00:00Z"
+   }
+  },
+  {
+   "src": "NOW()",
+   "want": {
+    "date": "2026-10-18T15:30:00Z"
+   }
+  },
+  {
+   "src": "DATE(2026, 2, 30)",
+   "want": {
+    "date": "2026-03-02T00:00:00Z"
+   }
+  },
+  {
+   "src": "DATEVALUE(\"2026-10-18 08:00:00\")",
+   "want": {
+    "date": "2026-10-18T08:00:00Z"
+   }
+  },
+  {
+   "src": "YEAR([due])",
+   "want": 2026
+  },
+  {
+   "src": "MONTH([due])",
+   "want": 10
+  },
+  {
+   "src": "DAY([due])",
+   "want": 1
+  },
+  {
+   "src": "WEEKDAY([due])",
+   "want": 4
+  },
+  {
+   "src": "YEAR([nodate])",
+   "want": null
+  },
+  {
+   "src": "DATEADD([due], 1, \"month\")",
+   "want": {
+    "date": "2026-11-01T00:00:00Z"
+   }
+  },
+  {
+   "src": "DATEADD([due], -2, \"weeks\")",
+   "want": {
+    "date": "2026-09-17T00:00:00Z"
+   }
+  },
+  {
+   "src": "DATEADD([at], 90, \"minutes\")",
+   "want": {
+    "date": "2026-10-18T17:00:45Z"
+   }
+  },
+  {
+   "src": "DATEDIFF([due], [at], \"days\")",
+   "want": 17
+  },
+  {
+   "src": "DATEDIFF(DATE(2026, 1, 31), DATE(2026, 2, 28), \"months\")",
+   "want": 0
+  },
+  {
+   "src": "DATEDIFF([due], DATE(2028, 10, 1), \"years\")",
+   "want": 2
+  },
+  {
+   "src": "DATEADD([due], 1, \"fortnight\")",
+   "want": {
+    "error": true
+   }
+  },
+  {
+   "src": "EOMONTH([due])",
+   "want": {
+    "date": "2026-10-31T00:00:00Z"
+   }
+  },
+  {
+   "src": "EOMONTH([due], 4)",
+   "want": {
+    "date": "2027-02-28T00:00:00Z"
+   }
+  },
+  {
+   "src": "EOMONTH(DATE(2024, 1, 15), 1)",
+   "want": {
+    "date": "2024-02-29T00:00:00Z"
+   }
+  },
+  {
+   "src": "EOMONTH([at], -1)",
+   "want": {
+    "date": "2026-09-30T00:00:00Z"
+   }
+  },
+  {
+   "src": "WEEKNUM(DATE(2026, 1, 1))",
+   "want": 1
+  },
+  {
+   "src": "WEEKNUM(DATE(2027, 1, 1))",
+   "want": 53
+  },
+  {
+   "src": "WEEKNUM([at])",
+   "want": 42
+  },
+  {
+   "src": "QUARTER([due])",
+   "want": 4
+  },
+  {
+   "src": "QUARTER(DATE(2026, 3, 31))",
+   "want": 1
+  },
+  {
+   "src": "HOUR([at])",
+   "want": 15
+  },
+  {
+   "src": "MINUTE([at])",
+   "want": 30
+  },
+  {
+   "src": "HOUR([due])",
+   "want": 0
+  },
+  {
+   "src": "WORKDAYS(DATE(2026, 10, 19), DATE(2026, 10, 25))",
+   "want": 5
+  },
+  {
+   "src": "WORKDAYS(DATE(2026, 10, 24), DATE(2026, 10, 25))",
+   "want": 0
+  },
+  {
+   "src": "WORKDAYS(DATE(2026, 10, 30), DATE(2026, 10, 19))",
+   "want": -10
+  },
+  {
+   "src": "WORKDAYS([due], [at])",
+   "want": 12
+  },
+  {
+   "src": "WORKDAYS([nodate], [due])",
+   "want": null
+  },
+  {
+   "src": "ADDWORKDAYS(DATE(2026, 10, 16), 1)",
+   "want": {
+    "date": "2026-10-19T00:00:00Z"
+   }
+  },
+  {
+   "src": "ADDWORKDAYS(DATE(2026, 10, 19), -1)",
+   "want": {
+    "date": "2026-10-16T00:00:00Z"
+   }
+  },
+  {
+   "src": "ADDWORKDAYS(DATE(2026, 10, 17), 0)",
+   "want": {
+    "date": "2026-10-17T00:00:00Z"
+   }
+  },
+  {
+   "src": "ADDWORKDAYS([at], 10)",
+   "want": {
+    "date": "2026-10-30T00:00:00Z"
+   }
+  },
+  {
+   "src": "LIST(1, \"a\", [note])",
+   "want": [
+    1,
+    "a",
+    null
+   ]
+  },
+  {
+   "src": "LIST()",
+   "want": []
+  },
+  {
+   "src": "FIRST([tags])",
+   "want": "red"
+  },
+  {
+   "src": "LAST([nums])",
+   "want": 2
+  },
+  {
+   "src": "FIRST(LIST())",
+   "want": null
+  },
+  {
+   "src": "FIRST([name])",
+   "want": "Ada"
+  },
+  {
+   "src": "INDEX([tags], 2)",
+   "want": "blue"
+  },
+  {
+   "src": "INDEX([tags], -1)",
+   "want": "red"
+  },
+  {
+   "src": "INDEX([tags], 9)",
+   "want": null
+  },
+  {
+   "src": "INDEX([tags], 0)",
+   "want": null
+  },
+  {
+   "src": "SLICE([tags], 2)",
+   "want": [
+    "blue",
+    "red"
+   ]
+  },
+  {
+   "src": "SLICE([tags], 1, 2)",
+   "want": [
+    "red",
+    "blue"
+   ]
+  },
+  {
+   "src": "SLICE([tags], 5, 2)",
+   "want": []
+  },
+  {
+   "src": "SLICE([tags], 0, 1)",
+   "want": [
+    "red"
+   ]
+  },
+  {
+   "src": "SORT([nums])",
+   "want": [
+    1,
+    2,
+    3,
+    null
+   ]
+  },
+  {
+   "src": "SORT([nums], TRUE)",
+   "want": [
+    3,
+    2,
+    1,
+    null
+   ]
+  },
+  {
+   "src": "SORT([tags])",
+   "want": [
+    "blue",
+    "red",
+    "red"
+   ]
+  },
+  {
+   "src": "SORT(LIST(10, \"9\"))",
+   "want": [
+    10,
+    "9"
+   ]
+  },
+  {
+   "src": "SORT(LIST([at], [due]))",
+   "want": [
+    {
+     "date": "2026-10-01T00:00:00Z"
+    },
+    {
+     "date": "2026-10-18T15:30:45Z"
+    }
+   ]
+  },
+  {
+   "src": "UNIQUE([tags])",
+   "want": [
+    "red",
+    "blue"
+   ]
+  },
+  {
+   "src": "UNIQUE(LIST(1, \"1\", 1))",
+   "want": [
+    1,
+    "1"
+   ]
+  },
+  {
+   "src": "COUNT(UNIQUE([tags]))",
+   "want": 2
+  },
+  {
+   "src": "JOIN(SORT(UNIQUE([tags])), \", \")",
+   "want": "blue, red"
+  },
+  {
+   "src": "LEN(UUID())",
+   "want": 36
+  },
+  {
+   "src": "REGEXMATCH(UUID(), \"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$\")",
+   "want": true
+  }
+ ],
+ "comment": "Generated by internal/formula/vectors_test.go; do not edit.",
+ "fields": {
+  "at": {
+   "date": "2026-10-18T15:30:45Z"
+  },
+  "blank": null,
+  "done": true,
+  "due": {
+   "date": "2026-10-01T00:00:00Z"
+  },
+  "name": "Ada",
+  "nodate": null,
+  "note": null,
+  "nums": [
+   3,
+   1,
+   null,
+   2
+  ],
+  "price": 2.5,
+  "qty": 3,
+  "tags": [
+   "red",
+   "blue",
+   "red"
+  ],
+  "unit price": 4,
+  "word": "hello world"
+ },
+ "now": "2026-10-18T15:30:00Z",
+ "types": {
+  "at": "date",
+  "blank": "number",
+  "done": "boolean",
+  "due": "date",
+  "name": "text",
+  "nodate": "date",
+  "note": "text",
+  "nums": "list",
+  "price": "number",
+  "qty": "number",
+  "tags": "list",
+  "unit price": "number",
+  "word": "text"
+ },
+ "user": {
+  "email": "ada@example.com"
+ }
+}

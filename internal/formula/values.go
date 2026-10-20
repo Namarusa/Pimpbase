@@ -1,8 +1,10 @@
 package formula
 
 import (
+	"errors"
 	"fmt"
 	"math"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -103,17 +105,30 @@ func toNumber(v any) (float64, error) {
 		}
 		return 0, nil
 	case string:
-		s := strings.TrimSpace(v)
-		if s == "" {
+		if strings.TrimSpace(v) == "" {
 			return 0, nil
 		}
-		f, err := strconv.ParseFloat(s, 64)
-		if err != nil {
+		f, ok := parseNumber(v)
+		if !ok {
 			return 0, fmt.Errorf("expected a number, got %q", v)
 		}
 		return f, nil
 	}
 	return 0, fmt.Errorf("expected a number, got a %s", typeOf(v))
+}
+
+var numberText = regexp.MustCompile(`^[+-]?([0-9]+\.?[0-9]*|\.[0-9]+)([eE][+-]?[0-9]+)?$`)
+
+// parseNumber reads plain decimal text such as "12", "-0.5" or "1e3",
+// with spaces around it allowed. Formulas in the browser read numbers the
+// same way.
+func parseNumber(s string) (float64, bool) {
+	s = strings.TrimSpace(s)
+	if !numberText.MatchString(s) {
+		return 0, false
+	}
+	f, err := strconv.ParseFloat(s, 64)
+	return f, err == nil || errors.Is(err, strconv.ErrRange)
 }
 
 // ToText converts any value to its text form.

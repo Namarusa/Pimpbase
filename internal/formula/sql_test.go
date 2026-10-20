@@ -60,8 +60,14 @@ var predicates = []string{
 	"[n] = NULL", "NOT ([n] = NULL)", "[t] = NULL",
 	`IF([b], [n], [m]) > 1`, `IF([n] > 0, "pos", "neg") = "pos"`, `ISBLANK(IF([b], [n]))`, `NOT IF([b], [n] > 0)`,
 	`IF([n] > 0, [t], [u]) = ""`, `[n] > 0 AND [t] <> "" OR [b]`,
+	`COALESCE([n], [m]) > 1`, `COALESCE([t], [u]) = "Apple"`, `ISBLANK(COALESCE([t], [u]))`, `COALESCE([d], DATE(2026, 5, 5)) > DATE(2026, 3, 1)`,
+	`SIGN([n]) = -1`, `SIGN([n] - [m]) >= 0`, `FIND("b", [t]) = 3`, `FIND("", [t]) = 1`, `FIND("x", [t]) = 0`,
+	`YEAR([d]) = 2026`, `MONTH([d]) = 10`, `DAY([d]) > 18`, `HOUR([d]) = 0`, `MINUTE([d]) = 0`, `QUARTER([d]) = 4`, `ISBLANK(YEAR([d]))`,
+	`REGEXMATCH([t], "^[a-z]+$")`, `REGEXMATCH([u], "(?i)^a")`, `REGEXEXTRACT([t], "([aeiou])") = "a"`, `ISBLANK(REGEXEXTRACT([t], "q"))`,
+	`REGEXREPLACE([t], "[aeiou]", "_") = "_ppl_"`, `REGEXREPLACE([u], "(b)", "<$1>") = "a <b>"`,
 	// These fall back to Go but must still work.
-	`YEAR([d]) = 2026`, `[n] ^ 2 > 4`, `CONTAINS(TEXT([n]), "1")`, `[t] = 1`,
+	`REGEXMATCH([t], [u])`, `PROPER([t]) = [u]`, `PADLEFT(TEXT([n]), 3, "0") = "001"`, `WEEKNUM([d]) = 42`, `CONTAINS(SORT(LIST([t], [u])), "Apple")`,
+	`[n] ^ 2 > 4`, `CONTAINS(TEXT([n]), "1")`, `[t] = 1`,
 }
 
 func openDBs(t *testing.T) map[string]*sql.DB {
@@ -149,7 +155,11 @@ func TestSQLMatchesEval(t *testing.T) {
 					t.Errorf("%s: SQL gives %v, Go gives %v\n  SQL: %s %v", p, got, want, where, q.Args)
 				}
 			}
-			if pushed < len(predicates)-6 {
+			goOnly := 11
+			if dialect == "postgres" {
+				goOnly += 6 // regular expressions stay in Go there
+			}
+			if pushed < len(predicates)-goOnly {
 				t.Errorf("only %d of %d filters compiled to SQL", pushed, len(predicates))
 			}
 		})

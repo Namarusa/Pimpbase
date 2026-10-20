@@ -21,9 +21,18 @@ type function struct {
 	eval     func(env Env, args []any) (any, error)
 	// lazy functions get their arguments unevaluated (IF, AND, OR...).
 	lazy func(ev *evaluator, args []Node) (any, error)
+	// check reports a problem with the argument count beyond min.
+	check func(args []Type) string
+	// rollup functions read rows linked through their first argument.
+	rollup bool
+	// argType overrides params for functions whose arguments alternate.
+	argType func(i int) Type
 }
 
 func (f *function) param(i int) Type {
+	if f.argType != nil {
+		return f.argType(i)
+	}
 	if i >= len(f.params) {
 		return f.params[len(f.params)-1]
 	}
@@ -543,6 +552,9 @@ func init() {
 				}
 				return diffDates(s, e, ToText(a[2]))
 			}},
+	}
+	for name, f := range moreFunctions() {
+		functions[name] = f
 	}
 }
 
