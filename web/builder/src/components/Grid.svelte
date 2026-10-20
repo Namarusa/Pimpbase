@@ -217,7 +217,7 @@
       {/if}
     {/if}
     <span class="grow"></span>
-    <span>Double-click a cell to edit it.</span>
+    <span>{ext?.readOnly ? (ext.primaryKey.length === 1 ? 'The data source is read only.' : 'Read only: the table has no single-column primary key.') : 'Double-click a cell to edit it.'}</span>
   </div>
 </div>
 
@@ -263,7 +263,7 @@
   .grid-wrap { display: flex; flex-direction: column; height: 100%; min-width: 0; }
   .toolbar { display: flex; align-items: flex-start; gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; }
   .toolbar h2 { line-height: 32px; }
-  .ext-chip { align-self: center; font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--hover); color: var(--muted); white-space: nowrap; max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+  .ext-chip { margin-top: 7px; font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--hover); color: var(--muted-foreground); white-space: nowrap; max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
   .toolbar > button, .toolbar > a { margin-top: 3px; }
   .filter { flex: 1 1 320px; max-width: 560px; display: flex; }
   .banner { margin: 8px 16px 0; }

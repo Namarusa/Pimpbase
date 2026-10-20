@@ -115,7 +115,7 @@
           </Select.Root>
           <div class="min-w-0 flex-1"><BindingInput mono value={query.collection} {groups} help={apiHelp} placeholder="Collection, such as orders" onChange={(v) => onChange({ collection: v })} /></div>
         {:else}
-          <span class="text-muted-foreground min-w-0 flex-1 truncate text-xs">{sqlHelp}</span>
+          <span class="min-w-0 flex-1"></span>
         {/if}
         <Button onclick={run} disabled={running || !ds} title="Run (Ctrl+Enter)">{#if running}<Spinner />{:else}<SendIcon />{/if}Run</Button>
       </div>

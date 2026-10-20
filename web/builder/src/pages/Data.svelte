@@ -92,7 +92,7 @@
   aside a:hover { background: var(--hover); }
   aside a.active { background: var(--accent-soft); color: var(--primary); font-weight: 550; }
   .hint { padding: 0 10px; font-size: 13px; }
-  .ext { margin-left: 6px; font-size: 10px; padding: 0 5px; border-radius: 4px; background: var(--hover); color: var(--muted); font-weight: 500; vertical-align: 1px; }
+  .ext { margin-left: 6px; font-size: 10px; padding: 0 5px; border-radius: 4px; background: var(--hover); color: var(--muted-foreground); font-weight: 500; vertical-align: 1px; }
   section { flex: 1; min-width: 0; }
   .check { display: flex; gap: 8px; align-items: center; color: var(--text); }
   @media (max-width: 700px) { aside { width: 140px; } }
