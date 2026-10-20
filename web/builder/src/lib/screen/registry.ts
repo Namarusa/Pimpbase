@@ -100,6 +100,7 @@ const gap: Setting = { key: 'gap', label: 'Spacing', kind: 'segmented', options:
 export const commonSettings: Setting[] = [
   { key: 'grow', label: 'Fill the free space in a row', kind: 'boolean', section: 'Layout' },
   { key: 'span', label: 'Columns to span in a grid', kind: 'segmented', options: opts(['1', '1'], ['2', '2'], ['3', '3'], ['4', '4'], ['full', 'All']), section: 'Layout' },
+  { key: 'roles', label: 'Visible to', kind: 'roles', section: 'Conditions', help: 'Others never receive the component, or anything inside it.' },
   { key: 'visibleIf', label: 'Show only when', kind: 'condition', section: 'Conditions' },
   { key: 'printHide', label: 'Hide when printing', kind: 'boolean', section: 'Conditions' },
 ]

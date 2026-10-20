@@ -165,6 +165,7 @@ func (s *Server) Handler() http.Handler {
 	h("PATCH /api/apps/{app}/screens/{screen}", s.updateScreen)
 	h("DELETE /api/apps/{app}/screens/{screen}", s.deleteScreen)
 	h("GET /api/apps/{app}/runtime", s.runtime)
+	h("GET /api/apps/{app}/brand", s.brand)
 
 	h("GET /api/apps/{app}/datasources", s.listDatasources)
 	h("POST /api/apps/{app}/datasources", s.createDatasource)

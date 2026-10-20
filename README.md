@@ -6,7 +6,8 @@ design them. This repository holds phase 1, the **data core** (built-in
 tables, the formula engine, the REST API and the data studio), phase 2,
 the **UI builder**: screens composed from components and published as apps,
 phase 3, **flows**: automations started by row changes, schedules,
-webhooks or buttons, and phase 5's **API studio**: REST and SOAP APIs as
+webhooks or buttons, phase 4, **access**: app roles, row rules, single
+sign-on and API keys, and phase 5's **API studio**: REST and SOAP APIs as
 data sources whose query results feed screens.
 
 ## Run it
@@ -60,9 +61,53 @@ TLS from the start, and `--smtp log` only writes the mails to the log.
   access to its table; PDFs and pictures open in the browser, other types
   are only downloaded.
 - **Users and roles**: workspace roles (owner, admin, builder, member) and
-  app roles (Public, Basic, Power, Admin) with read and write permissions per
-  table, checked on every request. Sessions use HTTP-only cookies; machines
-  use API keys (`Authorization: Bearer bbk_…`).
+  app roles with read, write and delete permissions per table plus row
+  rules, checked on every request. See [Access](#access).
+
+## Access
+
+- **Workspace roles**: owners and admins manage people and sign-in;
+  builders design every app; members only use the apps they hold a role
+  in. Accounts can be switched off, which ends their sessions and keys.
+- **App roles**: Public (anyone, no sign-in), Basic, Power and Admin, each
+  holding the one below it, plus custom roles such as `SALES` made in an
+  app's **Access** tab. A custom role inherits one other role; Admin holds
+  every role. Deleting a role moves its members to the role it inherited.
+- **Tables**: a role each for reading, writing and deleting rows, and row
+  rules: a formula per role, such as `[Owner] = Current.User.Email` or
+  `CONTAINS(Current.User.Groups, LOWER([Region]))`. A role uses the nearest
+  rule in its chain; "every row" stops the inheritance. Rules run in the
+  database when they compile to SQL and also guard creating, changing,
+  deleting and importing rows.
+- **Screens and components**: each screen needs a role to open, and any
+  component can be limited to some roles (**Visible to**). The server
+  removes hidden components before sending the screen, so they never reach
+  the browser. Builders can preview an app as any role.
+- **Flows and queries**: button flows and API queries need a role; a flow
+  runs its steps either with full access or as the person who started it.
+- **Published apps** show a sign-in page in the app's own colours, with
+  password and single sign-on, and a "no access yet" page for people
+  without a role.
+- **Single sign-on** with OpenID Connect: Google, Microsoft Entra ID (one
+  tenant or any) and any other provider, with PKCE, state and nonce
+  checks. Role mappings turn a group, email domain, email or any ID token
+  claim into a workspace role and app roles at every sign-in; roles given
+  by hand always win. Accounts can be made on first sign-in, limited to
+  some email domains, and linked to existing accounts by verified email.
+  Set `--public-url` (`BUBIBASE_PUBLIC_URL`) when Bubibase runs behind a
+  proxy, so the redirect URI is right.
+- **API keys** (`Authorization: Bearer bbk_…`) act as their owner, or only
+  in one app with one role, and can expire. Keys limited to an app cannot
+  reach builder or admin endpoints.
+
+`bubibase dev-idp` runs a test identity provider on `127.0.0.1:9000`
+(client `bubibase-dev`, secret `dev-secret`) with a few demo people and
+groups, for trying single sign-on without a real provider.
+
+Known limits: file downloads check table read access but not row rules
+(file ids are unguessable), link labels shown from another table ignore
+that table's row rules, and scheduled or webhook flows set to run as the
+user run as Public.
 
 ## UI builder
 
@@ -254,7 +299,8 @@ internal/formula/  lexer, parser, type checker, evaluator, SQL compiler
 internal/tables/   table schemas, DDL, rows, links, CSV
 internal/auth/     users, Argon2id passwords, sessions, API keys
 internal/apps/     apps and app members
-internal/rbac/     roles and the request actor
+internal/rbac/     roles, inheritance and the request actor
+internal/sso/      OpenID Connect sign-in and role mappings; ssotest is a fake provider
 internal/screens/  app screens and their definitions
 internal/files/    files of attachment fields, stored in the app's database
 internal/interp/   {{ binding }} templates for API queries, escaped per context

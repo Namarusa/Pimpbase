@@ -15,6 +15,9 @@
   import Flows from './pages/Flows.svelte'
   import Users from './pages/Users.svelte'
   import AppSettings from './pages/AppSettings.svelte'
+  import Access from './pages/Access.svelte'
+  import Account from './pages/Account.svelte'
+  import UserCogIcon from '@lucide/svelte/icons/user-cog'
   import Runtime from './pages/Runtime.svelte'
 
   let needsSetup = $state(false)
@@ -42,6 +45,7 @@
   const apisRoute = $derived(match('/apps/:app/apis/:item', route.path) ?? match('/apps/:app/apis', route.path))
   const flowsRoute = $derived(match('/apps/:app/flows/:item', route.path) ?? match('/apps/:app/flows', route.path))
   const settingsRoute = $derived(match('/apps/:app/settings', route.path))
+  const accessRoute = $derived(match('/apps/:app/access/:tab', route.path) ?? match('/apps/:app/access', route.path))
   const initials = $derived((session.user?.name || session.user?.email || '?').split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase()).join(''))
   const go = (e: MouseEvent, p: string) => { e.preventDefault(); navigate(p) }
 </script>
@@ -64,7 +68,7 @@
       <nav class="flex gap-1">
         <a href="/" onclick={(e) => go(e, '/')} class={['rounded-md px-2.5 py-1.5 text-sm font-medium', route.path === '/' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground']}>Apps</a>
         {#if isAdmin()}
-          <a href="/users" onclick={(e) => go(e, '/users')} class={['rounded-md px-2.5 py-1.5 text-sm font-medium', route.path === '/users' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground']}>Users</a>
+          <a href="/users" onclick={(e) => go(e, '/users')} class={['rounded-md px-2.5 py-1.5 text-sm font-medium', route.path.startsWith('/users') ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground']}>Users</a>
         {/if}
       </nav>
       <div class="ml-auto">
@@ -80,6 +84,7 @@
           <DropdownMenu.Content align="end" class="w-56">
             <DropdownMenu.Label class="font-normal"><div class="text-sm font-medium">{session.user.name}</div><div class="text-muted-foreground text-xs">{session.user.email}</div></DropdownMenu.Label>
             <DropdownMenu.Separator />
+            <DropdownMenu.Item onclick={() => navigate('/account')}><UserCogIcon />Account and API keys</DropdownMenu.Item>
             <DropdownMenu.Item onclick={logout}><LogOutIcon />Sign out</DropdownMenu.Item>
           </DropdownMenu.Content>
         </DropdownMenu.Root>
@@ -94,10 +99,14 @@
         {#key flowsRoute.app}<Flows app={flowsRoute.app} item={flowsRoute.item} />{/key}
       {:else if dataRoute}
         <div class="studio h-full">{#key dataRoute.app}<Data app={dataRoute.app} tableId={dataRoute.table} />{/key}</div>
+      {:else if accessRoute}
+        {#key accessRoute.app}<Access app={accessRoute.app} tab={accessRoute.tab} />{/key}
+      {:else if route.path === '/account'}
+        <Account />
       {:else if settingsRoute}
         <div class="studio h-full"><AppSettings app={settingsRoute.app} /></div>
-      {:else if route.path === '/users'}
-        <div class="studio h-full"><Users /></div>
+      {:else if route.path === '/users' || route.path === '/users/sso'}
+        <Users />
       {:else}
         <div class="studio h-full"><Apps /></div>
       {/if}

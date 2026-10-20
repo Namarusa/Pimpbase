@@ -16,6 +16,7 @@ import (
 
 	"github.com/bubibase/bubibase/internal/api"
 	"github.com/bubibase/bubibase/internal/flows"
+	"github.com/bubibase/bubibase/internal/sso/ssotest"
 	"github.com/bubibase/bubibase/internal/store"
 	"github.com/bubibase/bubibase/web"
 )
@@ -33,6 +34,11 @@ func main() {
 			fmt.Fprintln(os.Stderr, "bubibase:", err)
 			os.Exit(1)
 		}
+	case "dev-idp":
+		if err := devIdP(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "bubibase:", err)
+			os.Exit(1)
+		}
 	case "version":
 		fmt.Println("bubibase", version)
 	default:
@@ -47,6 +53,7 @@ func usage() {
 
 Usage:
   bubibase serve [flags]   start the server
+  bubibase dev-idp [flags] run a test single sign-on provider, never for real accounts
   bubibase version         print the version
 
 Run "bubibase serve -h" for the server flags.
@@ -121,4 +128,26 @@ func serve(args []string) error {
 		return httpSrv.Shutdown(shut)
 	}
 	return nil
+}
+
+// devIdP runs a test OpenID Connect provider with made-up people, so
+// single sign-on and role mappings can be tried without a real provider.
+func devIdP(args []string) error {
+	fs := flag.NewFlagSet("dev-idp", flag.ExitOnError)
+	addr := fs.String("addr", "127.0.0.1:9000", "address to listen on")
+	issuer := fs.String("issuer", "", "issuer URL; defaults to http://<addr>")
+	fs.Parse(args)
+	if *issuer == "" {
+		*issuer = "http://" + *addr
+	}
+	p := ssotest.New(*issuer, "bubibase-dev", "dev-secret",
+		ssotest.User{Subject: "kim", Email: "kim.lee@acme.test", EmailVerified: true, Name: "Kim Lee", Groups: []string{"sales", "north"}},
+		ssotest.User{Subject: "sam", Email: "sam.ortiz@acme.test", EmailVerified: true, Name: "Sam Ortiz", Groups: []string{"sales-leads", "north", "south"}},
+		ssotest.User{Subject: "ida", Email: "ida.novak@acme.test", EmailVerified: true, Name: "Ida Novak", Groups: []string{"it"}},
+		ssotest.User{Subject: "eve", Email: "eve@elsewhere.test", EmailVerified: true, Name: "Eve Outsider", Groups: []string{}},
+	)
+	p.Title = "Acme sign-in"
+	fmt.Fprintf(os.Stderr, "Test identity provider at %s\n  issuer:        %s\n  client id:     bubibase-dev\n  client secret: dev-secret\nNever use it for real accounts.\n", *addr, *issuer)
+	srv := &http.Server{Addr: *addr, Handler: p.Handler(), ReadHeaderTimeout: 10 * time.Second}
+	return srv.ListenAndServe()
 }

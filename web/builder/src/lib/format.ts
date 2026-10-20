@@ -41,3 +41,20 @@ export function fileSize(n: number): string {
 }
 
 export const isPDF = (f: { type?: string; name?: string }) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name ?? '')
+
+// timeAgo says how long ago a time was, such as "3 hours ago".
+export function timeAgo(iso: string, now = Date.now()): string {
+  const t = new Date(iso).getTime()
+  if (isNaN(t)) return ''
+  const s = Math.round((now - t) / 1000)
+  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
+  if (s < 0) {
+    const d = Math.round(-s / 86400)
+    return d >= 1 ? rtf.format(d, 'day') : rtf.format(Math.round(-s / 3600), 'hour')
+  }
+  if (s < 60) return 'just now'
+  if (s < 3600) return rtf.format(-Math.round(s / 60), 'minute')
+  if (s < 86400) return rtf.format(-Math.round(s / 3600), 'hour')
+  if (s < 86400 * 30) return rtf.format(-Math.round(s / 86400), 'day')
+  return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+}

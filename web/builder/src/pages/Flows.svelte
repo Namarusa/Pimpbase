@@ -50,7 +50,8 @@
       const res = await api.app(slug)
       if (!res.builder) { error = 'Only builders can manage flows.'; return }
       app = res.app
-      const [list, tables, queries, variables] = await Promise.all([api.flows(app.id), api.tables(app.id), api.queries(app.id), api.variables(app.id)])
+      const [list, tables, queries, variables, roles] = await Promise.all([api.flows(app.id), api.tables(app.id), api.queries(app.id), api.variables(app.id), api.roles(app.id)])
+      ed.roles = roles
       flows = list.map(normalize)
       ed.tables = tables
       ed.queries = queries

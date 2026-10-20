@@ -297,14 +297,17 @@ func (s *Service) Members(ctx context.Context, appID string) ([]Member, error) {
 
 // Grant is one app role of a user.
 type Grant struct {
-	AppID  string    `json:"appId"`
-	Role   rbac.Role `json:"role"`
-	Source string    `json:"source"`
+	AppID string    `json:"appId"`
+	Role  rbac.Role `json:"role"`
+	// RoleName is the role's display name.
+	RoleName string `json:"roleName"`
+	Source   string `json:"source"`
 }
 
 // GrantsOf lists the app roles of a user.
 func (s *Service) GrantsOf(ctx context.Context, userID string) ([]Grant, error) {
-	rows, err := s.store.Meta.Query(ctx, `SELECT app_id, role, source FROM app_users WHERE user_id = ? ORDER BY app_id`, userID)
+	rows, err := s.store.Meta.Query(ctx, `SELECT u.app_id, u.role, u.source, COALESCE(r.name, '') FROM app_users u
+		LEFT JOIN app_roles r ON r.app_id = u.app_id AND r.id = u.role WHERE u.user_id = ? ORDER BY u.app_id`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -313,10 +316,13 @@ func (s *Service) GrantsOf(ctx context.Context, userID string) ([]Grant, error) 
 	for rows.Next() {
 		var g Grant
 		var role string
-		if err := rows.Scan(&g.AppID, &role, &g.Source); err != nil {
+		if err := rows.Scan(&g.AppID, &role, &g.Source, &g.RoleName); err != nil {
 			return nil, err
 		}
 		g.Role = rbac.Role(role)
+		if d, ok := rbac.NewSet(nil).Def(g.Role); ok && g.RoleName == "" {
+			g.RoleName = d.Name
+		}
 		out = append(out, g)
 	}
 	return out, rows.Err()

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -204,6 +205,8 @@ func (s *Server) createUser(w http.ResponseWriter, r *http.Request) error {
 	var in struct {
 		credentials
 		Role string `json:"role"`
+		// SSOOnly makes an account that signs in with single sign-on only.
+		SSOOnly bool `json:"ssoOnly"`
 	}
 	if err := readJSON(r, &in); err != nil {
 		return err
@@ -211,7 +214,16 @@ func (s *Server) createUser(w http.ResponseWriter, r *http.Request) error {
 	if in.Role == "" {
 		in.Role = auth.RoleMember
 	}
-	u, err := s.Auth.CreateUser(r.Context(), in.Email, in.Name, in.Password, in.Role)
+	if in.Role == auth.RoleOwner && userFrom(r).Role != auth.RoleOwner {
+		return errStatus(403, "only owners can make someone an owner")
+	}
+	create := s.Auth.CreateUser
+	if in.SSOOnly {
+		create = func(ctx context.Context, email, name, _, role string) (*auth.User, error) {
+			return s.Auth.CreateSSOUser(ctx, email, name, role)
+		}
+	}
+	u, err := create(r.Context(), in.Email, in.Name, in.Password, in.Role)
 	if err != nil {
 		return err
 	}

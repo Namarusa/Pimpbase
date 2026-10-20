@@ -56,6 +56,7 @@ export type SettingKind =
   | 'options'
   | 'condition'
   | 'dialog'
+  | 'roles' // app roles that may see the component
 
 export interface Setting {
   key: string

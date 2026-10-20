@@ -67,7 +67,8 @@
       const res = await api.app(slug)
       if (!res.builder) { error = 'Only builders can design screens.'; return }
       d.app = res.app
-      const [tables, screens, queries, flows] = await Promise.all([api.tables(res.app.id), api.screens(res.app.id), api.queries(res.app.id), api.flows(res.app.id)])
+      const [tables, screens, queries, flows, roles] = await Promise.all([api.tables(res.app.id), api.screens(res.app.id), api.queries(res.app.id), api.flows(res.app.id), api.roles(res.app.id)])
+      d.roles = roles
       d.tables = tables
       d.screens = screens
       d.queries = queries

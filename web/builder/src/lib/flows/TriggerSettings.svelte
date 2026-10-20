@@ -14,7 +14,8 @@
   import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw'
   import ChevronDownIcon from '@lucide/svelte/icons/chevron-down'
   import { toast } from 'svelte-sonner'
-  import { api, roles, type FlowParam, type ParamType, type Role, type TriggerType } from '../api'
+  import { api, type FlowParam, type ParamType, type TriggerType } from '../api'
+  import RoleSelect from '../access/RoleSelect.svelte'
   import { getEditor } from './editor.svelte'
   import { describeCron, triggerInfo, triggerTypes } from './steps'
 
@@ -109,7 +110,6 @@
   const params = $derived((t.parameters ?? []) as FlowParam[])
   const setParam = (i: number, p: Partial<FlowParam>) => set('parameters', params.map((x, j) => (j === i ? { ...x, ...p } : x)))
   const paramTypes: ParamType[] = ['text', 'number', 'boolean', 'json']
-  const roleLabel = (r: Role) => (r === 'PUBLIC' ? 'Anyone, without signing in' : `${r[0]}${r.slice(1).toLowerCase()} users and above`)
 
   async function rotate() {
     if (!ed.flow) return
@@ -234,10 +234,7 @@
   {:else}
     <div class="flex flex-col gap-1.5">
       <Label class="text-xs">Who may run it</Label>
-      <Select.Root type="single" value={t.role} onValueChange={(v) => set('role', v as Role)}>
-        <Select.Trigger size="sm" class="w-full">{roleLabel(t.role)}</Select.Trigger>
-        <Select.Content>{#each roles as r (r)}<Select.Item value={r} label={roleLabel(r)}>{roleLabel(r)}</Select.Item>{/each}</Select.Content>
-      </Select.Root>
+      <RoleSelect roles={ed.roles} value={t.role} onChange={(v) => set('role', v)} />
     </div>
     <div class="flex flex-col gap-1.5">
       <Label class="text-xs">Parameters</Label>
@@ -256,4 +253,15 @@
       <p class="text-muted-foreground text-xs">Buttons pass them with the <strong>Run flow</strong> action; steps read <code class="font-mono">{'{{ trigger.params.name }}'}</code>. What a Return result step gives back reaches later actions as <code class="font-mono">{'{{ result }}'}</code>.</p>
     </div>
   {/if}
+  <Separator />
+  <div class="flex flex-col gap-1.5">
+    <Label class="text-xs">Steps run with</Label>
+    <Select.Root type="single" value={flow.runAs ?? 'flow'} onValueChange={(v) => { flow.runAs = v as 'flow' | 'user'; ed.changed() }}>
+      <Select.Trigger size="sm" class="w-full">{(flow.runAs ?? 'flow') === 'flow' ? 'Full access to the app' : 'The permissions of who started it'}</Select.Trigger>
+      <Select.Content>
+        <Select.Item value="flow" label="Full access"><div><div>Full access to the app</div><div class="text-muted-foreground text-xs">Row steps and queries may use every table and row</div></div></Select.Item>
+        <Select.Item value="user" label="As the user"><div><div>The permissions of who started it</div><div class="text-muted-foreground text-xs">Table permissions, row rules and query roles apply; schedules and webhooks act as Public</div></div></Select.Item>
+      </Select.Content>
+    </Select.Root>
+  </div>
 </div>

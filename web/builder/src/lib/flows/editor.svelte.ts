@@ -1,7 +1,7 @@
 // The flow editor's shared state: the flow being edited, the selection
 // and the edits the canvas and settings panel make.
 import { getContext, setContext } from 'svelte'
-import type { Flow, FlowStep, Query, Table, Variable } from '../api'
+import type { Flow, FlowStep, Query, RoleDef, Table, Variable } from '../api'
 import { copyStep, locate, newStep, walk } from './steps'
 
 export class FlowEditor {
@@ -9,6 +9,7 @@ export class FlowEditor {
   tables = $state<Table[]>([])
   queries = $state<Query[]>([])
   variables = $state<Variable[]>([])
+  roles = $state<RoleDef[]>([])
   // selected is "trigger" or a step id.
   selected = $state<string>('trigger')
   // errorStep is the step the last save refused.

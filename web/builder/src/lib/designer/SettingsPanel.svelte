@@ -24,7 +24,9 @@
   import { bindingsFor, contextTable, withQueries } from './context'
   import { duplicate, remove, findIn } from './tree'
   import { formFields } from './templates'
-  import { roles, type Role } from '../api'
+  import type { Role } from '../api'
+  import RoleSelect from '../access/RoleSelect.svelte'
+  import RolesPicker from '../access/RolesPicker.svelte'
   import type { Node, Setting } from '../screen/types'
 
   const d = getDesigner()
@@ -125,10 +127,7 @@
             <Input id="scr-route" class="h-8 font-mono text-xs" bind:value={screenRoute} onblur={() => screenRoute !== d.screen?.route && saveMeta({ route: screenRoute })} />
             <p class="text-muted-foreground text-xs">Use <code>:id</code> for a part that changes, such as <code>/orders/:id</code>.</p></div>
           <div class="flex flex-col gap-1.5"><Label class="text-xs">Who can open it</Label>
-            <Select.Root type="single" value={d.screen.role} onValueChange={(v) => saveMeta({ role: v as Role })}>
-              <Select.Trigger size="sm" class="w-full">{d.screen.role === 'PUBLIC' ? 'Anyone, without signing in' : `${d.screen.role[0]}${d.screen.role.slice(1).toLowerCase()} users and above`}</Select.Trigger>
-              <Select.Content>{#each roles as r}<Select.Item value={r} label={r}>{r === 'PUBLIC' ? 'Anyone, without signing in' : `${r[0]}${r.slice(1).toLowerCase()} users and above`}</Select.Item>{/each}</Select.Content>
-            </Select.Root></div>
+            <RoleSelect roles={d.roles} value={d.screen.role} onChange={(v) => saveMeta({ role: v })} /></div>
           {#if metaError}<p class="text-destructive text-xs">{metaError}</p>{/if}
         </div>
         <Separator />
@@ -216,6 +215,8 @@
                   <ChartColors value={props[s.key] ?? {}} onChange={(v) => set(s.key, v)} items={colorItems(props, table?.fields ?? [])} />
                 {:else if s.kind === 'actions'}
                   <ActionsEditor value={props[s.key] ?? []} onChange={(v) => set(s.key, v)} groups={actionGroups} />
+                {:else if s.kind === 'roles'}
+                  <RolesPicker id={sid(s)} roles={d.roles} value={props[s.key] ?? []} onChange={(v) => set(s.key, v.length ? v : undefined)} />
                 {:else if s.kind === 'condition'}
                   {@const c = props.visibleIf ?? { left: '', op: 'not_empty', right: '' }}
                   <BindingInput value={c.left} onChange={(v) => set('visibleIf', { ...c, left: v })} {groups} placeholder={'{{ user.email }}'} />

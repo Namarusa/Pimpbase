@@ -12,7 +12,8 @@
   import SendIcon from '@lucide/svelte/icons/send'
   import SparklesIcon from '@lucide/svelte/icons/sparkles'
   import BindingInput from '../designer/BindingInput.svelte'
-  import { api, roles, type BodyType, type Datasource, type ParamType, type Query, type QueryResult, type Role, type Variable } from '../api'
+  import { api, type BodyType, type Datasource, type ParamType, type Query, type QueryResult, type RoleDef, type Variable } from '../api'
+  import RoleSelect from '../access/RoleSelect.svelte'
   import { apiHelp, countOn, paramsUsed, queryBindings } from './bindings'
   import KeyValueEditor from './KeyValueEditor.svelte'
   import TemplateEditor from './TemplateEditor.svelte'
@@ -38,7 +39,8 @@
     { value: 'none', label: 'None' }, { value: 'json', label: 'JSON' }, { value: 'form', label: 'Form' }, { value: 'xml', label: 'XML' }, { value: 'text', label: 'Text' },
   ]
   const paramTypes: ParamType[] = ['text', 'number', 'boolean', 'json']
-  const roleLabel = (r: Role) => (r === 'PUBLIC' ? 'Anyone, without signing in' : `${r[0]}${r.slice(1).toLowerCase()} users and above`)
+  let roles = $state<RoleDef[]>([])
+  $effect(() => { api.roles(appId).then((r) => (roles = r)).catch(() => {}) })
 
   const starters: Record<string, string> = {
     json: '{\n  "name": "{{ params.name }}",\n  "limit": {{ params.limit }}\n}',
@@ -188,10 +190,7 @@
             <Input id="q-rows" class="h-8 font-mono text-xs" value={query.resultPath} placeholder="data.items" oninput={(e) => onChange({ resultPath: e.currentTarget.value })} />
             <p class="text-muted-foreground text-xs">A path into the body. Empty uses the first list found.</p></div>
           <div class="flex flex-col gap-1.5"><Label class="text-xs">Who can run it in the app</Label>
-            <Select.Root type="single" value={query.role} onValueChange={(v) => onChange({ role: v as Role })}>
-              <Select.Trigger size="sm" class="w-full">{roleLabel(query.role)}</Select.Trigger>
-              <Select.Content>{#each roles as r (r)}<Select.Item value={r} label={r}>{roleLabel(r)}</Select.Item>{/each}</Select.Content>
-            </Select.Root></div>
+            <RoleSelect {roles} value={query.role} onChange={(v) => onChange({ role: v })} /></div>
           <div class="flex flex-col gap-1.5"><Label for="q-cache" class="text-xs">Reuse answers for (seconds)</Label>
             <Input id="q-cache" type="number" min="0" class="h-8" value={query.cacheSeconds} oninput={(e) => onChange({ cacheSeconds: Math.max(0, Number(e.currentTarget.value) || 0) })} />
             <p class="text-muted-foreground text-xs">Useful for sign-in queries other queries read. 0 sends every time.</p></div>

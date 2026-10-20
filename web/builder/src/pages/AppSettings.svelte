@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { api, roles, type App, type User, type Role } from '../lib/api'
+  import { api, type App } from '../lib/api'
   import { navigate } from '../lib/router.svelte'
   import AppNav from '../components/AppNav.svelte'
 
@@ -7,8 +7,6 @@
   let app = $state<App | null>(null)
   let name = $state('')
   let urlName = $state('')
-  let users = $state<User[]>([])
-  let members = $state<Record<string, Role>>({})
   let error = $state('')
   let saved = $state('')
 
@@ -18,8 +16,6 @@
       app = res.app
       name = app.name
       urlName = app.slug
-      users = (await api.users()).filter((u) => u.role === 'member')
-      members = Object.fromEntries((await api.members(app.id)).map((m) => [m.userId, m.role]))
     } catch (e: any) { error = e.message }
   }
   load()
@@ -35,13 +31,6 @@
     } catch (err: any) { error = err.message }
   }
 
-  async function setRole(userId: string, role: string) {
-    error = ''
-    try {
-      await api.setMember(app!.id, userId, role as Role)
-      members[userId] = role as Role
-    } catch (err: any) { error = err.message }
-  }
 
   async function remove() {
     if (!app || prompt(`This deletes ${app.name} and all its data. Type the app's URL name (${app.slug}) to confirm.`) !== app.slug) return
@@ -64,17 +53,7 @@
     </section>
     <section class="card">
       <h2>Access</h2>
-      <p class="muted">Builders and admins always have full access. Give members a role: Basic can use the app, Power and Admin get more where tables allow it.</p>
-      {#if users.length === 0}<p class="muted">There are no members yet. Add them on the Users page.</p>{/if}
-      {#each users as u (u.id)}
-        <div class="row member">
-          <div class="grow"><div>{u.name}</div><div class="muted">{u.email}</div></div>
-          <select value={members[u.id] ?? 'NONE'} onchange={(e) => setRole(u.id, e.currentTarget.value)}>
-            <option value="NONE">No access</option>
-            {#each roles.filter((r) => r !== 'PUBLIC') as r}<option value={r}>{r[0] + r.slice(1).toLowerCase()}</option>{/each}
-          </select>
-        </div>
-      {/each}
+      <p class="muted">Members, roles and what each role may see and do are on the <a href={`/apps/${app.slug}/access`} onclick={(e) => { e.preventDefault(); navigate(`/apps/${app!.slug}/access`) }}>Access</a> tab.</p>
     </section>
     <section class="card danger-zone">
       <h2>Delete app</h2>
@@ -90,6 +69,4 @@
   .page { max-width: 720px; margin: 0 auto; padding: 24px 16px; display: grid; gap: 16px; }
   section { padding: 20px; }
   h2 { margin-bottom: 12px; }
-  .member { padding: 8px 0; border-top: 1px solid var(--line); }
-  .member select { width: auto; }
 </style>

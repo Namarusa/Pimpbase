@@ -106,7 +106,7 @@ func (s *Server) runtime(w http.ResponseWriter, r *http.Request) error {
 		if userFrom(r) == nil {
 			return errLogin
 		}
-		return errStatus(404, "app not found")
+		return errStatus(403, "you do not have access to this app; ask its builder for a role")
 	}
 	ts, err := s.Tables.List(r.Context(), a.ID)
 	if err != nil {
@@ -151,4 +151,20 @@ func (s *Server) runtime(w http.ResponseWriter, r *http.Request) error {
 		out["providers"] = ps
 	}
 	return writeJSON(w, 200, out)
+}
+
+// brand is what a published app's sign-in page shows: its name, look and
+// the single sign-on providers, for anyone.
+func (s *Server) brand(w http.ResponseWriter, r *http.Request) error {
+	a, err := s.Apps.Get(r.Context(), r.PathValue("app"))
+	if err != nil {
+		return err
+	}
+	ps, err := s.SSO.Enabled(r.Context())
+	if err != nil {
+		return err
+	}
+	return writeJSON(w, 200, map[string]any{
+		"name": a.Name, "slug": a.Slug, "design": a.Design, "providers": ps,
+	})
 }

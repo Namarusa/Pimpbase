@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { api, roles, type Role, type Table } from '../lib/api'
+  import { api, type Table } from '../lib/api'
+  import { navigate } from '../lib/router.svelte'
   import Modal from './Modal.svelte'
 
   let { app, table, onClose, onSaved, onDeleted }: {
@@ -8,8 +9,6 @@
 
   let name = $state(table.name)
   let primary = $state(table.primaryField ?? '')
-  let read = $state<Role>(table.permissions.read)
-  let write = $state<Role>(table.permissions.write)
   let error = $state('')
   const labelFields = table.fields.filter((f) => f.type !== 'link' && f.type !== 'multi_select')
 
@@ -17,7 +16,7 @@
     e.preventDefault()
     error = ''
     try {
-      const p: Record<string, unknown> = { name, permissions: { read, write } }
+      const p: Record<string, unknown> = { name }
       if (primary) p.primaryField = primary
       onSaved(await api.updateTable(app, table.id, p))
     } catch (err: any) { error = err.message }
@@ -40,13 +39,8 @@
       </select>
       <small class="muted">Shown when other tables link to a row.</small>
     </div>
-    <div class="row">
-      <div class="field grow"><label for="t-read">Who can read rows</label>
-        <select id="t-read" bind:value={read}>{#each roles as r}<option value={r}>{r} and up</option>{/each}</select></div>
-      <div class="field grow"><label for="t-write">Who can write rows</label>
-        <select id="t-write" bind:value={write}>{#each roles as r}<option value={r}>{r} and up</option>{/each}</select></div>
-    </div>
-    <p class="muted small">PUBLIC means anyone, even without signing in.</p>
+    <p class="muted small">Who may read, change and delete rows, and which rows, is set on the
+      <a href={`/apps/${app}/access/permissions`} onclick={(e) => { e.preventDefault(); onClose(); navigate(`/apps/${app}/access/permissions`) }}>Access</a> tab.</p>
   </form>
   {#snippet footer()}
     <button class="danger ghost" onclick={remove}>Delete table</button>

@@ -1,12 +1,34 @@
 // A thin client for the Bubibase HTTP API.
 import type { Design, Node, Screen } from './screen/types'
 
-export type Role = 'PUBLIC' | 'BASIC' | 'POWER' | 'ADMIN'
+// Role is an app role id: PUBLIC, BASIC, POWER, ADMIN or a custom id.
+export type Role = string
+export interface RoleDef { id: Role; name: string; description: string; inherits?: Role; color?: string; builtin: boolean }
 export type FieldType =
   | 'text' | 'longtext' | 'number' | 'boolean' | 'date' | 'single_select'
   | 'multi_select' | 'link' | 'autonumber' | 'formula' | 'attachment'
 
-export interface User { id: string; email: string; name: string; role: string; createdAt: string }
+export interface User {
+  id: string; email: string; name: string; role: string; createdAt: string
+  disabled?: boolean; hasPassword?: boolean; groups?: string[]; lastLoginAt?: string | null
+}
+export interface Grant { appId: string; role: Role; roleName?: string; source: 'manual' | 'sso' }
+// UserRow is a user as the Users page lists them.
+export interface UserRow extends User { signIn: string[]; apps: Grant[] }
+export interface Member { userId: string; email: string; name: string; role: Role; source: 'manual' | 'sso' }
+export interface ApiKey {
+  id: string; name: string; appId: string; role: string; createdAt: string
+  expiresAt: string | null; lastUsedAt: string | null; key?: string
+}
+export type ProviderKind = 'google' | 'microsoft' | 'oidc'
+export interface Mapping { claim: string; value: string; workspaceRole: string; apps: { appId: string; role: Role }[] }
+export interface Provider {
+  id: string; kind: ProviderKind; name: string; enabled: boolean; hasSecret: boolean
+  issuer: string; tenant: string; clientId: string; scopes: string[]; allowedDomains: string[]
+  autoCreate: boolean; defaultRole: string; trustEmail: boolean; groupsClaim: string; mappings: Mapping[]
+  createdAt?: string; updatedAt?: string
+}
+export interface PublicProvider { id: string; kind: ProviderKind; name: string }
 export interface App { id: string; slug: string; name: string; design: Design; createdAt: string; updatedAt: string }
 export interface Field {
   id: string; name: string; type: FieldType; required?: boolean; options?: string[]
@@ -15,8 +37,10 @@ export interface Field {
 }
 export interface Table {
   id: string; appId: string; name: string; fields: Field[]; primaryField?: string
-  permissions: { read: Role; write: Role }
+  permissions: Permissions
 }
+export interface RowRule { role: Role; filter: string }
+export interface Permissions { read: Role; write: Role; delete: Role; rows: RowRule[] }
 export interface LinkRef { _id: number; label: string }
 // FileRef is one file of an attachment field.
 export interface FileRef { id: string; name: string; type: string; size: number; url: string }
@@ -26,8 +50,13 @@ export interface FormulaError { start: number; end: number; message: string }
 export interface FunctionInfo { name: string; category: string; signature: string; description: string }
 
 export interface RuntimeInfo {
-  app: App; role: Role; builder: boolean; user: { id: string; email: string; name: string } | null
+  app: App; role: Role; builder: boolean
+  user: { id: string; email: string; name: string; role: Role; roles: Role[]; groups: string[] } | null
   screens: Screen[]; tables: Table[]; queries: RuntimeQuery[]; flows: RuntimeFlow[]
+  // roles and preview are sent to builders, who may preview the app as a role.
+  roles?: RoleDef[]; preview?: boolean
+  // providers are sent to visitors who are not signed in.
+  providers?: PublicProvider[]
 }
 
 // API connectors.
@@ -69,7 +98,7 @@ export interface FlowStep {
   then?: FlowStep[]; else?: FlowStep[]; do?: FlowStep[]; disabled?: boolean; continueOnError?: boolean
 }
 export interface Flow {
-  id: string; appId: string; name: string; enabled: boolean; trigger: Trigger; steps: FlowStep[]
+  id: string; appId: string; name: string; enabled: boolean; trigger: Trigger; steps: FlowStep[]; runAs?: 'flow' | 'user'
   hookToken: string; createdAt?: string; updatedAt?: string
 }
 export interface StepLog {
@@ -87,8 +116,12 @@ export class ApiError extends Error {
   constructor(public status: number, message: string, public body: any) { super(message) }
 }
 
+// preview, when set, makes a builder's requests act as that app role.
+export const preview = { role: '' }
+
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const init: RequestInit = { method, headers: {} }
+  if (preview.role) (init.headers as Record<string, string>)['X-Bubibase-Preview-Role'] = preview.role
   if (body instanceof FormData) {
     init.body = body
   } else if (body !== undefined) {
@@ -110,10 +143,21 @@ export const api = {
   login: (email: string, password: string) => call<User>('POST', '/auth/login', { email, password }),
   logout: () => call('POST', '/auth/logout'),
   me: () => call<User>('GET', '/auth/me'),
+  providers: () => call<PublicProvider[]>('GET', '/auth/providers'),
+  ssoStartURL: (id: string, returnTo: string) => `/api/sso/${enc(id)}/start?return=${enc(returnTo)}`,
+  keys: () => call<ApiKey[]>('GET', '/auth/keys'),
+  createKey: (k: { name: string; appId?: string; role?: string; expiresInDays?: number }) => call<ApiKey>('POST', '/auth/keys', k),
+  deleteKey: (id: string) => call('DELETE', `/auth/keys/${id}`),
 
-  users: () => call<User[]>('GET', '/users'),
-  createUser: (u: { email: string; name: string; password: string; role: string }) => call<User>('POST', '/users', u),
-  updateUser: (id: string, p: Partial<{ name: string; role: string; password: string }>) => call<User>('PATCH', `/users/${id}`, p),
+  users: () => call<UserRow[]>('GET', '/users'),
+  createUser: (u: { email: string; name: string; password: string; role: string; ssoOnly?: boolean }) => call<User>('POST', '/users', u),
+  updateUser: (id: string, p: Partial<{ name: string; role: string; password: string; disabled: boolean }>) => call<User>('PATCH', `/users/${id}`, p),
+  ssoProviders: () => call<{ providers: Provider[]; redirectUrl: string }>('GET', '/sso/providers'),
+  createProvider: (p: Partial<Provider> & { clientSecret?: string }) => call<Provider>('POST', '/sso/providers', p),
+  updateProvider: (id: string, p: Partial<Provider> & { clientSecret?: string }) => call<Provider>('PATCH', `/sso/providers/${id}`, p),
+  deleteProvider: (id: string) => call('DELETE', `/sso/providers/${id}`),
+  testMapping: (id: string, t: { email: string; groups: string[] }) =>
+    call<{ workspace: string; apps: Record<string, Role>; matched: number[] }>('POST', `/sso/providers/${id}/test`, t),
   deleteUser: (id: string) => call('DELETE', `/users/${id}`),
 
   apps: () => call<App[]>('GET', '/apps'),
@@ -121,8 +165,12 @@ export const api = {
   app: (app: string) => call<{ app: App; role: Role; builder: boolean }>('GET', `/apps/${enc(app)}`),
   updateApp: (app: string, p: { name?: string; slug?: string; design?: Design }) => call<App>('PATCH', `/apps/${enc(app)}`, p),
   deleteApp: (app: string) => call('DELETE', `/apps/${enc(app)}`),
-  members: (app: string) => call<{ userId: string; email: string; name: string; role: Role }[]>('GET', `/apps/${enc(app)}/members`),
+  members: (app: string) => call<Member[]>('GET', `/apps/${enc(app)}/members`),
   setMember: (app: string, user: string, role: Role | 'NONE') => call('PUT', `/apps/${enc(app)}/members/${user}`, { role }),
+  roles: (app: string) => call<RoleDef[]>('GET', `/apps/${enc(app)}/roles`),
+  createRole: (app: string, r: Partial<RoleDef>) => call<RoleDef>('POST', `/apps/${enc(app)}/roles`, r),
+  updateRole: (app: string, id: Role, r: Partial<RoleDef>) => call<RoleDef>('PATCH', `/apps/${enc(app)}/roles/${enc(id)}`, r),
+  deleteRole: (app: string, id: Role) => call('DELETE', `/apps/${enc(app)}/roles/${enc(id)}`),
 
   tables: (app: string) => call<Table[]>('GET', `/apps/${enc(app)}/tables`),
   createTable: (app: string, name: string, fields: Partial<Field>[]) => call<Table>('POST', `/apps/${enc(app)}/tables`, { name, fields }),
@@ -165,6 +213,7 @@ export const api = {
     call<Screen>('PATCH', `/apps/${enc(app)}/screens/${id}`, s),
   deleteScreen: (app: string, id: string) => call('DELETE', `/apps/${enc(app)}/screens/${id}`),
   runtime: (app: string) => call<RuntimeInfo>('GET', `/apps/${enc(app)}/runtime`),
+  brand: (app: string) => call<{ name: string; slug: string; design: Design; providers: PublicProvider[] }>('GET', `/apps/${enc(app)}/brand`),
 
   datasources: (app: string) => call<Datasource[]>('GET', `/apps/${enc(app)}/datasources`),
   createDatasource: (app: string, d: Partial<Datasource>) => call<Datasource>('POST', `/apps/${enc(app)}/datasources`, d),
@@ -212,3 +261,11 @@ export const fieldTypes: { type: FieldType; label: string; icon: string }[] = [
 
 export const typeInfo = (t: FieldType) => fieldTypes.find((x) => x.type === t)!
 export const roles: Role[] = ['PUBLIC', 'BASIC', 'POWER', 'ADMIN']
+
+// The built-in roles, for pages that have not loaded an app's own.
+export const builtinRoles: RoleDef[] = [
+  { id: 'ADMIN', name: 'Admin', description: 'Everything in the app, including every custom role.', inherits: 'POWER', builtin: true, color: '#dc2626' },
+  { id: 'POWER', name: 'Power', description: 'Basic access plus what tables and screens open to power users.', inherits: 'BASIC', builtin: true, color: '#7c3aed' },
+  { id: 'BASIC', name: 'Basic', description: 'Signed-in users who were given access to the app.', inherits: 'PUBLIC', builtin: true, color: '#2563eb' },
+  { id: 'PUBLIC', name: 'Public', description: 'Anyone, without signing in.', builtin: true, color: '#64748b' },
+]

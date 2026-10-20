@@ -28,7 +28,7 @@
     rt.editing ? 'bb-edit-node' : '',
     rt.editing && rt.selected === node.id && node.id !== 'root' ? 'bb-selected' : '',
     rt.editing && rt.hovered === node.id && rt.selected !== node.id ? 'bb-hovered' : '',
-    rt.editing && node.props.visibleIf?.left ? 'bb-conditional' : '',
+    rt.editing && (node.props.visibleIf?.left || node.props.roles?.length) ? 'bb-conditional' : '',
   ].filter(Boolean).join(' '))
 
   function select(e: MouseEvent) {

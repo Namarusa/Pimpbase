@@ -332,7 +332,7 @@ func TestFlowsRunAsUser(t *testing.T) {
 		flow := func(name, runAs string) string {
 			f := owner.do("POST", base+"/flows", map[string]any{"name": name, "enabled": true, "runAs": runAs,
 				"trigger": map[string]any{"type": "manual", "role": "BASIC"},
-				"steps": []any{map[string]any{"name": "Add", "type": "create_row", "inputs": map[string]any{"table": tbl["id"], "values": map[string]any{"Note": "hi"}}}},
+				"steps":   []any{map[string]any{"name": "Add", "type": "create_row", "inputs": map[string]any{"table": tbl["id"], "values": map[string]any{"Note": "hi"}}}},
 			}, 201)
 			if f["runAs"] != runAs {
 				t.Fatalf("flow = %v", f)
