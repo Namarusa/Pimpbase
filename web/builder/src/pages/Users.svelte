@@ -28,6 +28,7 @@
   import { roleName } from '../lib/access/roles'
   import { session } from '../lib/session.svelte'
   import { route } from '../lib/router.svelte'
+  import AISettings from '../lib/ai/AISettings.svelte'
   import { timeAgo } from '../lib/format'
   import UserSheet from '../lib/users/UserSheet.svelte'
   import ProviderSheet from '../lib/users/ProviderSheet.svelte'
@@ -41,7 +42,7 @@
   let redirectUrl = $state('')
   let search = $state('')
   let roleFilter = $state('all')
-  let tab = $state(route.path.endsWith('/sso') ? 'sso' : 'people')
+  let tab = $state(route.path.endsWith('/sso') ? 'sso' : route.path.endsWith('/ai') ? 'ai' : 'people')
   let editing = $state<UserRow | null>(null)
   let sheetOpen = $state(false)
   let adding = $state(false)
@@ -113,7 +114,7 @@
   }
   function setTab(v: string) {
     tab = v
-    history.replaceState(null, '', v === 'sso' ? '/users/sso' : '/users')
+    history.replaceState(null, '', v === 'people' ? '/users' : `/users/${v}`)
   }
 </script>
 
@@ -121,7 +122,7 @@
   <div class="flex flex-wrap items-end gap-3">
     <div class="flex-1">
       <h1 class="text-xl font-semibold">Users</h1>
-      <p class="text-muted-foreground text-sm">Owners and admins manage people and sign-in. Builders design apps. Members use the apps they hold a role in.</p>
+      <p class="text-muted-foreground text-sm">Owners and admins manage people, sign-in and the AI assistant. Builders design apps. Members use the apps they hold a role in.</p>
     </div>
     {#if tab === 'people'}<Button onclick={openAdd}><UserPlusIcon />Add user</Button>{/if}
   </div>
@@ -129,6 +130,7 @@
     <Tabs.List>
       <Tabs.Trigger value="people">People <Badge variant="secondary" class="ml-1 h-5 px-1.5">{users.length}</Badge></Tabs.Trigger>
       <Tabs.Trigger value="sso">Single sign-on <Badge variant="secondary" class="ml-1 h-5 px-1.5">{providers.filter((p) => p.enabled).length}</Badge></Tabs.Trigger>
+      <Tabs.Trigger value="ai">AI assistant</Tabs.Trigger>
     </Tabs.List>
 
     <Tabs.Content value="people" class="mt-3">
@@ -261,6 +263,8 @@
         {/each}
       </div>
     </Tabs.Content>
+
+    <Tabs.Content value="ai" class="mt-3"><AISettings /></Tabs.Content>
   </Tabs.Root>
 </div>
 

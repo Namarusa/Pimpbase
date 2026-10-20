@@ -3,6 +3,8 @@
   // role may use. It checks the formula as it is typed.
   import { Textarea } from '$lib/components/ui/textarea'
   import { api, type FormulaError, type Table } from '../api'
+  import FormulaHelp from '../ai/FormulaHelp.svelte'
+  import { isBuilder } from '../session.svelte'
 
   let { value, app, table, onChange, id }: { value: string; app: string; table: Table; onChange: (v: string) => void; id?: string } = $props()
   let errors = $state<FormulaError[]>([])
@@ -49,6 +51,7 @@
     {#each table.fields.slice(0, 6) as f (f.id)}
       <button type="button" class="hover:bg-muted rounded border px-1.5 py-0.5 font-mono text-[10px]" onclick={() => insert(`[${f.name}]`)}>[{f.name}]</button>
     {/each}
+    {#if isBuilder()}<span class="ml-auto"><FormulaHelp {app} table={table.id} purpose="rule" current={value} onUse={onChange} label="AI" /></span>{/if}
   </div>
   {#if err}
     <p class="text-destructive text-xs">{err.message}</p>

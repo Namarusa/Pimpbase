@@ -1,5 +1,7 @@
 <script lang="ts">
   import { api, type FormulaError, type FunctionInfo } from '../lib/api'
+  import FormulaHelp from '../lib/ai/FormulaHelp.svelte'
+  import { isBuilder } from '../lib/session.svelte'
 
   let {
     value = $bindable(''), app, table, isStatic = false, placeholder = '', multiline = false,
@@ -60,6 +62,7 @@
         onkeydown={(e) => e.key === 'Enter' && !err && onSubmit?.()} />
     {/if}
     <button type="button" class="small" onclick={toggleFns} title="Insert a function">Functions</button>
+    {#if isBuilder()}<FormulaHelp {app} {table} purpose={multiline ? 'field' : 'filter'} current={value} onUse={(f) => (value = f)} label="AI" />{/if}
   </div>
   {#if err}
     <div class="msg bad-msg">

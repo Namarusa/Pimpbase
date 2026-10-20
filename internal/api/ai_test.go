@@ -298,6 +298,28 @@ func TestAIAssistant(t *testing.T) {
 		if strings.Contains(sys, "Salaries") || !strings.Contains(sys, "BASIC") {
 			t.Errorf("tables for BASIC: %s", sys)
 		}
+		// Asking as a member applies their own role and email.
+		fake.reset(func(n int, req map[string]any) map[string]any {
+			if n == 0 {
+				return toolUse("query_rows", map[string]any{"table": "Deals", "fields": []any{"Title"}})
+			}
+			res, _ := lastToolResult(req)
+			return say(res)
+		})
+		bobID := ""
+		for _, m := range owner.do("GET", base+"/members", nil, 200)["list"].([]any) {
+			if m.(map[string]any)["email"] == "bob@example.com" {
+				bobID = m.(map[string]any)["userId"].(string)
+			}
+		}
+		owner.do("POST", dt+"/rows", map[string]any{"Title": "Bob's", "Owner": "bob@example.com", "Region": "North", "Amount": 5}, 201)
+		if a := owner.do("POST", base+"/ai/ask", map[string]any{"question": "mine?", "as": "user:" + bobID}, 200); !strings.Contains(a["answer"].(string), "Bob's") || strings.Contains(a["answer"].(string), "Acme") {
+			t.Errorf("as bob = %v", a)
+		}
+		if !strings.Contains(systemText(fake.requests[0]), "bob@example.com") {
+			t.Errorf("who is not named")
+		}
+
 		// A builder sees everything.
 		salaries := func(n int, req map[string]any) map[string]any {
 			if n == 0 {

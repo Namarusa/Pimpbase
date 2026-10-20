@@ -6,6 +6,7 @@
   import LogOutIcon from '@lucide/svelte/icons/log-out'
   import { api } from './lib/api'
   import { route, navigate, match } from './lib/router.svelte'
+  import { reload as aiReload } from './lib/ai/state.svelte'
   import { session, isAdmin } from './lib/session.svelte'
   import Auth from './pages/Auth.svelte'
   import Apps from './pages/Apps.svelte'
@@ -92,20 +93,20 @@
     </header>
     <main class="min-h-0 flex-1 overflow-auto">
       {#if designRoute}
-        {#key designRoute.app}<Design app={designRoute.app} screenId={designRoute.screen} />{/key}
+        {#key designRoute.app + ':' + aiReload.n}<Design app={designRoute.app} screenId={designRoute.screen} />{/key}
       {:else if apisRoute}
-        {#key apisRoute.app}<Apis app={apisRoute.app} item={apisRoute.item} />{/key}
+        {#key apisRoute.app + ':' + aiReload.n}<Apis app={apisRoute.app} item={apisRoute.item} />{/key}
       {:else if flowsRoute}
-        {#key flowsRoute.app}<Flows app={flowsRoute.app} item={flowsRoute.item} />{/key}
+        {#key flowsRoute.app + ':' + aiReload.n}<Flows app={flowsRoute.app} item={flowsRoute.item} />{/key}
       {:else if dataRoute}
-        <div class="studio h-full">{#key dataRoute.app}<Data app={dataRoute.app} tableId={dataRoute.table} />{/key}</div>
+        <div class="studio h-full">{#key dataRoute.app + ':' + aiReload.n}<Data app={dataRoute.app} tableId={dataRoute.table} />{/key}</div>
       {:else if accessRoute}
-        {#key accessRoute.app}<Access app={accessRoute.app} tab={accessRoute.tab} />{/key}
+        {#key accessRoute.app + ':' + aiReload.n}<Access app={accessRoute.app} tab={accessRoute.tab} />{/key}
       {:else if route.path === '/account'}
         <Account />
       {:else if settingsRoute}
         <div class="studio h-full"><AppSettings app={settingsRoute.app} /></div>
-      {:else if route.path === '/users' || route.path === '/users/sso'}
+      {:else if route.path === '/users' || route.path === '/users/sso' || route.path === '/users/ai'}
         <Users />
       {:else}
         <div class="studio h-full"><Apps /></div>

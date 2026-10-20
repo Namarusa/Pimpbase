@@ -245,6 +245,22 @@ export const api = {
     `/api/apps/${enc(app)}/tables/${t}/export` + (filter ? `?filter=${enc(filter)}` : ''),
 }
 
+// The AI assistant.
+export interface AIStatus { configured: boolean; source: '' | 'server' | 'workspace'; keyHint: string; model: string; models: string[] }
+export type DraftKind = 'table' | 'screen' | 'query' | 'flow'
+export interface AIDraft { kind: DraftKind; summary: string; changes: string[]; notes: string; draft: any; target: string; current?: any }
+export interface AIFormula { formula: string; explanation: string; type: string }
+export interface AIAnswer { answer: string; calls: { tool: string; input: any; error?: string }[] }
+export const ai = {
+  status: () => call<AIStatus>('GET', '/ai'),
+  update: (p: { apiKey?: string; model?: string }) => call<AIStatus>('PATCH', '/ai', p),
+  draft: (app: string, kind: DraftKind, prompt: string, catalog: any, target?: string) =>
+    call<AIDraft>('POST', `/apps/${enc(app)}/ai/draft`, { kind, prompt, catalog, target: target ?? '' }),
+  formula: (app: string, table: string, prompt: string, purpose: 'field' | 'filter' | 'rule', current = '') =>
+    call<AIFormula>('POST', `/apps/${enc(app)}/ai/formula`, { table, prompt, purpose, current }),
+  ask: (app: string, question: string, as = '') => call<AIAnswer>('POST', `/apps/${enc(app)}/ai/ask`, { question, as }),
+}
+
 export const fieldTypes: { type: FieldType; label: string; icon: string }[] = [
   { type: 'text', label: 'Text', icon: 'Aa' },
   { type: 'longtext', label: 'Long text', icon: '¶' },

@@ -63,6 +63,9 @@ TLS from the start, and `--smtp log` only writes the mails to the log.
 - **Users and roles**: workspace roles (owner, admin, builder, member) and
   app roles with read, write and delete permissions per table plus row
   rules, checked on every request. See [Access](#access).
+- **AI assistant**: drafts tables, screens, queries and flows for review,
+  writes formulas, and answers questions about data within a person's
+  access. See [AI assistant](#ai-assistant).
 
 ## Access
 
@@ -273,6 +276,36 @@ POST   /api/hooks/{token}                          webhook, no login
 GET    /api/flows/schedule?cron=&timezone=         the next times a schedule fires
 ```
 
+## AI assistant
+
+The builder has an assistant (the **Assistant** button next to an app's tabs)
+that calls the Anthropic API:
+
+- **Drafts**: describe a table, screen, API query or flow and get a draft.
+  The server checks it the same way it checks the builder's own saves and
+  sends any problem back to the model, which corrects it. You then see a
+  preview and a line diff against what exists, and nothing changes until
+  you press **Apply**. On a screen, query or flow page the assistant can
+  also change the open one.
+- **Formula help**: the **AI** button next to formula fields, filters and
+  row rules writes a formula from a description. It is compiled and type
+  checked before you see it, and you choose whether to use it.
+- **Ask about data**: questions about an app's rows, answered by reading
+  them through two tools (list rows, and count/sum/average per group). The
+  reads use the access of whoever you pick: you, a member, or a role, so
+  table permissions, row rules and hidden links apply.
+
+The API key belongs to the server. Start it with `--anthropic-key` (or
+`BUBIBASE_ANTHROPIC_KEY` or `ANTHROPIC_API_KEY`), or let a workspace admin
+save one in **Users → AI assistant**, where the model is chosen too
+(`claude-opus-5-5` by default). The key is never sent to the browser, only a
+hint such as `sk-ant-…a1b2`, and published apps cannot reach the assistant:
+every assistant endpoint needs a builder. Without a key, the assistant says
+so and points admins to the setting. What is sent to Anthropic is the app's
+structure (table and field names, screens, queries, flows, role names,
+variable names but never their values) and, for questions, the rows the
+tools read.
+
 ## REST API
 
 All endpoints are under `/api`. Rows of a table:
@@ -312,6 +345,7 @@ internal/interp/   {{ binding }} templates for API queries, escaped per context
 internal/xmltree/  XML to JSON-like data and back
 internal/queries/  API data sources, queries, variables and the query runner
 internal/flows/    flows, the engine, cron, email, PDF documents
+internal/ai/       the assistant: settings, Anthropic API calls, drafts, formulas, questions
 internal/api/      HTTP API
 web/builder/       Svelte builder, embedded from web/builder/dist
 ```

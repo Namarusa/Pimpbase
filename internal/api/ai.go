@@ -594,8 +594,8 @@ func (s *Server) aiFormula(w http.ResponseWriter, r *http.Request) error {
 }
 
 // aiAsk answers a question about the app's data with the access of the
-// builder, or of the role they preview: tables, row rules and hidden
-// links apply as they would to someone with that role.
+// builder, of a role, or of one member ("user:<id>"): tables, row rules
+// and hidden links apply as they would to that person.
 func (s *Server) aiAsk(w http.ResponseWriter, r *http.Request) error {
 	a, err := s.builderApp(r)
 	if err != nil {
@@ -615,21 +615,40 @@ func (s *Server) aiAsk(w http.ResponseWriter, r *http.Request) error {
 	}
 	who := "a builder of the app, who sees all data"
 	if in.As != "" {
-		role, err := rbac.ParseRole(in.As)
-		if err != nil {
-			return errStatus(400, err.Error())
-		}
 		set, err := s.Apps.Roles(ctx, a.ID)
 		if err != nil {
 			return err
 		}
-		if !set.Has(role) {
-			return errStatus(400, "the app has no role "+string(role))
+		if id, ok := strings.CutPrefix(in.As, "user:"); ok {
+			// A member of the app, with their own role, email and groups,
+			// so row rules about them apply.
+			u, err := s.Auth.Get(ctx, id)
+			if err != nil {
+				return err
+			}
+			role, err := s.Apps.RoleOf(ctx, a.ID, u.ID)
+			if err != nil {
+				return err
+			}
+			if u.IsBuilder() || !set.Has(role) {
+				return errStatus(400, u.Name+" is a builder or has no role in this app; pick a member")
+			}
+			act = rbac.NewActor(set, role)
+			act.UserID, act.Email, act.Name, act.Groups = u.ID, u.Email, u.Name, u.Groups
+			who = fmt.Sprintf("%s (%s), whose app role is %s", u.Name, u.Email, role)
+		} else {
+			role, err := rbac.ParseRole(in.As)
+			if err != nil {
+				return errStatus(400, err.Error())
+			}
+			if !set.Has(role) {
+				return errStatus(400, "the app has no role "+string(role))
+			}
+			u := userFrom(r)
+			act = rbac.NewActor(set, role)
+			act.UserID, act.Email, act.Name = u.ID, u.Email, u.Name
+			who = "someone with the app role " + string(role)
 		}
-		u := userFrom(r)
-		act = rbac.NewActor(set, role)
-		act.UserID, act.Email, act.Name = u.ID, u.Email, u.Name
-		who = "someone with the app role " + string(role)
 	}
 	ts, err := s.Tables.List(ctx, a.ID)
 	if err != nil {
