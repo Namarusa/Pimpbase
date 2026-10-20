@@ -1,6 +1,7 @@
 package formula
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -170,5 +171,47 @@ func TestTypes(t *testing.T) {
 		if c.Type != want {
 			t.Errorf("%s: type %s, want %s", src, c.Type, want)
 		}
+	}
+}
+
+func TestRenameAcrossLinks(t *testing.T) {
+	src := `[Qty] + SUMOF([Lines], [Qty], [Qty] > 0) + [Lines].[Qty] + [Cust].[Qty]`
+	if got, want := RenameField(src, "Qty", "N"), `[N] + SUMOF([Lines], [Qty], [Qty] > 0) + [Lines].[Qty] + [Cust].[Qty]`; got != want {
+		t.Errorf("RenameField: got %s, want %s", got, want)
+	}
+	if got, want := RenameField(src, "Lines", "Items"), `[Qty] + SUMOF([Items], [Qty], [Qty] > 0) + [Items].[Qty] + [Cust].[Qty]`; got != want {
+		t.Errorf("RenameField of a link: got %s, want %s", got, want)
+	}
+	if got, want := RenameLinkedField(src, "lines", "Qty", "Units"), `[Qty] + SUMOF([Lines], [Units], [Units] > 0) + [Lines].[Units] + [Cust].[Qty]`; got != want {
+		t.Errorf("RenameLinkedField: got %s, want %s", got, want)
+	}
+	if got := fmt.Sprint(LinkedFieldRefs(src, "Cust")); got != "[Qty]" {
+		t.Errorf("LinkedFieldRefs: %s", got)
+	}
+	n, _ := Parse(src)
+	if got := fmt.Sprint(FieldRefs(n)); got != "[Qty Lines Cust]" {
+		t.Errorf("FieldRefs: %s", got)
+	}
+}
+
+func TestLinkErrors(t *testing.T) {
+	s := linkScope{diffScope}
+	for src, msg := range map[string]string{
+		"[n].[x]":               "[n] does not link to another table",
+		"[nope].[x]":            "no field named [nope]",
+		"[cust].[x]":            "has no field named [x]",
+		"SUMOF([lines], [st])":  "the value of SUMOF must be a number",
+		"SUMOF([n], 1)":         "[n] does not link",
+		"SUMOF(1, 1)":           "must be a link field",
+		"COUNTOF([lines], [n])": "no field named [n]",
+		"SUMOF([lines])":        "SUMOF takes 2 to 3 arguments",
+	} {
+		_, errs := Compile(src, s)
+		if len(errs) == 0 || !strings.Contains(errs[0].Message, msg) {
+			t.Errorf("%s: got %v, want %q", src, errs, msg)
+		}
+	}
+	if _, errs := Compile("[cust].[nm]", scope); len(errs) == 0 || !strings.Contains(errs[0].Message, "cannot be read here") {
+		t.Errorf("links outside tables: %v", errs)
 	}
 }

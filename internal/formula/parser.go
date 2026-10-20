@@ -230,6 +230,11 @@ func (p *parser) prefix() (Node, *Error) {
 	case tString:
 		return &StringLit{span{t.start, t.end}, t.text}, nil
 	case tField:
+		if p.peek().kind == tDot && p.toks[p.pos+1].kind == tField {
+			p.next()
+			f := p.next()
+			return &LinkField{span: span{t.start, f.end}, Link: t.text, Field: f.text, linkEnd: t.end, fieldStart: f.start}, nil
+		}
 		return &FieldRef{span{t.start, t.end}, t.text}, nil
 	case tLParen:
 		n, err := p.expr(0)
@@ -281,7 +286,7 @@ func (p *parser) prefix() (Node, *Error) {
 		for p.peek().kind == tDot {
 			p.next()
 			id := p.next()
-			if id.kind != tIdent {
+			if id.kind != tIdent && id.kind != tField { // a.[name with spaces]
 				return nil, errAt(id.start, id.end, "expected a name after .")
 			}
 			parts = append(parts, id.text)
@@ -294,16 +299,101 @@ func (p *parser) prefix() (Node, *Error) {
 	return nil, errAt(t.start, t.end, "unexpected %q", t.text)
 }
 
-// FieldRefs returns the distinct field names referenced by n.
+// FieldRefs returns the distinct fields of the current row that n uses.
+// Fields of linked tables, inside rollups or after [Link]., are left out;
+// the link fields themselves are in.
 func FieldRefs(n Node) []string {
 	seen := map[string]bool{}
 	var out []string
-	Walk(n, func(n Node) {
-		if f, ok := n.(*FieldRef); ok && !seen[strings.ToLower(f.Name)] {
-			seen[strings.ToLower(f.Name)] = true
-			out = append(out, f.Name)
+	for _, r := range outerRefs(n) {
+		if !seen[strings.ToLower(r.name)] {
+			seen[strings.ToLower(r.name)] = true
+			out = append(out, r.name)
 		}
-	})
+	}
+	return out
+}
+
+// ref is a field name in the source and the byte range of its [brackets].
+type ref struct {
+	name       string
+	start, end int
+}
+
+// outerRefs lists the references to fields of the current row.
+func outerRefs(n Node) []ref {
+	var out []ref
+	var walk func(n Node)
+	walk = func(n Node) {
+		switch n := n.(type) {
+		case *FieldRef:
+			out = append(out, ref{n.Name, n.start, n.end})
+		case *LinkField:
+			out = append(out, ref{n.Link, n.start, n.linkEnd})
+		case *Unary:
+			walk(n.X)
+		case *Binary:
+			walk(n.L)
+			walk(n.R)
+		case *In:
+			walk(n.X)
+			for _, a := range n.List {
+				walk(a)
+			}
+		case *Call:
+			if f := functions[n.Name]; f != nil && f.rollup && len(n.Args) > 0 {
+				walk(n.Args[0])
+				return
+			}
+			for _, a := range n.Args {
+				walk(a)
+			}
+		}
+	}
+	walk(n)
+	return out
+}
+
+// linkedRefs lists the references to fields of the table that link
+// points to: [link].[x], and [x] inside rollups over link.
+func linkedRefs(n Node, link string) []ref {
+	var out []ref
+	var walk func(n Node, inside bool)
+	walk = func(n Node, inside bool) {
+		switch n := n.(type) {
+		case *FieldRef:
+			if inside {
+				out = append(out, ref{n.Name, n.start, n.end})
+			}
+		case *LinkField:
+			if !inside && strings.EqualFold(n.Link, link) {
+				out = append(out, ref{n.Field, n.fieldStart, n.end})
+			}
+		case *Unary:
+			walk(n.X, inside)
+		case *Binary:
+			walk(n.L, inside)
+			walk(n.R, inside)
+		case *In:
+			walk(n.X, inside)
+			for _, a := range n.List {
+				walk(a, inside)
+			}
+		case *Call:
+			if f := functions[n.Name]; f != nil && f.rollup && len(n.Args) > 0 && !inside {
+				r, ok := n.Args[0].(*FieldRef)
+				in := ok && strings.EqualFold(r.Name, link)
+				for _, a := range n.Args[1:] {
+					walk(a, in)
+				}
+				return
+			}
+			for _, a := range n.Args {
+				walk(a, inside)
+			}
+		}
+	}
+	walk(n, false)
 	return out
 }
 

@@ -35,6 +35,8 @@ type Row struct {
 	Created time.Time
 	Updated time.Time
 	Values  map[string]any
+	// links loads linked rows for formulas, with the rest of the batch.
+	links *linkLoader
 }
 
 // decode turns a scanned SQL value into the field's Go value.
@@ -367,6 +369,12 @@ func (s *Service) hydrate(ctx context.Context, ex store.Execer, db *store.DB, c 
 	if len(rows) == 0 {
 		return nil
 	}
+	if depth == 0 && len(c.targets) > 0 {
+		l := &linkLoader{s: s, ctx: ctx, ex: ex, db: db, c: c, rows: rows, loaded: map[string]map[int64][]*Row{}, errs: map[string]error{}}
+		for _, r := range rows {
+			r.links = l
+		}
+	}
 	byID := map[int64]*Row{}
 	var ids []int64
 	for _, r := range rows {
@@ -611,7 +619,7 @@ func (e *rowEnv) Name(parts []string) any {
 // rule compiles the row rule that applies to the actor, or gives nil when
 // every row is open to them.
 func (c *compiled) rule(actor rbac.Actor) (*formula.Checked, error) {
-	return compileRule(c.Table, c.RowRuleFor(actor))
+	return compileRule(c.scope(true), c.RowRuleFor(actor))
 }
 
 // allowed reports whether the actor's row rule lets them at a loaded row.
@@ -850,11 +858,19 @@ type resolver struct {
 	dialect string
 	env     formula.Env
 	depth   int
+	db      *store.DB
+	// self names the table inside a subquery over linked rows; it is ""
+	// in the main query.
+	self string
+}
+
+func (c *compiled) resolver(db *store.DB, env formula.Env) resolver {
+	return resolver{c: c, dialect: string(db.Dialect), env: env, db: db}
 }
 
 func (r resolver) FieldSQL(name string) (string, []any, bool) {
 	f := r.c.FieldByName(name)
-	if f == nil {
+	if f == nil || r.c.broken[f.ID] {
 		return "", nil, false
 	}
 	switch {
@@ -868,6 +884,9 @@ func (r resolver) FieldSQL(name string) (string, []any, bool) {
 		return "(" + expr + ")", args, ok
 	case f.Type == TypeLink || f.Type == TypeMultiSelect || f.Type == TypeAttachment:
 		return "", nil, false
+	}
+	if r.self != "" {
+		return r.self + "." + store.Q(f.Column), nil, true
 	}
 	return store.Q(f.Column), nil, true
 }
@@ -896,10 +915,12 @@ func (s *Service) ListRows(ctx context.Context, actor rbac.Actor, appID, tableID
 
 	var filters []*formula.Checked
 	if strings.TrimSpace(q.Filter) != "" {
-		scope := tableScope{t: c.Table, names: true}
-		ch, errs := formula.Compile(q.Filter, scope)
+		ch, errs := formula.Compile(q.Filter, c.scope(true))
 		if errs != nil {
 			return nil, &ValidationError{Field: "filter", Message: errs[0].Message, Formula: errs}
+		}
+		if err := checkLinkedReads(c, ch, actor); err != nil {
+			return nil, err
 		}
 		if ch.Type != formula.Bool && ch.Type != formula.Any && ch.Type != formula.Null {
 			return nil, &ValidationError{Field: "filter", Message: "a filter must be true or false, this one gives " + ch.Type.String()}
@@ -937,7 +958,7 @@ func (s *Service) ListRows(ctx context.Context, actor rbac.Actor, appID, tableID
 	var sortArgs []any
 	if sortField != nil && sortField.Type == TypeFormula && sortField.FormulaMode == Dynamic {
 		// Sort by the formula itself when it has an SQL form.
-		if expr, args, ok := (resolver{c: c, dialect: string(db.Dialect), env: env}).FieldSQL(sortField.Name); ok {
+		if expr, args, ok := c.resolver(db, env).FieldSQL(sortField.Name); ok {
 			sortCol, sortArgs, sortSQL = expr, args, true
 		}
 	}
@@ -945,7 +966,7 @@ func (s *Service) ListRows(ctx context.Context, actor rbac.Actor, appID, tableID
 	where, args := "", []any(nil)
 	pushed := true
 	for _, f := range filters {
-		w, ok := f.CompileSQL(string(db.Dialect), resolver{c: c, dialect: string(db.Dialect), env: env}, env)
+		w, ok := f.CompileSQL(string(db.Dialect), c.resolver(db, env), env)
 		if !ok {
 			pushed = false
 			break

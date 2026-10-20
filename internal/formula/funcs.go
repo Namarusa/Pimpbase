@@ -556,6 +556,9 @@ func init() {
 	for name, f := range moreFunctions() {
 		functions[name] = f
 	}
+	for name, f := range rollupFunctions() {
+		functions[name] = f
+	}
 }
 
 func datePart(fn func(time.Time) int) func(Env, []any) (any, error) {

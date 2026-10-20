@@ -66,6 +66,8 @@ func (ev *evaluator) eval(n Node) (any, error) {
 		return nil, nil
 	case *FieldRef:
 		return ev.env.Field(n.Name), nil
+	case *LinkField:
+		return ev.linkField(n)
 	case *NameRef:
 		return ev.env.Name(n.Parts), nil
 	case *Unary:

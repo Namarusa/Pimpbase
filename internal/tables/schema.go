@@ -53,6 +53,26 @@ func NewService(s *store.Store) *Service {
 type compiled struct {
 	*Table
 	formulas map[string]*formula.Checked // by field id
+	// targets are the tables link fields point to, by link field id,
+	// compiled without following their own links: formulas read linked
+	// rows one link deep.
+	targets map[string]*compiled
+	// broken formulas no longer compile, because a linked table changed
+	// under them; they give blanks until fixed.
+	broken map[string]bool
+}
+
+// scope is where formulas of the table are checked; names says whether
+// Current.User is available.
+func (c *compiled) scope(names bool) tableScope {
+	return tableScope{t: c.Table, names: names, target: c.targetTable}
+}
+
+func (c *compiled) targetTable(f *Field) *Table {
+	if tc := c.targets[f.ID]; tc != nil {
+		return tc.Table
+	}
+	return nil
 }
 
 // tableScope resolves names inside a table's formulas.
@@ -61,6 +81,26 @@ type tableScope struct {
 	names    bool // Current.User is available
 	resolve  func(f *Field) (formula.Type, bool)
 	selfName string
+	// target is the table a link field points to; nil where formulas may
+	// not read linked rows.
+	target func(f *Field) *Table
+}
+
+func (s tableScope) Link(name string) (formula.Scope, bool, bool) {
+	f := s.t.FieldByName(name)
+	if f == nil || f.Type != TypeLink || s.target == nil {
+		return nil, false, false
+	}
+	t := s.target(f)
+	if t == nil {
+		return nil, false, false
+	}
+	return tableScope{t: t, names: s.names}, f.LinkMany, true
+}
+
+// lookup loads the tables of an app by id, for the links of a table.
+func (s *Service) lookup(ctx context.Context, appID string) func(id string) (*Table, error) {
+	return func(id string) (*Table, error) { return s.load(ctx, appID, id) }
 }
 
 func (s tableScope) FieldType(name string) (formula.Type, bool) {
@@ -89,7 +129,8 @@ func (s tableScope) NameType(parts []string) (formula.Type, bool) {
 
 // checkPermissions checks a table's permissions: every role is set and
 // every row rule is a valid condition, at most one per role.
-func checkPermissions(t *Table, p *Permissions) error {
+func checkPermissions(c *compiled, p *Permissions) error {
+	scope := c.scope(true)
 	for _, r := range []rbac.Role{p.Read, p.Write, p.Delete} {
 		if r == "" || r == rbac.None {
 			return invalid("permissions", "pick a role for reading, writing and deleting rows")
@@ -107,7 +148,7 @@ func checkPermissions(t *Table, p *Permissions) error {
 			return invalid("permissions", "%s has two row rules", rule.Role)
 		}
 		seen[rule.Role] = true
-		if _, err := compileRule(t, rule.Filter); err != nil {
+		if _, err := compileRule(scope, rule.Filter); err != nil {
 			return err
 		}
 	}
@@ -115,11 +156,11 @@ func checkPermissions(t *Table, p *Permissions) error {
 }
 
 // compileRule checks a row rule's filter; an empty filter gives nil.
-func compileRule(t *Table, filter string) (*formula.Checked, error) {
+func compileRule(scope tableScope, filter string) (*formula.Checked, error) {
 	if strings.TrimSpace(filter) == "" {
 		return nil, nil
 	}
-	ch, errs := formula.Compile(filter, tableScope{t: t, names: true})
+	ch, errs := formula.Compile(filter, scope)
 	if errs != nil {
 		return nil, &ValidationError{Field: "permissions", Message: "row rule: " + errs[0].Message, Formula: errs}
 	}
@@ -147,8 +188,37 @@ func (t *Table) RowRuleFor(actor rbac.Actor) string {
 
 // compile checks every formula field of t, in dependency order, and sets
 // their result types. It reports the first field whose formula is invalid.
-func compile(t *Table) (*compiled, error) {
-	c := &compiled{Table: t, formulas: map[string]*formula.Checked{}}
+// lookup loads the tables that link fields point to.
+func compile(t *Table, lookup func(id string) (*Table, error)) (*compiled, error) {
+	return build(t, lookup, false)
+}
+
+// compileLenient is compile for reading: formulas broken by a change to a
+// linked table give blanks instead of making the table unusable.
+func compileLenient(t *Table, lookup func(id string) (*Table, error)) *compiled {
+	c, _ := build(t, lookup, true)
+	return c
+}
+
+var blankFormula, _ = formula.Compile("NULL", tableScope{t: &Table{}})
+
+func build(t *Table, lookup func(id string) (*Table, error), lenient bool) (*compiled, error) {
+	c := &compiled{Table: t, formulas: map[string]*formula.Checked{}, targets: map[string]*compiled{}, broken: map[string]bool{}}
+	if lookup != nil {
+		for _, f := range t.Fields {
+			if f.Type != TypeLink {
+				continue
+			}
+			target := t
+			if f.LinkTable != t.ID {
+				var err error
+				if target, err = lookup(f.LinkTable); err != nil {
+					continue
+				}
+			}
+			c.targets[f.ID], _ = build(target, nil, true)
+		}
+	}
 	visiting := map[string]bool{}
 	var errField *Field
 	var errs []*formula.Error
@@ -166,18 +236,24 @@ func compile(t *Table) (*compiled, error) {
 		}
 		visiting[f.ID] = true
 		defer delete(visiting, f.ID)
-		scope := tableScope{t: t, names: f.FormulaMode != Static, resolve: resolve}
+		scope := c.scope(f.FormulaMode != Static)
+		scope.resolve = resolve
 		ch, e := formula.Compile(f.Formula, scope)
+		if e == nil && f.FormulaMode == Static {
+			if ch.Type == formula.List {
+				e = []*formula.Error{{Start: 0, End: len(f.Formula), Message: "a stored formula cannot return a list"}}
+			} else if ch.UsesLinks() {
+				e = []*formula.Error{{Start: 0, End: len(f.Formula), Message: errStaticLinks}}
+			}
+		}
 		if e != nil {
+			if lenient {
+				c.formulas[f.ID] = blankFormula
+				c.broken[f.ID] = true
+				return f.ResultType, true
+			}
 			if errField == nil {
 				errField, errs = f, e
-			}
-			return formula.Any, false
-		}
-		if ch.Type == formula.List && f.FormulaMode == Static {
-			if errField == nil {
-				errField = f
-				errs = []*formula.Error{{Start: 0, End: len(f.Formula), Message: "a stored formula cannot return a list"}}
 			}
 			return formula.Any, false
 		}
@@ -203,14 +279,16 @@ func (s *Service) CheckFormula(ctx context.Context, appID, tableID, src string, 
 	if err != nil {
 		return formula.Any, nil, err
 	}
-	c, err := compile(t)
+	c, err := compile(t, s.lookup(ctx, appID))
 	if err != nil {
 		return formula.Any, nil, err
 	}
-	scope := tableScope{t: c.Table, names: !static}
-	ch, errs := formula.Compile(src, scope)
+	ch, errs := formula.Compile(src, c.scope(!static))
 	if errs != nil {
 		return formula.Any, errs, nil
+	}
+	if static && ch.UsesLinks() {
+		return formula.Any, []*formula.Error{{Start: 0, End: len(src), Message: errStaticLinks}}, nil
 	}
 	return ch.Type, nil, nil
 }
@@ -232,12 +310,14 @@ func (s *Service) load(ctx context.Context, appID, tableID string) (*Table, erro
 	return t, nil
 }
 
+const errStaticLinks = "a stored formula cannot read linked rows, which change without it; make it dynamic"
+
 func (s *Service) loadCompiled(ctx context.Context, appID, tableID string) (*compiled, error) {
 	t, err := s.load(ctx, appID, tableID)
 	if err != nil {
 		return nil, err
 	}
-	return compile(t)
+	return compileLenient(t, s.lookup(ctx, appID)), nil
 }
 
 // List returns the tables of an app, by name.
@@ -304,6 +384,11 @@ func (s *Service) change(ctx context.Context, appID string, create bool, fn func
 	t, err := fn(tx)
 	if err != nil {
 		return nil, err
+	}
+	if !create {
+		if err := s.checkDependents(ctx, t); err != nil {
+			return nil, err
+		}
 	}
 	t.UpdatedAt = s.now().UTC()
 	if err := s.saveMeta(ctx, t, create); err != nil {
@@ -384,7 +469,11 @@ func (s *Service) UpdateTable(ctx context.Context, appID, tableID string, p Tabl
 		if p.Permissions != nil {
 			perm := *p.Permissions
 			perm.normalize()
-			if err := checkPermissions(t, &perm); err != nil {
+			c, err := compile(t, s.lookup(ctx, appID))
+			if err != nil {
+				return nil, err
+			}
+			if err := checkPermissions(c, &perm); err != nil {
 				return nil, err
 			}
 			t.Permissions = perm
@@ -540,7 +629,7 @@ func (s *Service) addField(ctx context.Context, tx *store.Tx, t *Table, in Field
 		return nil, err
 	}
 	t.Fields = append(t.Fields, f)
-	c, err := compile(t)
+	c, err := compile(t, s.lookup(ctx, t.AppID))
 	if err != nil {
 		return nil, err
 	}
@@ -648,6 +737,12 @@ func (s *Service) UpdateField(ctx context.Context, appID, tableID, fieldID strin
 					o.Formula = formula.RenameField(o.Formula, f.Name, name)
 				}
 			}
+			for i := range t.Permissions.Rows {
+				t.Permissions.Rows[i].Filter = formula.RenameField(t.Permissions.Rows[i].Filter, f.Name, name)
+			}
+			if err := s.renameLinked(ctx, t, f.Name, name); err != nil {
+				return nil, err
+			}
 			f.Name = name
 		}
 		if p.Options != nil {
@@ -675,7 +770,7 @@ func (s *Service) UpdateField(ctx context.Context, appID, tableID, fieldID strin
 			}
 			f.Type = *p.Type
 		}
-		c, err := compile(t)
+		c, err := compile(t, s.lookup(ctx, appID))
 		if err != nil {
 			return nil, err
 		}
@@ -859,7 +954,13 @@ func (s *Service) CheckFields(ctx context.Context, appID string, base *Table, na
 		}
 		t.Fields = append(t.Fields, f)
 	}
-	if _, err := compile(t); err != nil {
+	lookup := s.lookup(ctx, appID)
+	if _, err := compile(t, func(id string) (*Table, error) {
+		if id == t.ID {
+			return t, nil
+		}
+		return lookup(id)
+	}); err != nil {
 		return err
 	}
 	return nil

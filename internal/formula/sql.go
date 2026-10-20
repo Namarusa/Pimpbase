@@ -136,7 +136,8 @@ func (comp *compiler) param(v any, t Type) (sqlExpr, bool) {
 func constant(n Node) bool {
 	c := true
 	Walk(n, func(n Node) {
-		if _, ok := n.(*FieldRef); ok {
+		switch n.(type) {
+		case *FieldRef, *LinkField:
 			c = false
 		}
 	})
@@ -212,7 +213,12 @@ func (comp *compiler) node(n Node) (sqlExpr, bool) {
 		}
 		parts = append(parts, "))")
 		return cat(false, parts...), true
+	case *LinkField:
+		return comp.linkFieldSQL(n, t)
 	case *Call:
+		if e, handled, ok := comp.callLinkSQL(n); handled {
+			return e, ok
+		}
 		return comp.call(n, t)
 	}
 	return sqlExpr{}, false
