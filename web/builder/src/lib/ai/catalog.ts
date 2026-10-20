@@ -20,7 +20,7 @@ export function catalog(kind: DraftKind, tables: Table[]): any {
         defaults: c.defaults(),
         settings: c.settings.map((s) => ({ key: s.key, kind: s.kind, label: s.label, options: options(s.options), help: s.help })),
       })),
-      commonSettings: ['grow', 'span', 'roles', 'visibleIf', 'printHide'],
+      commonSettings: ['grow', 'span', 'roles', 'showWhen', 'conditions', 'printHide'],
       actions: actionTypes.map((a) => ({ type: a.type, label: a.label, fields: a.fields.map((f) => ({ key: f.key, kind: f.kind, label: f.label })) })),
       examples: sample ? [listScreen(sample), detailScreen(sample)].map((s) => ({ ...s, definition: compact(s.definition) })) : [],
     }

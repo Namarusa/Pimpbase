@@ -54,7 +54,9 @@ export type SettingKind =
   | 'actions'
   | 'filter'
   | 'options'
-  | 'condition'
+  | 'condition' // the older "Show only when" rule
+  | 'formula' // a formula over the screen's scope, such as a show-when rule
+  | 'conditions' // settings that change while a formula is true
   | 'dialog'
   | 'roles' // app roles that may see the component
 
@@ -111,6 +113,7 @@ export interface Scope {
   index?: number
   form?: Record<string, any>
   result?: any
+  device?: 'desktop' | 'tablet' | 'phone'
   [key: string]: any
 }
 

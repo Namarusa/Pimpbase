@@ -1,7 +1,9 @@
 // {{ bindings }} read values from the scope: {{ row.Name }}, {{ url.id }},
 // {{ user.name }}, {{ data.total }}, {{ state.search }}, {{ form.Email }}.
-// A pipe formats the value: {{ row.Price | currency }}.
+// A pipe formats the value: {{ row.Price | currency }}. A binding that
+// starts with = is a formula: {{ = IF([Qty] > 10, "bulk", "") }}.
 import { formatDate, linkLabel } from '../format'
+import { runFormula } from './formulas'
 import type { Scope } from './types'
 
 const re = /\{\{\s*([^}]*?)\s*\}\}/g
@@ -51,6 +53,14 @@ export const pipeNames = Object.keys(pipes)
 
 // evaluate reads one binding expression: a path and optional pipes.
 export function evaluate(expr: string, scope: Record<string, any>): any {
+  const src = expr.trim()
+  if (src.startsWith('=')) {
+    try {
+      return runFormula(src.slice(1), scope as Scope)
+    } catch {
+      return null // the designer shows what is wrong
+    }
+  }
   const [path, ...rest] = expr.split('|')
   let v = lookup(scope, path.trim())
   for (const p of rest) {

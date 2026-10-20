@@ -17,6 +17,9 @@
   import ChartColors from './ChartColors.svelte'
   import { colorItems } from '../screen/chart'
   import ActionsEditor from './ActionsEditor.svelte'
+  import ScreenFormulaInput from './ScreenFormulaInput.svelte'
+  import ConditionsEditor from './ConditionsEditor.svelte'
+  import { conditionFormula } from '../screen/formulas'
   import { registry } from '../screen/registry'
   import { conditionOps } from '../screen/bindings'
   import { iconNames, icons } from '../screen/icons'
@@ -217,17 +220,21 @@
                   <ActionsEditor value={props[s.key] ?? []} onChange={(v) => set(s.key, v)} groups={actionGroups} />
                 {:else if s.kind === 'roles'}
                   <RolesPicker id={sid(s)} roles={d.roles} value={props[s.key] ?? []} onChange={(v) => set(s.key, v.length ? v : undefined)} />
-                {:else if s.kind === 'condition'}
-                  {@const c = props.visibleIf ?? { left: '', op: 'not_empty', right: '' }}
-                  <BindingInput value={c.left} onChange={(v) => set('visibleIf', { ...c, left: v })} {groups} placeholder={'{{ user.email }}'} />
-                  <Select.Root type="single" value={c.op} onValueChange={(v) => set('visibleIf', { ...c, op: v })}>
-                    <Select.Trigger size="sm" class="w-full">{conditionOps.find((o) => o.value === c.op)?.label}</Select.Trigger>
-                    <Select.Content>{#each conditionOps as o (o.value)}<Select.Item value={o.value} label={o.label}>{o.label}</Select.Item>{/each}</Select.Content>
-                  </Select.Root>
-                  {#if !['empty', 'not_empty', 'true', 'false'].includes(c.op)}
-                    <BindingInput value={c.right ?? ''} onChange={(v) => set('visibleIf', { ...c, right: v })} {groups} placeholder="value" />
+                {:else if s.kind === 'formula'}
+                  <ScreenFormulaInput id={sid(s)} value={props[s.key] ?? ''} onChange={(v) => set(s.key, v.trim() ? v : undefined)} {groups} placeholder={s.placeholder} />
+                  {#if s.key === 'showWhen' && props.visibleIf?.left}
+                    {@const c = props.visibleIf}
+                    {@const f = conditionFormula(c)}
+                    <div class="bg-muted/50 flex flex-col gap-1 rounded-md border p-2 text-xs">
+                      <span>Also shown only when <code class="font-mono">{c.left}</code> {conditionOps.find((o) => o.value === c.op)?.label} {#if c.right}<code class="font-mono">{c.right}</code>{/if}</span>
+                      <div class="flex gap-3">
+                        {#if f}<Button variant="link" size="sm" class="h-auto p-0 text-xs" onclick={() => { set('showWhen', props.showWhen ? `(${props.showWhen}) AND ${f}` : f); set('visibleIf', undefined) }}>Turn into a formula</Button>{/if}
+                        <Button variant="link" size="sm" class="h-auto p-0 text-xs" onclick={() => set('visibleIf', undefined)}>Remove</Button>
+                      </div>
+                    </div>
                   {/if}
-                  {#if c.left}<Button variant="link" size="sm" class="h-auto self-start p-0 text-xs" onclick={() => set('visibleIf', undefined)}>Always show</Button>{/if}
+                {:else if s.kind === 'conditions'}
+                  <ConditionsEditor value={props[s.key] ?? []} onChange={(v) => set(s.key, v)} settings={def.settings} {props} {groups} />
                 {/if}
                 {#if s.help}<p class="text-muted-foreground text-xs">{s.help}</p>{/if}
               </div>

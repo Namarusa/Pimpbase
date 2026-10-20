@@ -3,6 +3,7 @@
   import { spanClass } from './styles'
   import { getRuntime, getScope } from './context.svelte'
   import { checkCondition, hasBinding, resolve } from './bindings'
+  import { applyConditions, isTrue } from './formulas'
   import type { Node } from './types'
 
   let { node }: { node: Node } = $props()
@@ -12,13 +13,16 @@
   const def = $derived(registry[node.type])
   const scope = $derived(scopeFn())
   // Settings that keep their bindings for the component to resolve later.
-  const raw = new Set(['actions', 'condition', 'filter', 'options', 'fields'])
+  const raw = new Set(['actions', 'condition', 'formula', 'conditions', 'filter', 'options', 'fields'])
+  // The canvas ignores conditions unless the builder asks to see them.
+  const live = $derived(!rt.editing || rt.applyConditions)
   const p = $derived.by(() => {
-    const out: Record<string, any> = { ...def?.defaults(), ...node.props }
+    let out: Record<string, any> = { ...def?.defaults(), ...node.props }
+    if (live) out = applyConditions(out, node.props.conditions, scope)
     for (const s of def?.settings ?? []) if (!raw.has(s.kind) && hasBinding(out[s.key])) out[s.key] = resolve(out[s.key], scope)
     return out
   })
-  const visible = $derived(rt.editing || checkCondition(node.props.visibleIf, scope))
+  const visible = $derived(!live || (checkCondition(node.props.visibleIf, scope) && isTrue(node.props.showWhen, scope)))
   const wrap = $derived([
     'bb-node relative min-w-0',
     p.grow ? 'flex-1' : '',
@@ -28,7 +32,7 @@
     rt.editing ? 'bb-edit-node' : '',
     rt.editing && rt.selected === node.id && node.id !== 'root' ? 'bb-selected' : '',
     rt.editing && rt.hovered === node.id && rt.selected !== node.id ? 'bb-hovered' : '',
-    rt.editing && (node.props.visibleIf?.left || node.props.roles?.length) ? 'bb-conditional' : '',
+    rt.editing && (node.props.visibleIf?.left || node.props.showWhen || node.props.conditions?.length || node.props.roles?.length) ? 'bb-conditional' : '',
   ].filter(Boolean).join(' '))
 
   function select(e: MouseEvent) {

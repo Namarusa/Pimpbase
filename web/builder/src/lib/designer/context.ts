@@ -92,4 +92,4 @@ function providerTable(path: Node[], tables: Table[]): Table | undefined {
   return undefined
 }
 
-export const pipeHelp = 'Format with a pipe: {{ row.Price | currency }}, | number:2, | date, | upper, | default:"none", | count.'
+export const pipeHelp = 'Format with a pipe: {{ row.Price | currency }}, | number:2, | date, | upper, | default:"none", | count. Or write a formula after =: {{ = ROUND([Price] * 1.2, 2) }}.'

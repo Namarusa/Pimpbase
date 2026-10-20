@@ -25,6 +25,11 @@ export class Runtime {
   dialogScopes = $state<Record<string, Partial<Scope>>>({})
   // refresh counters: data components reload when theirs or "all" change.
   refresh = $state<Record<string, number>>({ all: 0 })
+  // applyConditions makes the builder's canvas follow show-when rules and
+  // conditional settings, as the app does.
+  applyConditions = $state(false)
+  // device is the kind of screen the app is shown on.
+  device = $state<'desktop' | 'tablet' | 'phone'>('desktop')
   // selected and hovered component ids, in the builder.
   selected = $state<string | null>(null)
   hovered = $state<string | null>(null)

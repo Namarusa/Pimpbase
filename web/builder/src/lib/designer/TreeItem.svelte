@@ -62,7 +62,7 @@
   {#if def}<def.icon class="size-3.5 shrink-0 opacity-70" />{/if}
   <span class="truncate">{node.id === 'root' ? 'Screen' : node.name || def?.label || node.type}</span>
   {#if hint && node.id !== 'root'}<span class="text-muted-foreground truncate text-xs font-normal">{hint}</span>{/if}
-  {#if node.props.visibleIf?.left}<EyeOffIcon class="text-muted-foreground ml-auto size-3 shrink-0" />{/if}
+  {#if node.props.visibleIf?.left || node.props.showWhen || node.props.conditions?.length}<EyeOffIcon class="text-muted-foreground ml-auto size-3 shrink-0" />{/if}
 </div>
 {#if open}
   {#each node.children as c (c.id)}

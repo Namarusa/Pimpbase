@@ -21,6 +21,8 @@
   import LayoutDashboardIcon from '@lucide/svelte/icons/layout-dashboard'
   import CheckIcon from '@lucide/svelte/icons/check'
   import CircleAlertIcon from '@lucide/svelte/icons/circle-alert'
+  import EyeIcon from '@lucide/svelte/icons/eye'
+  import EyeOffIcon from '@lucide/svelte/icons/eye-off'
   import { api } from '../lib/api'
   import { navigate } from '../lib/router.svelte'
   import { session } from '../lib/session.svelte'
@@ -60,6 +62,7 @@
     select: (id) => (d.selected = id),
   })
   $effect(() => { rt.selected = d.selected })
+  $effect(() => { rt.device = d.device })
   $effect(() => { rt.hovered = d.hovered })
 
   async function load() {
@@ -275,6 +278,18 @@
             <ToggleGroup.Item value="tablet" aria-label="Tablet"><TabletIcon /></ToggleGroup.Item>
             <ToggleGroup.Item value="phone" aria-label="Phone"><SmartphoneIcon /></ToggleGroup.Item>
           </ToggleGroup.Root>
+          <Tooltip.Provider>
+            <Tooltip.Root>
+              <Tooltip.Trigger>
+                {#snippet child({ props })}
+                  <Button {...props} variant={rt.applyConditions ? 'secondary' : 'ghost'} size="sm" class="h-8" aria-pressed={rt.applyConditions} onclick={() => (rt.applyConditions = !rt.applyConditions)}>
+                    {#if rt.applyConditions}<EyeIcon />{:else}<EyeOffIcon />{/if}Conditions
+                  </Button>
+                {/snippet}
+              </Tooltip.Trigger>
+              <Tooltip.Content>{rt.applyConditions ? 'The canvas follows Show when and conditional settings' : 'The canvas shows every component; click to apply conditions'}</Tooltip.Content>
+            </Tooltip.Root>
+          </Tooltip.Provider>
           {#each paramNames as pn (pn)}
             <div class="text-muted-foreground flex items-center gap-1.5 text-xs">
               <span class="font-mono">:{pn}</span>

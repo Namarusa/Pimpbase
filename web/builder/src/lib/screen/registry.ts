@@ -101,7 +101,8 @@ export const commonSettings: Setting[] = [
   { key: 'grow', label: 'Fill the free space in a row', kind: 'boolean', section: 'Layout' },
   { key: 'span', label: 'Columns to span in a grid', kind: 'segmented', options: opts(['1', '1'], ['2', '2'], ['3', '3'], ['4', '4'], ['full', 'All']), section: 'Layout' },
   { key: 'roles', label: 'Visible to', kind: 'roles', section: 'Conditions', help: 'Others never receive the component, or anything inside it.' },
-  { key: 'visibleIf', label: 'Show only when', kind: 'condition', section: 'Conditions' },
+  { key: 'showWhen', label: 'Show when', kind: 'formula', section: 'Conditions', placeholder: 'form.Type = "Business"', help: 'A formula; the component shows while it is true. It only changes what the page shows: use Visible to and row rules to keep data from people.' },
+  { key: 'conditions', label: 'Change settings when', kind: 'conditions', section: 'Conditions' },
   { key: 'printHide', label: 'Hide when printing', kind: 'boolean', section: 'Conditions' },
 ]
 
