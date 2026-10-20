@@ -73,6 +73,10 @@
    "want": "ada@example.com"
   },
   {
+   "src": "Current.User.[Email]",
+   "want": "ada@example.com"
+  },
+  {
    "src": "VALUE(\"x\") + 1",
    "want": {
     "error": true
@@ -386,6 +390,10 @@
   {
    "src": "REGEXREPLACE(\"aaa\", \"a\", \"$0$0\")",
    "want": "aaaaaa"
+  },
+  {
+   "src": "REGEXREPLACE(\"cab ab\", \"\\bab\", \"X\")",
+   "want": "cab X"
   },
   {
    "src": "REGEXMATCH(\"a\", \"(\")",

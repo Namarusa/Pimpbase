@@ -56,7 +56,7 @@ var vectors = []vector{
 	{"[qty] * [price]", 7.5}, {"[blank] + 1", 1.0}, {"[note] & \"!\"", "!"}, {"[qty] > 2 AND NOT [done]", false},
 	{"[qty] IN (1, 2, 3)", true}, {"[name] NOT IN (\"Bo\")", true}, {"[blank] = 0", true}, {"[due] = NULL", false},
 	{`[due] < "2026-10-02"`, true}, {`"10" > 9`, true}, {`"abc" < "abd"`, true}, {"[unit price] * 2", 8.0},
-	{"Current.User.Email", "ada@example.com"}, {`VALUE("x") + 1`, failed}, {"[nodate] < [due]", false}, {"[nodate] = NULL", false},
+	{"Current.User.Email", "ada@example.com"}, {"Current.User.[Email]", "ada@example.com"}, {`VALUE("x") + 1`, failed}, {"[nodate] < [due]", false}, {"[nodate] = NULL", false},
 
 	// Logic.
 	{`IF([done], "y", "n")`, "y"}, {`IF(FALSE, 1)`, nil}, {"AND([done], [qty] > 1)", true}, {"OR(FALSE, [blank] > 0)", false},
@@ -83,7 +83,7 @@ var vectors = []vector{
 	{`REGEXMATCH([word], "^h.*d$")`, true}, {`REGEXMATCH([name], "(?i)^ADA$")`, true}, {`REGEXMATCH([name], "^ADA$")`, false},
 	{`REGEXEXTRACT("Order #1234 shipped", "[0-9]+")`, "1234"}, {`REGEXEXTRACT("id=42;", "id=([0-9]+)")`, "42"}, {`REGEXEXTRACT("abc", "[0-9]")`, nil},
 	{`REGEXREPLACE("2026-10-18", "([0-9]+)-([0-9]+)-([0-9]+)", "$3/$2/$1")`, "18/10/2026"}, {`REGEXREPLACE("a.b.c", "\.", "$$")`, "a$b$c"},
-	{`REGEXREPLACE("aaa", "a", "$0$0")`, "aaaaaa"}, {`REGEXMATCH("a", "(")`, failed},
+	{`REGEXREPLACE("aaa", "a", "$0$0")`, "aaaaaa"}, {`REGEXREPLACE("cab ab", "\bab", "X")`, "cab X"}, {`REGEXMATCH("a", "(")`, failed},
 	{`FORMATDATE([at], "YYYY-MM-DD HH:mm:ss")`, "2026-10-18 15:30:45"}, {`FORMATDATE([at], "D MMM YY")`, "18 Oct 26"},
 	{`FORMATDATE([at], "dddd D MMMM YYYY")`, "Sunday 18 October 2026"}, {`FORMATDATE([at], "ddd h:mm A")`, "Sun 3:30 PM"},
 	{`FORMATDATE([at], "[Week of] M/D")`, "Week of 10/18"}, {`FORMATDATE([due], "hh a")`, "12 am"},

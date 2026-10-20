@@ -542,9 +542,10 @@ func regexExtract(re *regexp.Regexp, s string) any {
 // regexReplace replaces matches; in the replacement $1 to $9 are groups,
 // $0 the whole match and $$ a dollar sign. Other text is kept as written.
 func regexReplace(re *regexp.Regexp, s, repl string) string {
-	return re.ReplaceAllStringFunc(s, func(match string) string {
-		sub := re.FindStringSubmatch(match)
-		var b strings.Builder
+	var b strings.Builder
+	last := 0
+	for _, m := range re.FindAllStringSubmatchIndex(s, -1) {
+		b.WriteString(s[last:m[0]])
 		for i := 0; i < len(repl); i++ {
 			c := repl[i]
 			if c == '$' && i+1 < len(repl) {
@@ -555,8 +556,8 @@ func regexReplace(re *regexp.Regexp, s, repl string) string {
 					continue
 				}
 				if n >= '0' && n <= '9' {
-					if k := int(n - '0'); k < len(sub) {
-						b.WriteString(sub[k])
+					if k := int(n - '0'); 2*k+1 < len(m) && m[2*k] >= 0 {
+						b.WriteString(s[m[2*k]:m[2*k+1]])
 					}
 					i++
 					continue
@@ -564,8 +565,10 @@ func regexReplace(re *regexp.Regexp, s, repl string) string {
 			}
 			b.WriteByte(c)
 		}
-		return b.String()
-	})
+		last = m[1]
+	}
+	b.WriteString(s[last:])
+	return b.String()
 }
 
 var monthNames = []string{"January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"}
