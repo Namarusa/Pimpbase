@@ -427,6 +427,10 @@ func decodeOnto(data []byte, v any) error {
 	return nil
 }
 
+// Changed tells the engine an app's flows were written outside this
+// service, as an import does.
+func (s *Service) Changed(appID string) { s.notify(appID) }
+
 func (s *Service) notify(appID string) {
 	if s.changed != nil {
 		s.changed(appID)

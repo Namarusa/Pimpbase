@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -53,6 +54,11 @@ func main() {
 			fmt.Fprintln(os.Stderr, "bubibase:", err)
 			os.Exit(1)
 		}
+	case "healthcheck":
+		if err := healthcheck(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "bubibase:", err)
+			os.Exit(1)
+		}
 	case "version":
 		fmt.Println("bubibase", version)
 	default:
@@ -70,7 +76,8 @@ Usage:
   bubibase backup [flags]         copy a SQLite data folder into one zip, even while serving
   bubibase restore [flags] <zip>  put a backup into a data folder
   bubibase dev-idp [flags]        run a test single sign-on provider, never for real accounts
-  bubibase version         print the version
+  bubibase healthcheck [url]      exit 0 when the local server is ready, for containers
+  bubibase version                print the version
 
 Run "bubibase serve -h" for the server flags.
 `)
@@ -127,6 +134,7 @@ func serve(args []string) error {
 	srv.BehindProxy = *behindProxy
 	srv.MetricsToken = *metricsToken
 	srv.Version = version
+	srv.Bundles.Server = version
 	srv.Node = cluster.New(st, version, log)
 	srv.Engine.Node = srv.Node
 	if err := srv.Node.Start(ctx); err != nil {
@@ -282,4 +290,23 @@ func devIdP(args []string) error {
 	fmt.Fprintf(os.Stderr, "Test identity provider at %s\n  issuer:        %s\n  client id:     bubibase-dev\n  client secret: dev-secret\nNever use it for real accounts.\n", *addr, *issuer)
 	srv := &http.Server{Addr: *addr, Handler: p.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	return srv.ListenAndServe()
+}
+
+// healthcheck asks a server's /readyz, so container images need no curl.
+func healthcheck(args []string) error {
+	addr := env("BUBIBASE_ADDR", ":8080")
+	url := "http://127.0.0.1" + addr[strings.LastIndex(addr, ":"):] + "/readyz"
+	if len(args) > 0 {
+		url = args[0]
+	}
+	c := &http.Client{Timeout: 5 * time.Second}
+	res, err := c.Get(url)
+	if err != nil {
+		return err
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return fmt.Errorf("%s answered %s", url, res.Status)
+	}
+	return nil
 }

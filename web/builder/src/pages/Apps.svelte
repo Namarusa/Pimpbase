@@ -3,11 +3,13 @@
   import { navigate } from '../lib/router.svelte'
   import { isBuilder } from '../lib/session.svelte'
   import Modal from '../components/Modal.svelte'
+  import ImportApp from '../components/ImportApp.svelte'
 
   let apps = $state<App[] | null>(null)
   let error = $state('')
   let creating = $state(false)
   let name = $state('')
+  let importing = $state(false)
 
   async function load() {
     try { apps = await api.apps() } catch (e: any) { error = e.message }
@@ -26,7 +28,10 @@
 <div class="page">
   <div class="row top">
     <h1 class="grow">Apps</h1>
-    {#if isBuilder()}<button class="primary" onclick={() => { creating = true; name = '' }}>+ New app</button>{/if}
+    {#if isBuilder()}
+      <button onclick={() => (importing = true)}>Import app…</button>
+      <button class="primary" onclick={() => { creating = true; name = '' }}>+ New app</button>
+    {/if}
   </div>
   {#if error}<p class="error">{error}</p>{/if}
   {#if apps && apps.length === 0}
@@ -55,6 +60,10 @@
       <button class="primary" form="new-app">Create app</button>
     {/snippet}
   </Modal>
+{/if}
+
+{#if importing}
+  <ImportApp onClose={() => (importing = false)} onDone={(plan) => navigate(`/apps/${plan.app.slug}/data`)} />
 {/if}
 
 <style>

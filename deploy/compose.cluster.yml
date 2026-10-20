@@ -1,0 +1,65 @@
+# Two Bubibase servers on one Postgres, sharing a files folder, behind
+# Caddy as the load balancer.
+#
+#   docker compose -f deploy/compose.cluster.yml up -d --build
+#   open http://localhost:8080
+#
+# Scale out with:  docker compose -f deploy/compose.cluster.yml up -d --scale bubibase=4
+#
+# Scheduled flows run once per minute across all servers (each run is
+# claimed in Postgres); uploads go to the shared volume. For files in S3
+# instead, set BUBIBASE_FILES=s3://bucket/prefix?region=… and the AWS_*
+# keys, and drop the files volume.
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bubibase
+      POSTGRES_PASSWORD: change-me
+      POSTGRES_DB: bubibase
+      POSTGRES_INITDB_ARGS: --encoding=UTF8 --locale=C.UTF-8
+    volumes:
+      - pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bubibase"]
+      interval: 5s
+      retries: 20
+
+  bubibase:
+    build: ..
+    image: bubibase:latest
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      BUBIBASE_POSTGRES: postgres://bubibase:change-me@postgres:5432/bubibase?sslmode=disable
+      BUBIBASE_FILES: dir:/files
+      BUBIBASE_BEHIND_PROXY: "true"
+      # Fail /readyz for 10s before stopping, so Caddy moves traffic away.
+      BUBIBASE_DRAIN: 10s
+      # Per server; with N servers a client gets up to N times this.
+      BUBIBASE_RATE_LIMIT: ${BUBIBASE_RATE_LIMIT:-100}
+      # BUBIBASE_METRICS_TOKEN: change-me-too
+      # BUBIBASE_PUBLIC_URL: https://apps.example.com
+      # BUBIBASE_SECURE_COOKIES: "true"
+    volumes:
+      - files:/files
+    stop_grace_period: 40s
+
+  lb:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - bubibase
+    ports:
+      - "${BUBIBASE_PORT:-8080}:8080"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+
+volumes:
+  pg:
+  files:

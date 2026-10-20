@@ -20,6 +20,7 @@
   import Account from './pages/Account.svelte'
   import UserCogIcon from '@lucide/svelte/icons/user-cog'
   import Runtime from './pages/Runtime.svelte'
+  import Server from './pages/Server.svelte'
 
   let needsSetup = $state(false)
 
@@ -70,6 +71,7 @@
         <a href="/" onclick={(e) => go(e, '/')} class={['rounded-md px-2.5 py-1.5 text-sm font-medium', route.path === '/' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground']}>Apps</a>
         {#if isAdmin()}
           <a href="/users" onclick={(e) => go(e, '/users')} class={['rounded-md px-2.5 py-1.5 text-sm font-medium', route.path.startsWith('/users') ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground']}>Users</a>
+          <a href="/server" onclick={(e) => go(e, '/server')} class={['rounded-md px-2.5 py-1.5 text-sm font-medium', route.path === '/server' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground']}>Server</a>
         {/if}
       </nav>
       <div class="ml-auto">
@@ -102,6 +104,8 @@
         <div class="studio h-full">{#key dataRoute.app + ':' + aiReload.n}<Data app={dataRoute.app} tableId={dataRoute.table} />{/key}</div>
       {:else if accessRoute}
         {#key accessRoute.app + ':' + aiReload.n}<Access app={accessRoute.app} tab={accessRoute.tab} />{/key}
+      {:else if route.path === '/server'}
+        <Server />
       {:else if route.path === '/account'}
         <Account />
       {:else if settingsRoute}

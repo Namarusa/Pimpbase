@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -32,6 +33,28 @@ type DB struct {
 	// schema qualifies table names on Postgres, where every app's data
 	// lives in its own schema. It is empty for SQLite.
 	schema string
+	// read, on SQLite, is a pool of read-only connections. The one write
+	// connection serializes writers; in WAL mode readers need not wait.
+	read *sql.DB
+}
+
+// readOnly reports whether a statement only reads, so it may use the
+// read pool.
+func readOnly(query string) bool {
+	q := strings.TrimLeft(query, " \t\r\n(")
+	if len(q) < 6 {
+		return false
+	}
+	head := strings.ToUpper(q[:6])
+	return (head == "SELECT" || strings.HasPrefix(head, "WITH ")) && !strings.Contains(strings.ToUpper(query), "RETURNING")
+}
+
+// Close closes the handle and its read pool.
+func (db *DB) Close() error {
+	if db.read != nil {
+		db.read.Close()
+	}
+	return db.DB.Close()
 }
 
 // Q quotes an identifier.
@@ -75,10 +98,16 @@ func (db *DB) Exec(ctx context.Context, query string, args ...any) (sql.Result, 
 }
 
 func (db *DB) Query(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	if db.read != nil && readOnly(query) {
+		return db.read.QueryContext(ctx, query, args...)
+	}
 	return db.DB.QueryContext(ctx, db.Rebind(query), args...)
 }
 
 func (db *DB) QueryRow(ctx context.Context, query string, args ...any) *sql.Row {
+	if db.read != nil && readOnly(query) {
+		return db.read.QueryRowContext(ctx, query, args...)
+	}
 	return db.DB.QueryRowContext(ctx, db.Rebind(query), args...)
 }
 
@@ -225,7 +254,20 @@ func openSQLite(path string) (*DB, error) {
 	}
 	// SQLite allows one writer; a single connection avoids lock contention.
 	sqldb.SetMaxOpenConns(1)
-	return &DB{DB: sqldb, Dialect: SQLite}, nil
+	// Make the file and switch it to WAL before readers open it.
+	if err := sqldb.Ping(); err != nil {
+		sqldb.Close()
+		return nil, err
+	}
+	read, err := sql.Open("sqlite", "file:"+path+"?_pragma=query_only(1)&_pragma=busy_timeout(5000)")
+	if err != nil {
+		sqldb.Close()
+		return nil, err
+	}
+	n := min(runtime.NumCPU(), 8)
+	read.SetMaxOpenConns(n)
+	read.SetMaxIdleConns(n)
+	return &DB{DB: sqldb, Dialect: SQLite, read: read}, nil
 }
 
 func (s *Store) Dialect() Dialect { return s.dialect }

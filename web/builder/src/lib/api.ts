@@ -34,6 +34,8 @@ export interface Field {
   id: string; name: string; type: FieldType; required?: boolean; options?: string[]
   linkTable?: string; linkMany?: boolean; formula?: string; formulaMode?: 'dynamic' | 'static'
   resultType?: string
+  // indexed keeps a database index on the field, for fast filters and sorts on big tables.
+  indexed?: boolean
 }
 export interface Table {
   id: string; appId: string; name: string; fields: Field[]; primaryField?: string
@@ -42,6 +44,20 @@ export interface Table {
 export interface RowRule { role: Role; filter: string }
 export interface Permissions { read: Role; write: Role; delete: Role; rows: RowRule[] }
 export interface LinkRef { _id: number; label: string; hidden?: boolean }
+// AggQuery groups a table's rows on the server.
+export interface AggQuery { filter?: string; groupBy?: string; dateGroup?: string; values: string[]; sortBy?: string; limit?: number }
+export interface AggGroup { key: any; values: number[]; count: number }
+export interface AggResult { groups: AggGroup[]; rows: number; truncated: boolean; engine: string }
+export interface Quotas { maxRows: number; maxFileMB: number; requestsPerMinute: number; flowRunsPerHour: number }
+export interface Usage { quotas: Quotas; rows: number; files: number; fileBytes: number; flowRunsLastHour: number; requestsThisMinute: number }
+export interface Instance { id: string; host: string; version: string; startedAt: string; seenAt: string; self: boolean }
+export interface ServerStatus { version: string; storage: string; database: string; startedAt: string; rateLimit: number; rateBurst: number; backups: boolean; instances: Instance[] }
+export interface ImportChange { kind: string; name: string; action: 'add' | 'change' | 'remove' | 'keep'; detail?: string }
+export interface ImportPlan {
+  mode: 'new' | 'update'; app: { id: string; name: string; slug: string }
+  manifest: { app: { name: string; slug: string }; exportedAt: string; server: string; data: boolean; secrets: boolean; tables: number; rows: number; files: number }
+  changes: ImportChange[]; warnings: string[]; applied: boolean; rows: number; files: number
+}
 // FileRef is one file of an attachment field.
 export interface FileRef { id: string; name: string; type: string; size: number; url: string }
 export type Row = Record<string, any> & { _id: number }
@@ -192,6 +208,16 @@ export const api = {
     p.set('offset', String(q.offset ?? 0))
     return call<Page>('GET', `/apps/${enc(app)}/tables/${t}/rows?${p}`)
   },
+  aggregate: (app: string, t: string, q: AggQuery) => {
+    const p = new URLSearchParams()
+    if (q.filter) p.set('filter', q.filter)
+    if (q.groupBy) p.set('groupBy', q.groupBy)
+    if (q.dateGroup) p.set('dateGroup', q.dateGroup)
+    if (q.sortBy) p.set('sortBy', q.sortBy)
+    if (q.limit) p.set('limit', String(q.limit))
+    for (const v of q.values) p.append('values', v)
+    return call<AggResult>('GET', `/apps/${enc(app)}/tables/${t}/aggregate?${p}`)
+  },
   row: (app: string, t: string, id: number) => call<Row>('GET', `/apps/${enc(app)}/tables/${t}/rows/${id}`),
   createRow: (app: string, t: string, v: object) => call<Row>('POST', `/apps/${enc(app)}/tables/${t}/rows`, v),
   updateRow: (app: string, t: string, id: number, v: object) => call<Row>('PATCH', `/apps/${enc(app)}/tables/${t}/rows/${id}`, v),
@@ -241,6 +267,23 @@ export const api = {
   flowRuns: (app: string, id: string) => call<FlowRun[]>('GET', `/apps/${enc(app)}/flows/${id}/runs`),
   flowRun: (app: string, run: string) => call<FlowRun>('GET', `/apps/${enc(app)}/runs/${run}`),
   nextRuns: (cron: string, timezone: string) => call<{ next: string[] }>('GET', `/flows/schedule?cron=${enc(cron)}&timezone=${enc(timezone)}`),
+  usage: (app: string) => call<Usage>('GET', `/apps/${enc(app)}/usage`),
+  setQuotas: (app: string, q: Quotas) => call<App>('PUT', `/apps/${enc(app)}/quotas`, q),
+  serverStatus: () => call<ServerStatus>('GET', '/admin/status'),
+  backupURL: () => '/api/admin/backup',
+  exportAppURL: (app: string, data: boolean, secrets: boolean) =>
+    `/api/apps/${enc(app)}/export?data=${data ? 1 : 0}&secrets=${secrets ? 1 : 0}`,
+  // importApp makes a new app from a .bubiapp file, or updates target in place.
+  importApp: (file: File, o: { target?: string; dryRun?: boolean; prune?: boolean; enableFlows?: boolean; name?: string }) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    const p = new URLSearchParams()
+    if (o.dryRun) p.set('dryRun', '1')
+    if (o.prune) p.set('prune', '1')
+    if (o.enableFlows) p.set('enableFlows', '1')
+    if (o.name) p.set('name', o.name)
+    return call<ImportPlan>('POST', (o.target ? `/apps/${enc(o.target)}/import` : '/apps/import') + `?${p}`, fd)
+  },
   exportURL: (app: string, t: string, filter: string) =>
     `/api/apps/${enc(app)}/tables/${t}/export` + (filter ? `?filter=${enc(filter)}` : ''),
 }

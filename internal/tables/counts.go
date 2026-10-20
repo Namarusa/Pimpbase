@@ -14,6 +14,10 @@ import (
 // that took long are kept for a few seconds; any row change made through
 // this server forgets the table's counts at once. Other servers sharing
 // the database see a count up to countTTL old.
+//
+// One request works out a given answer at a time: while it does, others
+// asking the same get the previous answer when there is one (so under
+// steady writes a slow chart may lag one recount behind), or wait for it.
 const (
 	countTTL  = 10 * time.Second
 	countSlow = 40 * time.Millisecond
@@ -23,6 +27,13 @@ type countCache struct {
 	mu   sync.Mutex
 	gen  map[string]uint64 // per table, bumped by row changes
 	seen map[string]cachedValue
+	busy map[string]*flight
+}
+
+type flight struct {
+	done chan struct{}
+	v    any
+	err  error
 }
 
 type cachedValue struct {
@@ -51,20 +62,44 @@ func remember[T any](s *Service, c *compiled, key string, fn func() (T, error)) 
 	now := time.Now()
 	s.counts.mu.Lock()
 	gen := s.counts.gen[tk]
-	if hit, ok := s.counts.seen[key]; ok && hit.gen == gen && now.Sub(hit.at) < countTTL {
+	hit, ok := s.counts.seen[key]
+	ok = ok && now.Sub(hit.at) < countTTL
+	if ok && hit.gen == gen {
 		s.counts.mu.Unlock()
 		return hit.v.(T), nil
 	}
-	s.counts.mu.Unlock()
-	v, err := fn()
-	if err == nil && time.Since(now) >= countSlow {
+	if f := s.counts.busy[key]; f != nil {
+		s.counts.mu.Unlock()
+		if ok {
+			return hit.v.(T), nil
+		}
+		<-f.done
+		if f.err == nil {
+			return f.v.(T), nil
+		}
 		s.counts.mu.Lock()
+	}
+	f := &flight{done: make(chan struct{})}
+	if s.counts.busy == nil {
+		s.counts.busy = map[string]*flight{}
+	}
+	s.counts.busy[key] = f
+	s.counts.mu.Unlock()
+
+	v, err := fn()
+	s.counts.mu.Lock()
+	if s.counts.busy[key] == f {
+		delete(s.counts.busy, key)
+	}
+	if err == nil && time.Since(now) >= countSlow {
 		if s.counts.seen == nil || len(s.counts.seen) > 1000 {
 			s.counts.seen = map[string]cachedValue{}
 		}
 		s.counts.seen[key] = cachedValue{v: v, gen: gen, at: now}
-		s.counts.mu.Unlock()
 	}
+	s.counts.mu.Unlock()
+	f.v, f.err = v, err
+	close(f.done)
 	return v, err
 }
 

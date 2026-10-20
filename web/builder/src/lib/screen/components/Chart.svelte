@@ -16,7 +16,22 @@
   let { node, p }: { node: Node; p: Record<string, any> } = $props()
   const rt = getRuntime()
   const scope = getScope()
-  const src = new RowSource(rt, node.id, () => ({ props: p, scope: scope(), limit: 1000 }))
+  const isDateField = (f?: { type: string; resultType?: string }) => !!f && (f.type === 'date' || (f.type === 'formula' && f.resultType === 'date'))
+  // A chart on its own table is grouped on the server, over every row;
+  // rows from a provider or an API query are grouped here.
+  const src = new RowSource(rt, node.id, () => {
+    const own = rt.table(p.table)
+    const field = own?.fields.find((f) => f.name === p.labelField)
+    const op = p.op ?? 'count'
+    const vals: string[] = Array.isArray(p.valueFields) && p.valueFields.length ? p.valueFields : ['']
+    const top = Number(p.limitGroups) || 0
+    const agg = p.labelField && own && !own.id.startsWith('query:') ? {
+      groupBy: p.labelField, dateGroup: isDateField(field) ? (p.dateGroup ?? 'month') : undefined,
+      values: vals.map((f) => (op === 'count' || !f ? 'count' : `${op}:${f}`)),
+      sortBy: p.sortBy === 'value' ? 'value' : undefined, limit: top > 0 ? top : 200,
+    } : undefined
+    return { props: p, scope: scope(), limit: 1000, agg }
+  })
 
   // Five theme colours, then lighter and darker tints of them, so slices
   // and series stay distinct in the legend up to fifteen groups.
@@ -52,8 +67,30 @@
     return [t, t]
   }
 
+  // keyLabel names a group the server returned.
+  function keyLabel(k: any): string {
+    if (k === null || k === undefined || k === '') return '(blank)'
+    const field = src.table?.fields.find((f) => f.name === p.labelField)
+    if (isDateField(field) && typeof k === 'string') {
+      switch (p.dateGroup ?? 'month') {
+        case 'day': return new Date(k + 'T00:00:00Z').toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' })
+        case 'year': return k
+        default: return new Date(k + '-01T00:00:00Z').toLocaleDateString(undefined, { month: 'short', year: '2-digit', timeZone: 'UTC' })
+      }
+    }
+    return toText(k) || '(blank)'
+  }
+
   const points = $derived.by((): Record<string, any>[] => {
     if (!p.labelField) return []
+    if (src.groups) {
+      return src.groups.map((g, i) => {
+        const label = keyLabel(g.key)
+        const pt: Record<string, any> = { key: String(g.key ?? ''), label }
+        values.forEach((_, j) => (pt[`v${j}`] = Math.round((g.values[j] ?? 0) * 100) / 100))
+        return { ...pt, color: colorOf(label, i) }
+      })
+    }
     const groups = new Map<string, { label: string; rows: Row[] }>()
     for (const r of src.rows) {
       const [key, label] = bucket(r[p.labelField])
@@ -131,7 +168,7 @@
     </Card.Header>
   {/if}
   <Card.Content>
-    {#if src.loading && !src.rows.length}
+    {#if src.loading && !src.rows.length && !src.groups?.length}
       <Skeleton class={['w-full', height[p.height] ?? height.md]} />
     {:else if src.error}
       <p class="text-destructive text-sm">{src.error}</p>

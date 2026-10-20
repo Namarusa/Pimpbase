@@ -18,6 +18,7 @@ import (
 	"github.com/bubibase/bubibase/internal/ai"
 	"github.com/bubibase/bubibase/internal/apps"
 	"github.com/bubibase/bubibase/internal/auth"
+	"github.com/bubibase/bubibase/internal/bundle"
 	"github.com/bubibase/bubibase/internal/cluster"
 	"github.com/bubibase/bubibase/internal/files"
 	"github.com/bubibase/bubibase/internal/flows"
@@ -43,6 +44,7 @@ type Server struct {
 	Flows   *flows.Service
 	SSO     *sso.Service
 	AI      *ai.Service
+	Bundles *bundle.Service
 	// Engine runs flows; call Engine.Start to begin schedules.
 	Engine *flows.Engine
 	// Node is this server among those sharing the database, if set.
@@ -94,6 +96,7 @@ func New(s *store.Store, ui fs.FS, log *slog.Logger) *Server {
 	}
 	srv.SSO = sso.NewService(s, srv.Auth, srv.Apps)
 	srv.AI = ai.NewService(s)
+	srv.Bundles = bundle.NewService(s, srv.Apps, srv.Tables, srv.Files, srv.Flows)
 	srv.Engine = flows.NewEngine(srv.Flows, srv.Tables, srv.Queries, srv.Runner, srv.Files, srv.Apps, log)
 	srv.Tables.BeforeInsert = srv.checkRows
 	srv.Files.BeforeSave = srv.checkFiles
@@ -165,6 +168,9 @@ func (s *Server) Handler() http.Handler {
 	h("GET /api/apps/{app}", s.getApp)
 	h("PATCH /api/apps/{app}", s.updateApp)
 	h("DELETE /api/apps/{app}", s.deleteApp)
+	h("GET /api/apps/{app}/export", s.exportApp)
+	h("POST /api/apps/import", s.importApp)
+	h("POST /api/apps/{app}/import", s.importApp)
 	h("GET /api/apps/{app}/members", s.listMembers)
 	h("PUT /api/apps/{app}/members/{user}", s.setMember)
 	h("GET /api/apps/{app}/roles", s.listRoles)
@@ -350,7 +356,10 @@ func (s *Server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 	var ssoErr *sso.InvalidError
 	var aiErr *ai.Error
 	var quota *apps.QuotaError
+	var be *bundle.Error
 	switch {
+	case errors.As(err, &be):
+		writeJSON(w, 400, map[string]any{"error": be.Message})
 	case errors.As(err, &quota):
 		status := 403
 		if quota.Rate {

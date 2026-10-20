@@ -1,6 +1,7 @@
 // RowSource loads the rows a data component shows: from its own table
 // setting, or from the data provider around it when it has none.
-import { api, type Row, type Table } from '../api'
+import { untrack } from 'svelte'
+import { api, type AggGroup, type AggQuery, type Row, type Table } from '../api'
 import { queryRows } from '../apis/bindings'
 import { resolve, resolveFilter, toText } from './bindings'
 import type { Runtime } from './context.svelte'
@@ -24,15 +25,23 @@ export class RowSource {
   table = $state<Table | undefined>()
   // fromParent is true when the rows come from a surrounding provider.
   fromParent = $state(false)
+  // groups holds the server's answer when the source was asked to
+  // aggregate its own table; null otherwise.
+  groups = $state<AggGroup[] | null>(null)
   private seq = 0
   // The last API answer, so paging and sorting do not send the query again.
   private cache: { key: string; rows: Row[] } | null = null
 
   // get returns everything the rows depend on; the source reloads when
   // any of it changes.
-  constructor(rt: Runtime, id: string, get: () => { props: SourceProps; scope: Scope; offset?: number; sort?: string; desc?: boolean; search?: string; limit?: number }) {
+  //
+  // With agg, a component's own table is grouped and reduced on the
+  // server and the answer is in groups; rows from a surrounding provider
+  // or an API query stay in rows, to be reduced in the browser.
+  constructor(rt: Runtime, id: string, get: () => { props: SourceProps; scope: Scope; offset?: number; sort?: string; desc?: boolean; search?: string; limit?: number; agg?: AggQuery }) {
     $effect(() => {
-      const { props, scope, offset, sort, desc, search, limit } = get()
+      const { props, scope, offset, sort, desc, search, limit, agg } = get()
+      if (!agg) this.groups = null
       const own = rt.table(props.table)
       // Reading the counters makes the effect rerun on refresh.
       void rt.refresh.all
@@ -101,13 +110,28 @@ export class RowSource {
       }
       let filter = resolveFilter(props.filter, scope)
       if (search) {
-        const q = search.trim().toLowerCase().replaceAll('"', '""')
-        const text = own.fields.filter((f) => ['text', 'longtext', 'single_select', 'multi_select', 'number', 'autonumber'].includes(f.type) || (f.type === 'formula' && f.resultType === 'text'))
-        if (q && text.length) {
-          const s = text.map((f) => `CONTAINS(LOWER(TEXT([${f.name}])), "${q}")`).join(', ')
-          const sf = text.length > 1 ? `OR(${s})` : s
-          filter = filter ? `(${filter}) AND ${sf}` : sf
-        }
+        const sf = searchFilter(own, search, untrack(() => this.total))
+        if (sf) filter = filter ? `(${filter}) AND ${sf}` : sf
+      }
+      if (agg) {
+        const n = ++this.seq
+        this.loading = true
+        const h = setTimeout(async () => {
+          try {
+            const res = await api.aggregate(rt.appId, own.id, { ...agg, filter })
+            if (n !== this.seq) return
+            this.groups = res.groups
+            this.total = res.rows
+            this.error = ''
+          } catch (e: any) {
+            if (n !== this.seq) return
+            this.error = e.message
+            this.groups = []
+          } finally {
+            if (n === this.seq) this.loading = false
+          }
+        }, 120)
+        return () => clearTimeout(h)
       }
       const q = { filter, sort: sort ?? props.sort, desc: desc ?? props.desc, limit: limit ?? props.limit ?? 50, offset: offset ?? 0 }
       const n = ++this.seq
@@ -131,6 +155,32 @@ export class RowSource {
       return () => clearTimeout(h)
     })
   }
+}
+
+// scanLimit is the most rows the server filters without SQL; searches
+// over bigger tables leave out fields whose test only runs in Go.
+const scanLimit = 100_000
+
+// searchFilter matches rows holding the search text in a text field, or
+// equal to it in a number field. Text is compared as stored, so the
+// database can run it; lists and computed text are searched only on
+// tables small enough to scan.
+export function searchFilter(t: Table, search: string, total: number): string {
+  const q = search.trim().toLowerCase().replaceAll('"', '""')
+  if (!q) return ''
+  const small = total <= scanLimit
+  const parts: string[] = []
+  for (const f of t.fields) {
+    const name = `[${f.name}]`
+    if (['text', 'longtext', 'single_select'].includes(f.type) || (f.type === 'formula' && f.resultType === 'text' && f.formulaMode === 'static')) {
+      parts.push(`CONTAINS(LOWER(${name}), "${q}")`)
+    } else if (small && (f.type === 'multi_select' || (f.type === 'formula' && f.resultType === 'text'))) {
+      parts.push(`CONTAINS(LOWER(TEXT(${name})), "${q}")`)
+    } else if ((f.type === 'number' || f.type === 'autonumber') && /^-?\d+(\.\d+)?$/.test(q)) {
+      parts.push(`${name} = ${q}`)
+    }
+  }
+  return parts.length > 1 ? `OR(${parts.join(', ')})` : (parts[0] ?? '')
 }
 
 // aggregate reduces rows to one number.

@@ -155,6 +155,51 @@ func (s *Service) StorageName() string {
 
 func blobKey(appID, fileID string) string { return appID + "/" + fileID }
 
+// List returns the details of every file of an app.
+func (s *Service) List(ctx context.Context, appID string) ([]*File, error) {
+	db, err := s.db(ctx, appID)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := db.Query(ctx, `SELECT id, table_id, name, type, size, created_at, uploaded_by FROM `+db.Table(tableName)+` ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*File
+	for rows.Next() {
+		f := &File{}
+		var created string
+		if err := rows.Scan(&f.ID, &f.TableID, &f.Name, &f.Type, &f.Size, &created, &f.UploadedBy); err != nil {
+			return nil, err
+		}
+		f.CreatedAt, _ = time.Parse(time.RFC3339, created)
+		out = append(out, f)
+	}
+	return out, rows.Err()
+}
+
+// Restore stores a file with the id and details it had elsewhere.
+func (s *Service) Restore(ctx context.Context, appID string, f *File, data []byte) error {
+	if !strings.HasPrefix(f.ID, "fil_") || len(data) > MaxSize {
+		return &InvalidError{fmt.Sprintf("bad file %q", f.ID)}
+	}
+	db, err := s.db(ctx, appID)
+	if err != nil {
+		return err
+	}
+	storage, content := "", data
+	if s.Blobs != nil {
+		if err := s.Blobs.Put(ctx, blobKey(appID, f.ID), f.Type, data); err != nil {
+			return err
+		}
+		storage, content = s.Blobs.Name(), []byte{}
+	}
+	_, err = db.Exec(ctx, `INSERT INTO `+db.Table(tableName)+` (id, table_id, name, type, size, content, created_at, uploaded_by, storage) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		f.ID, f.TableID, cleanName(f.Name), f.Type, int64(len(data)), content, f.CreatedAt.UTC().Format(time.RFC3339), f.UploadedBy, storage)
+	return err
+}
+
 // Usage is the number and total size of an app's files.
 func (s *Service) Usage(ctx context.Context, appID string) (count int, bytes int64, err error) {
 	db, err := s.db(ctx, appID)

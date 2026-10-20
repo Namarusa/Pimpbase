@@ -11,10 +11,18 @@
   const rt = getRuntime()
   const scope = getScope()
   const fromRows = $derived(p.mode !== 'value')
-  const src = new RowSource(rt, node.id, () => ({ props: fromRows ? p : {}, scope: fromRows ? scope() : { ...scope(), data: undefined }, limit: 1000 }))
+  // A stat on its own table is worked out on the server, over every row.
+  const src = new RowSource(rt, node.id, () => {
+    const own = fromRows ? rt.table(p.table) : undefined
+    const op = p.op ?? 'count'
+    const agg = own && !own.id.startsWith('query:') ? { values: [op === 'count' || !p.field ? 'count' : `${op}:${p.field}`] } : undefined
+    return { props: fromRows ? p : {}, scope: fromRows ? scope() : { ...scope(), data: undefined }, limit: 1000, agg }
+  })
   const Icon = $derived(p.icon ? icons[p.icon] : null)
 
-  const raw = $derived(fromRows ? ((p.op ?? 'count') === 'count' && !src.fromParent ? src.total : aggregate(src.rows, p.op ?? 'count', p.field)) : p.value)
+  const raw = $derived(!fromRows ? p.value
+    : src.groups ? (src.groups[0]?.values[0] ?? 0)
+    : (p.op ?? 'count') === 'count' && !src.fromParent ? src.total : aggregate(src.rows, p.op ?? 'count', p.field))
   const shown = $derived.by(() => {
     const n = Number(raw)
     if (raw === '' || raw === null || raw === undefined || isNaN(n)) return toText(raw)

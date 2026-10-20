@@ -7,8 +7,14 @@ tables, the formula engine, the REST API and the data studio), phase 2,
 the **UI builder**: screens composed from components and published as apps,
 phase 3, **flows**: automations started by row changes, schedules,
 webhooks or buttons, phase 4, **access**: app roles, row rules, single
-sign-on and API keys, and phase 5's **API studio**: REST and SOAP APIs as
-data sources whose query results feed screens.
+sign-on and API keys, phase 5's **API studio**: REST and SOAP APIs as
+data sources whose query results feed screens, phase 6's **AI assistant**,
+and phase 7, **scale**: big tables, several servers, deployment, quotas and
+moving apps between servers ([docs/scale.md](docs/scale.md)).
+
+It stays one binary: `bubibase serve` needs no database server, no Node, no
+Docker and no outside service. Postgres, several servers, shared file
+storage and containers are options for when you need them.
 
 ## Run it
 
@@ -39,6 +45,30 @@ and `BUBIBASE_MAIL_FROM` for the flows' Send email step:
 `smtp://` upgrades with STARTTLS when the server offers it, `smtps://` uses
 TLS from the start, and `--smtp log` only writes the mails to the log.
 
+## Deploy and scale
+
+```sh
+docker compose up -d                                        # one server, SQLite, daily backups
+docker compose -f deploy/compose.cluster.yml up -d --build  # Postgres, 2 servers, Caddy
+bubibase backup --out backup.zip                            # SQLite backup while serving
+```
+
+- `/healthz`, `/readyz` (fails while draining) and Prometheus `/metrics`.
+- Per-client rate limit (`--rate-limit`, 100 requests a second by default)
+  and per-app quotas on rows, file megabytes, requests a minute and flow runs
+  an hour (**Settings → Usage and limits**).
+- Several servers on one Postgres run each scheduled flow once; uploaded
+  files go to a shared folder or an S3-compatible bucket (`--files`).
+- Apps move between servers as one `.bubiapp` file, as a new app or as an
+  update of an existing one with a plan shown first.
+- On one million rows with indexes, SQLite serves a first page in 5 ms and an
+  indexed filter in under 1 ms; a whole-table chart takes 0.7 s on SQLite and
+  under 0.1 s on Postgres. A mixed load of 32 clients reached about 2,500
+  requests a second on SQLite on a 4 vCPU machine.
+
+All of it, with the numbers, how they were measured and the limits, is in
+[docs/scale.md](docs/scale.md).
+
 ## What works
 
 - **Apps**: create, rename, delete; each app keeps its data in its own
@@ -56,8 +86,9 @@ TLS from the start, and `--smtp log` only writes the mails to the log.
   paging, row forms with link pickers and file uploads, CSV import and
   export.
 - **Files**: attachment fields hold up to 20 files of at most 25 MB each.
-  Files are stored in the app's own database (SQLite or Postgres), so they
-  are backed up and deleted with the app's data. Reading a file needs read
+  By default files are stored in the app's own database (SQLite or
+  Postgres), so they are backed up and deleted with the app's data;
+  `--files dir:/path` or `--files s3://bucket` keeps them outside. Reading a file needs read
   access to its table; PDFs and pictures open in the browser, other types
   are only downloaded.
 - **Users and roles**: workspace roles (owner, admin, builder, member) and
@@ -320,6 +351,20 @@ POST   /api/apps/{app}/tables/{table}/import          CSV body or multipart "fil
 GET    /api/apps/{app}/tables/{table}/export?filter=
 POST   /api/apps/{app}/tables/{table}/files           multipart "file"; returns {"id", "name", "type", "size", "url"}
 GET    /api/apps/{app}/files/{file}?download=1
+GET    /api/apps/{app}/tables/{table}/aggregate?groupBy=Stage&values=sum:Amount&values=count&dateGroup=&sortBy=&filter=
+```
+
+Apps and the server:
+
+```
+GET    /api/apps/{app}/export?data=1&secrets=1        a .bubiapp file (secrets: admins only)
+POST   /api/apps/import?name=&dryRun=1&enableFlows=1  .bubiapp body or multipart "file"; a new app
+POST   /api/apps/{app}/import?dryRun=1&prune=1        update an app in place; answers the plan
+GET    /api/apps/{app}/usage                          usage against the app's quotas
+PUT    /api/apps/{app}/quotas                         {"maxRows", "maxFileMB", "requestsPerMinute", "flowRunsPerHour"}
+GET    /api/admin/status                              version, storage, servers sharing the database
+GET    /api/admin/backup                              a SQLite backup zip
+GET    /healthz  /readyz  /metrics
 ```
 
 An attachment field takes the list of uploaded files as returned by the
@@ -340,13 +385,19 @@ internal/apps/     apps and app members
 internal/rbac/     roles, inheritance and the request actor
 internal/sso/      OpenID Connect sign-in and role mappings; ssotest is a fake provider
 internal/screens/  app screens and their definitions
-internal/files/    files of attachment fields, stored in the app's database
+internal/files/    files of attachment fields: in the app's database, a folder or S3
 internal/interp/   {{ binding }} templates for API queries, escaped per context
 internal/xmltree/  XML to JSON-like data and back
 internal/queries/  API data sources, queries, variables and the query runner
 internal/flows/    flows, the engine, cron, email, PDF documents
 internal/ai/       the assistant: settings, Anthropic API calls, drafts, formulas, questions
-internal/api/      HTTP API
+internal/cluster/  servers sharing a database: heartbeats and job claims
+internal/bundle/   .bubiapp export and import
+internal/backup/   SQLite backups while serving
+internal/metrics/  Prometheus metrics
+internal/api/      HTTP API, rate limits, quotas, health
+cmd/bubibase-load/ load tests
+deploy/            cluster compose file and Caddy config
 web/builder/       Svelte builder, embedded from web/builder/dist
 ```
 
@@ -358,6 +409,8 @@ BUBIBASE_TEST_POSTGRES="postgres://…" go test ./...     # SQLite and Postgres
 ```
 
 The formula tests include a differential test that runs every filter both
-in Go and as SQL on each database and checks they select the same rows.
+in Go and as SQL on each database and checks they select the same rows;
+aggregates are checked the same way. `BUBIBASE_SCALE_ROWS=1000000 go test
+./internal/tables -run TestScale -v` times reads on a million rows.
 
 Bubibase reimplements Budibase's ideas; it contains no Budibase code.

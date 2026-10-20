@@ -18,6 +18,10 @@
   let formula = $state(field?.formula ?? '')
   let formulaMode = $state<'dynamic' | 'static'>(field?.formulaMode ?? 'dynamic')
   let formulaOk = $state(true)
+  let indexed = $state(field?.indexed ?? false)
+  // Fields kept in their own column can have an index; links get one
+  // by themselves.
+  const indexable = $derived(['text', 'number', 'boolean', 'date', 'single_select', 'autonumber'].includes(type) || (type === 'formula' && formulaMode === 'static'))
   let error = $state('')
   let busy = $state(false)
   let lossy = $state(false)
@@ -35,7 +39,7 @@
       let t: Table
       if (!editing) {
         t = await api.addField(app, table.id, {
-          name, type, required, options: optionList, linkTable, linkMany, formula, formulaMode,
+          name, type, required, options: optionList, linkTable, linkMany, formula, formulaMode, indexed: indexable && indexed,
         })
       } else {
         const p: Record<string, unknown> = { name, force }
@@ -43,6 +47,7 @@
         if (required !== !!field!.required) p.required = required
         if (type === 'single_select' || type === 'multi_select') p.options = optionList
         if (type === 'formula') { p.formula = formula; p.formulaMode = formulaMode }
+        if (indexable && indexed !== !!field!.indexed) p.indexed = indexed
         t = await api.updateField(app, table.id, field!.id, p)
       }
       onSaved(t)
@@ -99,6 +104,11 @@
     {/if}
     {#if type !== 'formula' && type !== 'autonumber'}
       <label class="check"><input type="checkbox" bind:checked={required} /> Required</label>
+    {/if}
+    {#if indexable}
+      <label class="check" title="An index makes filters, sorts and row rules on this field fast on big tables, at a small cost to each save.">
+        <input type="checkbox" bind:checked={indexed} /> Indexed <span class="muted">(fast filters and sorts on big tables)</span>
+      </label>
     {/if}
   </form>
   {#snippet footer()}
