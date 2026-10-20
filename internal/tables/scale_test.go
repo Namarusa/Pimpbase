@@ -45,7 +45,7 @@ func TestScale(t *testing.T) {
 		}}))
 		run := func(label string) {
 			measure := func(name string, fn func() (string, error)) {
-				best := time.Duration(1<<62)
+				best := time.Duration(1 << 62)
 				var info string
 				for i := 0; i < 3; i++ {
 					if !strings.Contains(name, "cached") {
