@@ -67,8 +67,8 @@ func (d *Document) PDF() ([]byte, error) {
 		l, _, r, _ := pdf.GetMargins()
 		if d.Footer != "" {
 			pdf.CellFormat((w-l-r)*0.75, 5, tr(oneLine(d.Footer)), "", 0, "L", false, 0, "")
-			pdf.SetX(l + (w-l-r)*0.75)
 		}
+		pdf.SetX(l + (w-l-r)*0.75)
 		pdf.CellFormat((w-l-r)*0.25, 5, fmt.Sprintf("Page %d of {nb}", pdf.PageNo()), "", 0, "R", false, 0, "")
 	})
 	pdf.AddPage()

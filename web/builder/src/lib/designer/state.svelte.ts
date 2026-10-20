@@ -1,7 +1,7 @@
 // The designer's working state: the screen being edited, the selection,
 // undo history and saving.
 import { getContext, setContext } from 'svelte'
-import { api, type App, type Query, type Table } from '../api'
+import { api, type App, type Flow, type Query, type Table } from '../api'
 import { queryTable } from '../apis/bindings'
 import type { Node, Screen } from '../screen/types'
 import { findIn } from './tree'
@@ -10,6 +10,7 @@ export class Designer {
   app = $state<App>(null!)
   tables = $state<Table[]>([])
   queries = $state<Query[]>([])
+  flows = $state<Flow[]>([])
   screens = $state<Screen[]>([])
   screen = $state<Screen | null>(null)
   selected = $state<string | null>('root')

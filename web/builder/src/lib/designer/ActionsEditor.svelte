@@ -87,6 +87,25 @@
                     {#if !d.queries.length}<div class="text-muted-foreground px-2 py-1.5 text-xs">Add a query in the APIs tab first.</div>{/if}
                   </Select.Content>
                 </Select.Root>
+              {:else if f.kind === 'flow'}
+                {@const manual = d.flows.filter((x) => x.trigger.type === 'manual')}
+                <Select.Root type="single" value={a.flow ?? ''} onValueChange={(v) => onChange(list.map((x, j) => (j === i ? { ...x, flow: v, params: {} } : x)))}>
+                  <Select.Trigger size="sm" class="w-full">{d.flows.find((x) => x.id === a.flow)?.name ?? 'Choose a flow'}</Select.Trigger>
+                  <Select.Content>
+                    {#each manual as fl (fl.id)}<Select.Item value={fl.id} label={fl.name}>{fl.name}{#if !fl.enabled}<span class="text-muted-foreground ml-auto text-[10px]">off</span>{/if}</Select.Item>{/each}
+                    {#if !manual.length}<div class="text-muted-foreground px-2 py-1.5 text-xs">Add a flow started by a button in the Flows tab first.</div>{/if}
+                  </Select.Content>
+                </Select.Root>
+              {:else if f.kind === 'flowparams'}
+                {@const fl = d.flows.find((x) => x.id === a.flow)}
+                {#each fl?.trigger.parameters ?? [] as fp (fp.name)}
+                  <div class="flex items-center gap-1">
+                    <span class="w-2/5 shrink-0 truncate font-mono text-xs">{fp.name}</span>
+                    <div class="min-w-0 flex-1"><BindingInput value={a.params?.[fp.name] ?? ''} {groups} placeholder={fp.default || 'default'} onChange={(v) => set(i, 'params', { ...(a.params ?? {}), [fp.name]: v })} /></div>
+                  </div>
+                {:else}
+                  <span class="text-muted-foreground text-xs">{fl ? 'This flow takes no parameters.' : 'Choose a flow first.'}</span>
+                {/each}
               {:else if f.kind === 'params'}
                 {@const q = d.queries.find((x) => x.id === a.query)}
                 {#each q?.parameters ?? [] as qp (qp.name)}

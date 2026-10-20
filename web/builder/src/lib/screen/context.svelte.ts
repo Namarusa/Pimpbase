@@ -1,7 +1,7 @@
 // The runtime every rendered screen shares, and the scope each component
 // sees. Both travel through Svelte context.
 import { getContext, setContext } from 'svelte'
-import type { RuntimeQuery, Table } from '../api'
+import type { RuntimeFlow, RuntimeQuery, Table } from '../api'
 import { queryTable } from '../apis/bindings'
 import type { Node, Scope } from './types'
 
@@ -11,6 +11,8 @@ export class Runtime {
   tables: Table[]
   // queries are the API queries the visitor may run.
   queries: RuntimeQuery[]
+  // flows are the button-started flows the visitor may run.
+  flows: RuntimeFlow[]
   // env picks the variables queries use: development in the builder.
   env: 'development' | 'production'
   // editing is true inside the builder's canvas.
@@ -33,7 +35,7 @@ export class Runtime {
 
   constructor(o: {
     appId: string; appSlug: string; tables: Table[]; editing: boolean
-    queries?: RuntimeQuery[]; env?: 'development' | 'production'
+    queries?: RuntimeQuery[]; flows?: RuntimeFlow[]; env?: 'development' | 'production'
     navigate: (path: string) => void
     toast: (kind: 'success' | 'error' | 'info', message: string) => void
     confirm: (title: string, message: string) => Promise<boolean>
@@ -43,6 +45,7 @@ export class Runtime {
     this.appSlug = o.appSlug
     this.tables = o.tables
     this.queries = o.queries ?? []
+    this.flows = o.flows ?? []
     this.env = o.env ?? 'production'
     this.editing = o.editing
     this.navigate = o.navigate
@@ -60,6 +63,10 @@ export class Runtime {
       return q ? queryTable(q, this.appId) : undefined
     }
     return this.tables.find((t) => t.id === id || t.name === id)
+  }
+
+  flow(id?: string): RuntimeFlow | undefined {
+    return id ? this.flows.find((f) => f.id === id || f.name === id) : undefined
   }
 
   query(id?: string): RuntimeQuery | undefined {

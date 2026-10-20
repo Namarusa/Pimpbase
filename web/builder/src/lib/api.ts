@@ -27,7 +27,7 @@ export interface FunctionInfo { name: string; category: string; signature: strin
 
 export interface RuntimeInfo {
   app: App; role: Role; builder: boolean; user: { id: string; email: string; name: string } | null
-  screens: Screen[]; tables: Table[]; queries: RuntimeQuery[]
+  screens: Screen[]; tables: Table[]; queries: RuntimeQuery[]; flows: RuntimeFlow[]
 }
 
 // API connectors.
@@ -56,6 +56,32 @@ export interface QueryResult {
   parseError?: string; raw?: string; size: number; durationMs: number; cached: boolean
   request?: { method: string; url: string; headers: Pair[]; body: string }
 }
+
+// Flows.
+export type TriggerType = 'row_created' | 'row_updated' | 'row_deleted' | 'schedule' | 'webhook' | 'manual'
+export interface FlowParam { name: string; type: ParamType; default: string }
+export interface Trigger {
+  type: TriggerType; table?: string; fields?: string[]; cron?: string; timezone?: string
+  parameters?: FlowParam[]; role: Role; respond?: boolean
+}
+export interface FlowStep {
+  id: string; name: string; type: string; inputs: Record<string, any>
+  then?: FlowStep[]; else?: FlowStep[]; do?: FlowStep[]; disabled?: boolean; continueOnError?: boolean
+}
+export interface Flow {
+  id: string; appId: string; name: string; enabled: boolean; trigger: Trigger; steps: FlowStep[]
+  hookToken: string; createdAt?: string; updatedAt?: string
+}
+export interface StepLog {
+  stepId: string; name: string; type: string; depth: number; item?: number
+  status: 'ok' | 'failed' | 'skipped'; inputs?: any; output?: any; error?: string; startedAt: string; durationMs: number
+}
+export interface FlowRun {
+  id: string; appId: string; flowId: string; status: 'running' | 'succeeded' | 'failed'; test: boolean
+  triggerKind: string; trigger: any; steps: StepLog[]; output: any; error: string
+  startedAt: string; finishedAt?: string; durationMs: number
+}
+export interface RuntimeFlow { id: string; name: string; enabled: boolean; parameters: FlowParam[] }
 
 export class ApiError extends Error {
   constructor(public status: number, message: string, public body: any) { super(message) }
@@ -155,6 +181,17 @@ export const api = {
   setVariable: (app: string, name: string, v: Partial<{ secret: boolean; development: string; production: string }>) =>
     call<Variable>('PUT', `/apps/${enc(app)}/variables/${enc(name)}`, v),
   deleteVariable: (app: string, name: string) => call('DELETE', `/apps/${enc(app)}/variables/${enc(name)}`),
+  flows: (app: string) => call<Flow[]>('GET', `/apps/${enc(app)}/flows`),
+  createFlow: (app: string, f: Partial<Flow>) => call<Flow>('POST', `/apps/${enc(app)}/flows`, f),
+  updateFlow: (app: string, id: string, f: Partial<Flow>) => call<Flow>('PATCH', `/apps/${enc(app)}/flows/${id}`, f),
+  deleteFlow: (app: string, id: string) => call('DELETE', `/apps/${enc(app)}/flows/${id}`),
+  newHook: (app: string, id: string) => call<Flow>('POST', `/apps/${enc(app)}/flows/${id}/hook`),
+  testFlow: (app: string, id: string, trigger?: Record<string, any>) => call<FlowRun>('POST', `/apps/${enc(app)}/flows/${id}/test`, trigger ? { trigger } : {}),
+  runFlow: (app: string, id: string, params: Record<string, any>, test = false) =>
+    call<{ id: string; status: FlowRun['status']; output: any; error: string }>('POST', `/apps/${enc(app)}/flows/${enc(id)}/run`, { params, test }),
+  flowRuns: (app: string, id: string) => call<FlowRun[]>('GET', `/apps/${enc(app)}/flows/${id}/runs`),
+  flowRun: (app: string, run: string) => call<FlowRun>('GET', `/apps/${enc(app)}/runs/${run}`),
+  nextRuns: (cron: string, timezone: string) => call<{ next: string[] }>('GET', `/flows/schedule?cron=${enc(cron)}&timezone=${enc(timezone)}`),
   exportURL: (app: string, t: string, filter: string) =>
     `/api/apps/${enc(app)}/tables/${t}/export` + (filter ? `?filter=${enc(filter)}` : ''),
 }

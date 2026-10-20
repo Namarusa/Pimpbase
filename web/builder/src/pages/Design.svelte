@@ -67,11 +67,13 @@
       const res = await api.app(slug)
       if (!res.builder) { error = 'Only builders can design screens.'; return }
       d.app = res.app
-      const [tables, screens, queries] = await Promise.all([api.tables(res.app.id), api.screens(res.app.id), api.queries(res.app.id)])
+      const [tables, screens, queries, flows] = await Promise.all([api.tables(res.app.id), api.screens(res.app.id), api.queries(res.app.id), api.flows(res.app.id)])
       d.tables = tables
       d.screens = screens
       d.queries = queries
+      d.flows = flows
       rt.queries = queries
+      rt.flows = flows.filter((f) => f.trigger.type === 'manual').map((f) => ({ id: f.id, name: f.name, enabled: f.enabled, parameters: f.trigger.parameters ?? [] }))
       rt.appId = res.app.id
       rt.appSlug = res.app.slug
       rt.tables = tables

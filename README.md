@@ -5,8 +5,9 @@ binary hosts many apps, each with its own data, and a browser builder to
 design them. This repository holds phase 1, the **data core** (built-in
 tables, the formula engine, the REST API and the data studio), phase 2,
 the **UI builder**: screens composed from components and published as apps,
-and phase 5's **API studio**: REST and SOAP APIs as data sources whose
-query results feed screens.
+phase 3, **flows**: automations started by row changes, schedules,
+webhooks or buttons, and phase 5's **API studio**: REST and SOAP APIs as
+data sources whose query results feed screens.
 
 ## Run it
 
@@ -27,7 +28,15 @@ To use Postgres instead, pass a connection string:
 
 Each app then gets its own Postgres schema. Every flag also reads an
 environment variable: `BUBIBASE_ADDR`, `BUBIBASE_DATA`, `BUBIBASE_POSTGRES`,
-`BUBIBASE_SECURE_COOKIES` (set it to `true` behind HTTPS).
+`BUBIBASE_SECURE_COOKIES` (set it to `true` behind HTTPS), `BUBIBASE_SMTP`
+and `BUBIBASE_MAIL_FROM` for the flows' Send email step:
+
+```sh
+./bubibase serve --smtp "smtp://user:pass@mail.example:587" --mail-from "Orders <orders@example.com>"
+```
+
+`smtp://` upgrades with STARTTLS when the server offers it, `smtps://` uses
+TLS from the start, and `--smtp log` only writes the mails to the log.
 
 ## What works
 
@@ -171,6 +180,49 @@ POST   /api/apps/{app}/queries/{query}/run         {"params": {…}}            
 GET    /api/apps/{app}/variables                   PUT /{name} {"secret", "development", "production"}, DELETE /{name}
 ```
 
+## Flows
+
+A flow is a trigger and a list of steps, edited on a canvas in the
+**Flows** tab of an app.
+
+- **Triggers**: row created, updated (optionally only when given fields
+  change) or deleted in a table; a schedule (cron with five fields, or
+  every few minutes, daily, weekly or monthly, in a chosen time zone); a
+  webhook, a secret address other services POST JSON or forms to,
+  optionally answered with the flow's result; and a button, run from
+  screens with the **Run flow** action, with typed parameters and the
+  lowest app role allowed to run it.
+- **Steps**: create, update, delete and find rows, run an API studio query,
+  condition (Yes and No branches), loop over a list, delay (up to an hour),
+  set variable, send email (with attached files), HTTP request, generate
+  PDF and return result. A step can be switched off, or let the flow go on
+  when it fails.
+- **Bindings**: every input is a `{{ }}` template that reads
+  `{{ trigger.row.Amount }}`, `{{ steps.Customer.first.Email }}`,
+  `{{ vars.total }}`, `{{ env.API_KEY }}`, `{{ loop.item }}`, `{{ user }}`
+  and `{{ app.name }}`, with pipes and `{{ = formula }}`. Templates also
+  know `{{#each list}}…{{/each}}` and `{{#if x}}…{{else}}…{{/if}}`.
+- **Generate PDF** writes Markdown (headings, bold, lists, tables, page
+  breaks) into an A4 or Letter PDF in the app's accent colour, stores it
+  with a table's files and can attach it to a row's attachment field.
+- **Runs**: each run keeps its trigger data and, per step, the inputs, the
+  result, the time taken and the error; the 200 latest runs of a flow are
+  kept. Secret variables are hidden in the log. Test runs use the
+  development values of variables and the newest row as sample data.
+
+Row changes made by flows start other flows up to three levels deep, so
+flows that update each other stop.
+
+```
+GET    /api/apps/{app}/flows                       POST, GET /{flow}, PATCH, DELETE
+POST   /api/apps/{app}/flows/{flow}/test           {"trigger": {…sample}}          builders
+POST   /api/apps/{app}/flows/{flow}/run            {"params": {…}}                 button flows, app users
+POST   /api/apps/{app}/flows/{flow}/hook           a new webhook address
+GET    /api/apps/{app}/flows/{flow}/runs           GET /api/apps/{app}/runs/{run}
+POST   /api/hooks/{token}                          webhook, no login
+GET    /api/flows/schedule?cron=&timezone=         the next times a schedule fires
+```
+
 ## REST API
 
 All endpoints are under `/api`. Rows of a table:
@@ -208,6 +260,7 @@ internal/files/    files of attachment fields, stored in the app's database
 internal/interp/   {{ binding }} templates for API queries, escaped per context
 internal/xmltree/  XML to JSON-like data and back
 internal/queries/  API data sources, queries, variables and the query runner
+internal/flows/    flows, the engine, cron, email, PDF documents
 internal/api/      HTTP API
 web/builder/       Svelte builder, embedded from web/builder/dist
 ```

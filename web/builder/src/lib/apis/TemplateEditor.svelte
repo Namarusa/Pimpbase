@@ -7,8 +7,8 @@
 
   // TemplateEditor is a code box for request bodies: {{ bindings }} are
   // highlighted, and the picker inserts them at the cursor.
-  let { value, onChange, groups, placeholder = '', minRows = 10, id }: {
-    value: string; onChange: (v: string) => void; groups: BindingGroup[]; placeholder?: string; minRows?: number; id?: string
+  let { value, onChange, groups, placeholder = '', minRows = 10, id, help = apiHelp }: {
+    value: string; onChange: (v: string) => void; groups: BindingGroup[]; placeholder?: string; minRows?: number; id?: string; help?: string
   } = $props()
   let open = $state(false)
   let el = $state<HTMLTextAreaElement | null>(null)
@@ -74,7 +74,7 @@
             </Command.Group>
           {/each}
         </Command.List>
-        <p class="text-muted-foreground border-t p-2 text-xs">{apiHelp}</p>
+        <p class="text-muted-foreground border-t p-2 text-xs">{help}</p>
       </Command.Root>
     </Popover.Content>
   </Popover.Root>

@@ -9,7 +9,7 @@ export interface ActionInfo {
   type: string
   label: string
   // fields are the settings the action editor shows.
-  fields: { key: string; label: string; kind: 'text' | 'table' | 'dialog' | 'select' | 'values' | 'boolean' | 'component' | 'query' | 'params'; options?: { value: string; label: string }[]; placeholder?: string }[]
+  fields: { key: string; label: string; kind: 'text' | 'table' | 'dialog' | 'select' | 'values' | 'boolean' | 'component' | 'query' | 'params' | 'flow' | 'flowparams'; options?: { value: string; label: string }[]; placeholder?: string }[]
 }
 
 export const actionTypes: ActionInfo[] = [
@@ -29,6 +29,11 @@ export const actionTypes: ActionInfo[] = [
     { key: 'params', label: 'Parameters', kind: 'params' },
     { key: 'stateKey', label: 'Keep the answer in state (name)', kind: 'text', placeholder: 'weather' },
   ] },
+  { type: 'run_flow', label: 'Run flow', fields: [
+    { key: 'flow', label: 'Flow', kind: 'flow' },
+    { key: 'params', label: 'Parameters', kind: 'flowparams' },
+    { key: 'stateKey', label: 'Keep the result in state (name)', kind: 'text', placeholder: 'quote' },
+  ] },
   { type: 'open_dialog', label: 'Open dialog', fields: [{ key: 'target', label: 'Dialog', kind: 'dialog' }] },
   { type: 'close_dialog', label: 'Close dialog', fields: [{ key: 'target', label: 'Dialog (blank closes all)', kind: 'dialog' }] },
   { type: 'toast', label: 'Show notification', fields: [
@@ -46,7 +51,8 @@ export const actionTypes: ActionInfo[] = [
 export const actionInfo = (type: string) => actionTypes.find((a) => a.type === type)
 
 // describe summarises an action for the action list.
-export function describe(a: Action, rt?: { table: (id?: string) => { name: string } | undefined }): string {
+export function describe(a: Action, rt?: { table: (id?: string) => { name: string } | undefined; flows?: { id: string; name: string }[] }): string {
+  if (a.type === 'run_flow') return `Run ${(a.flow && rt?.flows?.find((f) => f.id === a.flow)?.name) || 'flow'}`
   if (a.type === 'run_query') return `Run ${(a.query && rt?.table(`query:${a.query}`)?.name) || 'API query'}`
   switch (a.type) {
     case 'navigate': return `Go to ${a.route || '…'}`
@@ -130,6 +136,19 @@ export async function runActions(actions: Action[] | undefined, rt: Runtime, bas
           // Later actions read the answer as {{ result }}.
           scope.result = res.body
           if (a.stateKey) rt.state[a.stateKey] = res.body
+          rt.reload()
+          break
+        }
+        case 'run_flow': {
+          const f = rt.flow(a.flow)
+          if (!f) throw new Error('choose the flow this action runs')
+          const params: Record<string, any> = {}
+          for (const [k, v] of Object.entries((a.params ?? {}) as Record<string, string>)) if (v !== '' && v !== undefined) params[k] = resolve(v, scope)
+          const res = await api.runFlow(rt.appId, f.id, params)
+          if (res.status === 'failed') throw new Error(res.error || `${f.name} failed`)
+          // Later actions read what the flow returned as {{ result }}.
+          scope.result = res.output
+          if (a.stateKey) rt.state[a.stateKey] = res.output
           rt.reload()
           break
         }
