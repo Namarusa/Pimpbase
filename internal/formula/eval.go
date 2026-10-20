@@ -218,3 +218,14 @@ func (ev *evaluator) binary(n *Binary) (any, error) {
 	}
 	return nil, ev.fail(n, fmt.Errorf("unknown operator %s", n.Op))
 }
+
+// EvalNode runs one part of a checked formula, such as a constant operand
+// that a database filter binds as a parameter.
+func (c *Checked) EvalNode(n Node, env Env) (any, error) {
+	ev := &evaluator{env: env, c: c}
+	return ev.eval(n)
+}
+
+// Constant reports whether a part of a formula does not depend on the
+// row: it has no [field] in it.
+func Constant(n Node) bool { return constant(n) }
