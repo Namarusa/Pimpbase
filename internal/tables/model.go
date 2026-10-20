@@ -27,9 +27,10 @@ const (
 	TypeLink         FieldType = "link"
 	TypeAutoNumber   FieldType = "autonumber"
 	TypeFormula      FieldType = "formula"
+	TypeAttachment   FieldType = "attachment"
 )
 
-var allTypes = []FieldType{TypeText, TypeLongText, TypeNumber, TypeBoolean, TypeDate, TypeSingleSelect, TypeMultiSelect, TypeLink, TypeAutoNumber, TypeFormula}
+var allTypes = []FieldType{TypeText, TypeLongText, TypeNumber, TypeBoolean, TypeDate, TypeSingleSelect, TypeMultiSelect, TypeLink, TypeAutoNumber, TypeFormula, TypeAttachment}
 
 // scalar types can be converted into each other in place.
 func (t FieldType) scalar() bool {
@@ -175,7 +176,7 @@ func formulaType(f *Field) formula.Type {
 		return formula.Bool
 	case TypeDate:
 		return formula.Date
-	case TypeMultiSelect:
+	case TypeMultiSelect, TypeAttachment:
 		return formula.List
 	case TypeLink:
 		if f.LinkMany {

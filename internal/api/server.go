@@ -16,6 +16,7 @@ import (
 
 	"github.com/bubibase/bubibase/internal/apps"
 	"github.com/bubibase/bubibase/internal/auth"
+	"github.com/bubibase/bubibase/internal/files"
 	"github.com/bubibase/bubibase/internal/queries"
 	"github.com/bubibase/bubibase/internal/rbac"
 	"github.com/bubibase/bubibase/internal/screens"
@@ -31,6 +32,7 @@ type Server struct {
 	Tables  *tables.Service
 	Screens *screens.Service
 	Queries *queries.Service
+	Files   *files.Service
 	Runner  *queries.Runner
 	Log     *slog.Logger
 	// UI is the built builder, served at /. It may be nil.
@@ -50,6 +52,7 @@ func New(s *store.Store, ui fs.FS, log *slog.Logger) *Server {
 		Apps:    apps.NewService(s),
 		Tables:  tables.NewService(s),
 		Screens: screens.NewService(s),
+		Files:   files.NewService(s),
 		Log:     log,
 		UI:      ui,
 		limiter: &limiter{hits: map[string][]time.Time{}},
@@ -118,6 +121,8 @@ func (s *Server) Handler() http.Handler {
 	h("POST /api/apps/{app}/tables/{table}/rows/delete", s.deleteRows)
 	h("POST /api/apps/{app}/tables/{table}/import", s.importCSV)
 	h("GET /api/apps/{app}/tables/{table}/export", s.exportCSV)
+	h("POST /api/apps/{app}/tables/{table}/files", s.uploadFile)
+	h("GET /api/apps/{app}/files/{file}", s.getFile)
 
 	h("GET /api/apps/{app}/screens", s.listScreens)
 	h("POST /api/apps/{app}/screens", s.createScreen)
@@ -234,6 +239,7 @@ func (s *Server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 	var si *screens.InvalidError
 	var qi *queries.InvalidError
 	var qr *queries.RunError
+	var fi *files.InvalidError
 	switch {
 	case errors.As(err, &he):
 		writeJSON(w, he.status, map[string]any{"error": he.msg})
@@ -245,6 +251,8 @@ func (s *Server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 		writeJSON(w, 400, map[string]any{"error": au.Message})
 	case errors.As(err, &si):
 		writeJSON(w, 400, map[string]any{"error": si.Message})
+	case errors.As(err, &fi):
+		writeJSON(w, 400, map[string]any{"error": fi.Message})
 	case errors.As(err, &qi):
 		writeJSON(w, 400, map[string]any{"error": qi.Message, "field": qi.Field})
 	case errors.As(err, &qr):
@@ -259,7 +267,7 @@ func (s *Server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 			return
 		}
 		writeJSON(w, 403, map[string]any{"error": "you do not have access: " + strings.TrimPrefix(err.Error(), "forbidden: ")})
-	case errors.Is(err, tables.ErrNotFound), errors.Is(err, apps.ErrNotFound), errors.Is(err, auth.ErrNotFound), errors.Is(err, screens.ErrNotFound), errors.Is(err, queries.ErrNotFound):
+	case errors.Is(err, tables.ErrNotFound), errors.Is(err, apps.ErrNotFound), errors.Is(err, auth.ErrNotFound), errors.Is(err, screens.ErrNotFound), errors.Is(err, queries.ErrNotFound), errors.Is(err, files.ErrNotFound):
 		writeJSON(w, 404, map[string]any{"error": err.Error()})
 	case errors.Is(err, auth.ErrBadCredentials):
 		writeJSON(w, 401, map[string]any{"error": err.Error()})

@@ -95,6 +95,11 @@ func decode(f *Field, raw any) any {
 			return out
 		}
 		return nil
+	case TypeAttachment:
+		if s, ok := raw.(string); ok {
+			return decodeFiles(s)
+		}
+		return nil
 	case TypeLink:
 		switch v := raw.(type) {
 		case int64:
@@ -220,6 +225,8 @@ func encode(f *Field, v any) (any, error) {
 		return string(b), nil
 	case TypeLink:
 		return linkID(v)
+	case TypeAttachment:
+		return encodeFiles(v)
 	}
 	return nil, fmt.Errorf("field cannot be set")
 }
@@ -529,6 +536,12 @@ func (e *rowEnv) value(f *Field) any {
 			out[i] = l.Label
 		}
 		return out
+	case []FileRef:
+		out := make([]any, len(v))
+		for i, f := range v {
+			out[i] = f.Name
+		}
+		return out
 	default:
 		return v
 	}
@@ -554,6 +567,9 @@ func (s *Service) rowJSON(c *compiled, r *Row, actor rbac.Actor) map[string]any 
 		}
 		if fl, ok := v.(float64); ok && (math.IsNaN(fl) || math.IsInf(fl, 0)) {
 			v = nil
+		}
+		if files, ok := v.([]FileRef); ok {
+			v = filesJSON(c.AppID, files)
 		}
 		out[f.Name] = v
 	}
@@ -699,7 +715,7 @@ func (r resolver) FieldSQL(name string) (string, []any, bool) {
 		inner.depth++
 		expr, args, ok := r.c.formulas[f.ID].CompileValueSQL(r.dialect, inner, r.env)
 		return "(" + expr + ")", args, ok
-	case f.Type == TypeLink || f.Type == TypeMultiSelect:
+	case f.Type == TypeLink || f.Type == TypeMultiSelect || f.Type == TypeAttachment:
 		return "", nil, false
 	}
 	return store.Q(f.Column), nil, true
@@ -754,7 +770,7 @@ func (s *Service) ListRows(ctx context.Context, actor rbac.Actor, appID, tableID
 		if sortField == nil {
 			return nil, invalid("sort", "there is no field named %q", q.Sort)
 		}
-		if sortField.stored() && sortField.Type != TypeMultiSelect && sortField.Type != TypeLink {
+		if sortField.stored() && sortField.Type != TypeMultiSelect && sortField.Type != TypeLink && sortField.Type != TypeAttachment {
 			sortCol = store.Q(sortField.Column)
 		} else {
 			sortSQL = false

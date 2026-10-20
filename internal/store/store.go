@@ -131,6 +131,12 @@ func (db *DB) TypeInt() string {
 	}
 	return "INTEGER"
 }
+func (db *DB) TypeBlob() string {
+	if db.Dialect == Postgres {
+		return "BYTEA"
+	}
+	return "BLOB"
+}
 func (db *DB) TypeSerialPK() string {
 	if db.Dialect == Postgres {
 		return "BIGSERIAL PRIMARY KEY"

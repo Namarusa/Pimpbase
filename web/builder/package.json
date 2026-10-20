@@ -20,6 +20,7 @@
     "d3-shape": "3.2.0",
     "layerchart": "2.8.1",
     "mode-watcher": "1.1.0",
+    "pdfjs-dist": "6.3.289",
     "svelte": "5.57.2",
     "svelte-check": "4.4.5",
     "svelte-sonner": "1.2.1",

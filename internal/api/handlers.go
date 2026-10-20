@@ -336,6 +336,7 @@ func (s *Server) deleteApp(w http.ResponseWriter, r *http.Request) error {
 	if err := s.Apps.Delete(r.Context(), a.ID); err != nil {
 		return err
 	}
+	s.Files.Forget(a.ID)
 	return writeJSON(w, 200, map[string]any{"ok": true})
 }
 

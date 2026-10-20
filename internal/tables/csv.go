@@ -75,7 +75,7 @@ func (s *Service) ImportCSV(ctx context.Context, actor rbac.Actor, appID, tableI
 		}
 		f := c.FieldByName(name)
 		switch {
-		case f != nil && f.writable():
+		case f != nil && f.writable() && f.Type != TypeAttachment:
 		case f == nil && addFields && actor.Builder:
 			if _, _, err := s.AddField(ctx, appID, tableID, FieldInput{Name: name, Type: TypeText}); err != nil {
 				return nil, err
@@ -133,7 +133,8 @@ func (s *Service) ImportCSV(ctx context.Context, actor rbac.Actor, appID, tableI
 			if i >= len(rec) {
 				break
 			}
-			if f := c.FieldByName(strings.TrimSpace(name)); f != nil && f.writable() {
+			// Files cannot come from a CSV, only their names go out in one.
+			if f := c.FieldByName(strings.TrimSpace(name)); f != nil && f.writable() && f.Type != TypeAttachment {
 				values[f.Name] = rec[i]
 			}
 		}
@@ -200,6 +201,12 @@ func csvValue(v any) string {
 			labels[i] = l.Label
 		}
 		return strings.Join(labels, ", ")
+	case []map[string]any: // attachment files
+		names := make([]string, len(x))
+		for i, f := range x {
+			names[i], _ = f["name"].(string)
+		}
+		return strings.Join(names, ", ")
 	case time.Time:
 		return x.UTC().Format(formula.DateLayout)
 	}
