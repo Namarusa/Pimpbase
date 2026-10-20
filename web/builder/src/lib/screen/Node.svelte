@@ -23,6 +23,7 @@
     'bb-node relative min-w-0',
     p.grow ? 'flex-1' : '',
     spanClass[p.span] ?? '',
+    p.printHide ? 'print:hidden' : '',
     def?.wrapperClass?.(p) ?? '',
     rt.editing ? 'bb-edit-node' : '',
     rt.editing && rt.selected === node.id && node.id !== 'root' ? 'bb-selected' : '',

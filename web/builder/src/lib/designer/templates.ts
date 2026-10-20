@@ -23,6 +23,7 @@ const n = (type: string, props: Record<string, any> = {}, children?: Node[]): No
 export function formFields(t: Table): Node[] {
   return t.fields.filter(writable).map((f) => {
     const type = fieldComponent(f.type)
+    if (type === 'file_input') return n(type, { field: f.name, label: f.name, required: !!f.required, accept: 'any', span: 'full' })
     return type ? n(type, { field: f.name, label: f.name, required: !!f.required }) : null
   }).filter(Boolean) as Node[]
 }
@@ -58,10 +59,11 @@ export function detailScreen(t: Table): { name: string; route: string; definitio
     definition: root([
       n('row_provider', { table: t.id, rowId: '{{ url.id }}', gap: 'lg' }, [
         n('container', { direction: 'row', align: 'center', gap: 'sm' }, [
-          n('button', { text: `All ${t.name.toLowerCase()}`, variant: 'ghost', size: 'sm', icon: 'arrow-left', actions: [{ type: 'navigate', route: `/${s}` }] }),
+          n('button', { text: `All ${t.name.toLowerCase()}`, variant: 'ghost', size: 'sm', icon: 'arrow-left', printHide: true, actions: [{ type: 'navigate', route: `/${s}` }] }),
           n('spacer', { grow: true }),
+          n('button', { text: 'Print', variant: 'outline', size: 'sm', icon: 'printer', printHide: true, actions: [{ type: 'print', title: `${singular(t.name)} {{ row.${primaryName(t)} }}` }] }),
           n('button', {
-            text: 'Delete', variant: 'outline', size: 'sm', icon: 'trash',
+            text: 'Delete', printHide: true, variant: 'outline', size: 'sm', icon: 'trash',
             actions: [
               { type: 'confirm', title: `Delete this ${singular(t.name).toLowerCase()}?`, message: 'This cannot be undone.' },
               { type: 'delete_row', table: t.id, rowId: '{{ url.id }}' },
@@ -72,7 +74,9 @@ export function detailScreen(t: Table): { name: string; route: string; definitio
         ]),
         n('heading', { text: `{{ row.${primaryName(t)} }}`, subtitle: `${singular(t.name)} #{{ row._id }}`, level: 'h2' }),
         n('tabs', {}, [
-          n('tab', { title: 'Overview' }, [n('details', { columns: '2' })]),
+          n('tab', { title: 'Overview' }, [n('details', { columns: '2', fields: t.fields.filter((f) => f.type !== 'attachment').map((f) => f.name) })]),
+          // Each attachment field gets a tab that shows its PDFs.
+          ...t.fields.filter((f) => f.type === 'attachment').map((f) => n('tab', { title: f.name }, [n('pdf_viewer', { field: f.name, height: 'xl' })])),
           n('tab', { title: 'Edit' }, [
             n('card', { title: `Edit ${singular(t.name).toLowerCase()}`, description: 'Changes are saved to the table.' }, [
               n('form', { table: t.id, mode: 'update', rowId: '{{ url.id }}', columns: '2', submitText: 'Save changes', successMessage: 'Changes saved' }, formFields(t)),

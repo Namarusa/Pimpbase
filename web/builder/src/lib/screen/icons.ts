@@ -37,6 +37,8 @@ import MessageSquareIcon from '@lucide/svelte/icons/message-square'
 import PackageIcon from '@lucide/svelte/icons/package'
 import PencilIcon from '@lucide/svelte/icons/pencil'
 import PhoneIcon from '@lucide/svelte/icons/phone'
+import PrinterIcon from '@lucide/svelte/icons/printer'
+import PaperclipIcon from '@lucide/svelte/icons/paperclip'
 import PlusIcon from '@lucide/svelte/icons/plus'
 import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw'
 import SaveIcon from '@lucide/svelte/icons/save'
@@ -88,6 +90,8 @@ export const icons: Record<string, Component<any>> = {
   'house': HouseIcon,
   'image': ImageIcon,
   'info': InfoIcon,
+  'paperclip': PaperclipIcon,
+  'printer': PrinterIcon,
   'layers': LayersIcon,
   'link': LinkIcon,
   'list': ListIcon,

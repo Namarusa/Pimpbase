@@ -112,6 +112,8 @@ export class FormState {
   values = $state<Record<string, any>>({})
   errors = $state<Record<string, string>>({})
   submitting = $state(false)
+  // uploading counts files still on their way to the server.
+  uploading = $state(0)
   rules = new Map<string, FieldRule>()
   table: Table | undefined
   submitted = $state(false)

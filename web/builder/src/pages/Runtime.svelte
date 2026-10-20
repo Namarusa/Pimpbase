@@ -87,7 +87,7 @@
     <Empty.Root><Empty.Header><Empty.Title>This app is not available</Empty.Title><Empty.Description>{error}</Empty.Description></Empty.Header></Empty.Root>
   </div>
 {:else if info && rt}
-  <div class="h-screen">
+  <div class="h-screen print:h-auto">
     <AppFrame design={info.app.design} appName={info.app.name} screens={info.screens} current={matched?.screen.id} user={info.user}
       onNavigate={(r) => rt.navigate(r)} onSignOut={signOut} onSignIn={() => (needsLogin = true)}>
       {#if matched}

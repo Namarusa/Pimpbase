@@ -40,6 +40,8 @@ import SquareCheckIcon from '@lucide/svelte/icons/square-check'
 import ToggleRightIcon from '@lucide/svelte/icons/toggle-right'
 import SlidersHorizontalIcon from '@lucide/svelte/icons/sliders-horizontal'
 import Link2Icon from '@lucide/svelte/icons/link-2'
+import FileTextIcon from '@lucide/svelte/icons/file-text'
+import PaperclipIcon from '@lucide/svelte/icons/paperclip'
 
 import Container from './components/Container.svelte'
 import Grid from './components/Grid.svelte'
@@ -82,6 +84,8 @@ import CheckboxField from './components/CheckboxField.svelte'
 import SwitchField from './components/SwitchField.svelte'
 import SliderField from './components/SliderField.svelte'
 import LinkField from './components/LinkField.svelte'
+import FileField from './components/FileField.svelte'
+import PdfViewer from './components/PdfViewer.svelte'
 
 import { sizes } from './styles'
 import { chartPalettes } from './theme'
@@ -97,6 +101,7 @@ export const commonSettings: Setting[] = [
   { key: 'grow', label: 'Fill the free space in a row', kind: 'boolean', section: 'Layout' },
   { key: 'span', label: 'Columns to span in a grid', kind: 'segmented', options: opts(['1', '1'], ['2', '2'], ['3', '3'], ['4', '4'], ['full', 'All']), section: 'Layout' },
   { key: 'visibleIf', label: 'Show only when', kind: 'condition', section: 'Conditions' },
+  { key: 'printHide', label: 'Hide when printing', kind: 'boolean', section: 'Conditions' },
 ]
 
 // Where a data component's rows come from.
@@ -247,6 +252,22 @@ const defs: ComponentDef[] = [
       { key: 'height', label: 'Height', kind: 'segmented', options: opts(['auto', 'Auto'], ['sm', 'S'], ['md', 'M'], ['lg', 'L'], ['xl', 'XL']), section: 'Style' },
       { key: 'fit', label: 'Fit', kind: 'segmented', options: opts(['cover', 'Fill'], ['contain', 'Fit']), section: 'Style' },
       { key: 'rounded', label: 'Rounded corners', kind: 'boolean', section: 'Style' },
+    ],
+  },
+  {
+    type: 'pdf_viewer', label: 'PDF viewer', category: 'Display', icon: FileTextIcon, component: PdfViewer,
+    description: 'Shows a PDF from an attachment field or a web address, with pages, zoom and download.',
+    defaults: () => ({ source: 'field', field: '', url: '', title: '', height: 'lg', zoom: 'fit', toolbar: true, allowDownload: true, emptyText: 'No PDF to show.' }),
+    settings: [
+      { key: 'source', label: 'Show', kind: 'segmented', options: opts(['field', 'A file field'], ['url', 'An address']) },
+      { key: 'field', label: 'Attachment field', kind: 'field', fieldTypes: ['attachment'], show: (p) => p.source !== 'url', help: 'A field of the row around the viewer (row provider, repeater or form). When it holds several PDFs, the toolbar lets people switch.' },
+      { key: 'url', label: 'Address', kind: 'text', placeholder: 'https://…/file.pdf or {{ row.Contract }}', show: (p) => p.source === 'url', help: 'Addresses on other sites must allow cross-origin reads.' },
+      { key: 'title', label: 'Title', kind: 'text', help: 'Leave empty to show the file name.' },
+      { key: 'emptyText', label: 'Text when there is no PDF', kind: 'text' },
+      { key: 'height', label: 'Height', kind: 'segmented', options: opts(['sm', 'S'], ['md', 'M'], ['lg', 'L'], ['xl', 'XL'], ['screen', 'Screen']), section: 'Style' },
+      { key: 'zoom', label: 'Zoom', kind: 'select', options: opts(['fit', 'Fit to width'], ['50', '50%'], ['75', '75%'], ['100', '100%'], ['125', '125%'], ['150', '150%'], ['200', '200%']), section: 'Style' },
+      { key: 'toolbar', label: 'Toolbar', kind: 'boolean', section: 'Style' },
+      { key: 'allowDownload', label: 'Download button', kind: 'boolean', section: 'Style', show: (p) => p.toolbar !== false },
     ],
   },
   {
@@ -568,6 +589,17 @@ const defs: ComponentDef[] = [
     settings: [...fieldBase(['number']).filter((s) => s.key !== 'placeholder'), { key: 'min', label: 'Minimum', kind: 'number' }, { key: 'max', label: 'Maximum', kind: 'number' }, { key: 'step', label: 'Step', kind: 'number' }],
   },
   {
+    type: 'file_input', label: 'File upload', category: 'Form', icon: PaperclipIcon, component: FileField, parents: formParents,
+    description: 'Upload PDFs, pictures or other files into an attachment field.',
+    defaults: () => ({ field: '', label: '', placeholder: '', accept: 'pdf', multiple: true, maxSizeMB: 25 }),
+    settings: [
+      ...fieldBase(['attachment']).filter((s) => s.key !== 'defaultValue'),
+      { key: 'accept', label: 'Accept', kind: 'segmented', options: opts(['pdf', 'PDF'], ['images', 'Pictures'], ['any', 'Any file']) },
+      { key: 'multiple', label: 'Several files', kind: 'boolean' },
+      { key: 'maxSizeMB', label: 'Largest file (MB, at most 25)', kind: 'number', section: 'Validation' },
+    ],
+  },
+  {
     type: 'link_input', label: 'Relationship picker', category: 'Form', icon: Link2Icon, component: LinkField, parents: formParents,
     description: 'Choose linked rows of another table, with search.',
     defaults: () => ({ field: '', label: '', placeholder: '' }),
@@ -605,6 +637,7 @@ export function fieldComponent(type: string): string | null {
     case 'single_select': return 'select_input'
     case 'multi_select': return 'checkbox_group_input'
     case 'link': return 'link_input'
+    case 'attachment': return 'file_input'
   }
   return null
 }

@@ -4,7 +4,7 @@ import type { Design, Node, Screen } from './screen/types'
 export type Role = 'PUBLIC' | 'BASIC' | 'POWER' | 'ADMIN'
 export type FieldType =
   | 'text' | 'longtext' | 'number' | 'boolean' | 'date' | 'single_select'
-  | 'multi_select' | 'link' | 'autonumber' | 'formula'
+  | 'multi_select' | 'link' | 'autonumber' | 'formula' | 'attachment'
 
 export interface User { id: string; email: string; name: string; role: string; createdAt: string }
 export interface App { id: string; slug: string; name: string; design: Design; createdAt: string; updatedAt: string }
@@ -18,6 +18,8 @@ export interface Table {
   permissions: { read: Role; write: Role }
 }
 export interface LinkRef { _id: number; label: string }
+// FileRef is one file of an attachment field.
+export interface FileRef { id: string; name: string; type: string; size: number; url: string }
 export type Row = Record<string, any> & { _id: number }
 export interface Page { rows: Row[]; total: number; engine: 'sql' | 'go' }
 export interface FormulaError { start: number; end: number; message: string }
@@ -120,6 +122,11 @@ export const api = {
   createRow: (app: string, t: string, v: object) => call<Row>('POST', `/apps/${enc(app)}/tables/${t}/rows`, v),
   updateRow: (app: string, t: string, id: number, v: object) => call<Row>('PATCH', `/apps/${enc(app)}/tables/${t}/rows/${id}`, v),
   deleteRows: (app: string, t: string, ids: number[]) => call<{ deleted: number }>('POST', `/apps/${enc(app)}/tables/${t}/rows/delete`, { ids }),
+  uploadFile: (app: string, t: string, file: File) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return call<FileRef>('POST', `/apps/${enc(app)}/tables/${t}/files`, fd)
+  },
   importCSV: (app: string, t: string, file: File, addFields: boolean) => {
     const fd = new FormData()
     fd.append('file', file)
@@ -163,6 +170,7 @@ export const fieldTypes: { type: FieldType; label: string; icon: string }[] = [
   { type: 'link', label: 'Link to table', icon: '↗' },
   { type: 'autonumber', label: 'Auto number', icon: '№' },
   { type: 'formula', label: 'Formula', icon: 'ƒ' },
+  { type: 'attachment', label: 'Attachment', icon: '⎘' },
 ]
 
 export const typeInfo = (t: FieldType) => fieldTypes.find((x) => x.type === t)!

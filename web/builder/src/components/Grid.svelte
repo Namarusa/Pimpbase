@@ -60,7 +60,7 @@
 
   function startEdit(row: Row, f: Field) {
     if (!writable(f)) return
-    if (f.type === 'link' || f.type === 'multi_select' || f.type === 'longtext') { rowModal = row; return }
+    if (f.type === 'link' || f.type === 'multi_select' || f.type === 'longtext' || f.type === 'attachment') { rowModal = row; return }
     if (f.type === 'boolean') { saveCell(row, f, !row[f.name]); return }
     editing = { id: row._id, field: f.id }
     editValue = f.type === 'date' ? toDateInput(row[f.name]) : row[f.name] ?? ''
@@ -175,6 +175,8 @@
                   <button class="ghost check" disabled={!writable(f)} onclick={() => startEdit(row, f)} aria-label={v ? 'Yes' : 'No'}>{v ? '✓' : ''}</button>
                 {:else if f.type === 'single_select' && v}
                   <span class="chip">{v}</span>
+                {:else if f.type === 'attachment' && v}
+                  {#each v as file (file.id)}<a class="chip file" href={file.url} target="_blank" rel="noopener" title={file.name}>{file.name}</a>{/each}
                 {:else if (f.type === 'multi_select' || f.type === 'link') && v}
                   {#each Array.isArray(v) ? v : [v] as item}<span class="chip">{typeof item === 'object' ? item.label : item}</span>{/each}
                 {:else}
@@ -271,6 +273,7 @@
   .id button { color: var(--muted-foreground); }
   .fill { width: 100%; border-right: none; }
   .check { padding: 0 6px; color: var(--ok); font-weight: 700; }
+  a.chip { text-decoration: none; }
   .chip { display: inline-block; background: var(--accent-soft); color: var(--primary); border-radius: 99px; padding: 1px 8px; font-size: 12px; margin-right: 4px; }
   .empty { padding: 40px; text-align: center; }
   .footer { display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-top: 1px solid var(--line); background: var(--panel); font-size: 13px; }

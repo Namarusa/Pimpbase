@@ -39,6 +39,7 @@ export const actionTypes: ActionInfo[] = [
   { type: 'set_state', label: 'Set state value', fields: [{ key: 'key', label: 'Name', kind: 'text', placeholder: 'selectedId' }, { key: 'value', label: 'Value', kind: 'text', placeholder: '{{ row._id }}' }] },
   { type: 'confirm', label: 'Ask to confirm', fields: [{ key: 'title', label: 'Title', kind: 'text' }, { key: 'message', label: 'Message', kind: 'text' }] },
   { type: 'export_csv', label: 'Export CSV', fields: [{ key: 'table', label: 'Table', kind: 'table' }, { key: 'filter', label: 'Filter formula', kind: 'text' }] },
+  { type: 'print', label: 'Print / save as PDF', fields: [{ key: 'title', label: 'File name when saved as PDF', kind: 'text', placeholder: 'Order {{ row._id }}' }] },
   { type: 'sign_out', label: 'Sign out', fields: [] },
 ]
 
@@ -59,6 +60,7 @@ export function describe(a: Action, rt?: { table: (id?: string) => { name: strin
     case 'set_state': return `Set state.${a.key || '…'}`
     case 'confirm': return `Confirm “${a.title || a.message || '…'}”`
     case 'export_csv': return `Export ${rt?.table(a.table)?.name ?? '…'} as CSV`
+    case 'print': return 'Print / save as PDF'
     case 'sign_out': return 'Sign out'
   }
   return a.type
@@ -158,6 +160,9 @@ export async function runActions(actions: Action[] | undefined, rt: Runtime, bas
           if (t) window.open(api.exportURL(rt.appId, t.id, resolveText(a.filter, scope)), '_blank')
           break
         }
+        case 'print':
+          printScreen(resolveText(a.title, scope))
+          break
         case 'sign_out':
           await api.logout()
           location.reload()
@@ -169,4 +174,22 @@ export async function runActions(actions: Action[] | undefined, rt: Runtime, bas
     }
   }
   return true
+}
+
+// printScreen opens the browser's print dialog, where "Save as PDF" makes a
+// PDF of the screen. The app's navigation and components marked "hide when
+// printing" are left out, and dark themes print light so text stays legible.
+function printScreen(title: string) {
+  const html = document.documentElement
+  const wasDark = html.classList.contains('dark')
+  const oldTitle = document.title
+  if (title) document.title = title.replace(/[\\/:*?"<>|]+/g, '-')
+  html.classList.remove('dark')
+  const restore = () => {
+    if (wasDark) html.classList.add('dark')
+    document.title = oldTitle
+    window.removeEventListener('afterprint', restore)
+  }
+  window.addEventListener('afterprint', restore)
+  window.print()
 }

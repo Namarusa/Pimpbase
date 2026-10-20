@@ -3,6 +3,7 @@
   import { display, toDateInput, writable } from '../lib/format'
   import Modal from './Modal.svelte'
   import LinkPicker from './LinkPicker.svelte'
+  import FilesInput from './FilesInput.svelte'
 
   let { app, table, tables, row, canWrite, onClose, onSaved }: {
     app: string; table: Table; tables: Table[]; row: Row | null; canWrite: boolean
@@ -53,7 +54,11 @@
       <div class="field" class:bad={errorField === f.name}>
         <label for={`v-${f.id}`}><span class="icon">{typeInfo(f.type).icon}</span> {f.name}{f.required ? ' *' : ''}</label>
         {#if !writable(f) || !canWrite}
-          <div class="readonly">{display(f, values[f.name]) || '—'}</div>
+          {#if f.type === 'attachment' && values[f.name]?.length}
+            <div class="readonly">{#each values[f.name] as file (file.id)}<a class="chip" href={file.url} target="_blank" rel="noopener">{file.name}</a> {/each}</div>
+          {:else}
+            <div class="readonly">{display(f, values[f.name]) || '—'}</div>
+          {/if}
         {:else if f.type === 'longtext'}
           <textarea id={`v-${f.id}`} rows="3" bind:value={values[f.name]}></textarea>
         {:else if f.type === 'number'}
@@ -74,6 +79,8 @@
                 onchange={(e) => { const cur = values[f.name] ?? []; values[f.name] = e.currentTarget.checked ? [...cur, o] : cur.filter((x: string) => x !== o) }} /> {o}</label>
             {/each}
           </div>
+        {:else if f.type === 'attachment'}
+          <FilesInput {app} table={table.id} bind:value={values[f.name]} />
         {:else if f.type === 'link' && targetOf(f.linkTable)}
           <LinkPicker {app} target={targetOf(f.linkTable)!} many={!!f.linkMany} bind:value={values[f.name]} />
         {:else}
@@ -91,6 +98,7 @@
 <style>
   .icon { display: inline-block; width: 18px; color: var(--primary); }
   .readonly { padding: 6px 0; }
+  .chip { display: inline-block; background: var(--accent-soft); color: var(--primary); border-radius: 99px; padding: 1px 8px; font-size: 12px; text-decoration: none; }
   .bad input, .bad select, .bad textarea { border-color: var(--danger); }
   .opts { display: flex; flex-wrap: wrap; gap: 12px; }
   .opt { display: flex; gap: 6px; align-items: center; color: var(--text); margin: 0; }

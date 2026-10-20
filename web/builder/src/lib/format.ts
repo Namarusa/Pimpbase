@@ -13,7 +13,7 @@ export function display(f: Field, v: any): string {
     case 'boolean':
       return v ? 'Yes' : 'No'
   }
-  if (Array.isArray(v)) return v.map((x) => (typeof x === 'object' ? (x as LinkRef).label : String(x))).join(', ')
+  if (Array.isArray(v)) return v.map((x) => (typeof x === 'object' ? ((x as LinkRef).label ?? x.name) : String(x))).join(', ')
   if (typeof v === 'object' && 'label' in v) return (v as LinkRef).label
   return String(v)
 }
@@ -31,3 +31,13 @@ export function formatDate(iso: string): string {
 export const toDateInput = (v: any) => (typeof v === 'string' ? v.slice(0, 10) : '')
 
 export const writable = (f: Field) => f.type !== 'formula' && f.type !== 'autonumber'
+
+// fileSize formats a byte count, e.g. 1.2 MB.
+export function fileSize(n: number): string {
+  if (!n) return ''
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`
+  return `${(n / 1024 / 1024).toFixed(1)} MB`
+}
+
+export const isPDF = (f: { type?: string; name?: string }) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name ?? '')

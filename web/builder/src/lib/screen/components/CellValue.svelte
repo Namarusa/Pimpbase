@@ -1,5 +1,6 @@
 <script lang="ts">
   import CheckIcon from '@lucide/svelte/icons/check'
+  import PaperclipIcon from '@lucide/svelte/icons/paperclip'
   import { Badge } from '$lib/components/ui/badge'
   import { display } from '../../format'
   import type { Field } from '../../api'
@@ -19,6 +20,12 @@
   <Badge variant="secondary">{value}</Badge>
 {:else if field.type === 'multi_select'}
   <span class="inline-flex flex-wrap gap-1">{#each value as v}<Badge variant="secondary">{v}</Badge>{/each}</span>
+{:else if field.type === 'attachment'}
+  <span class="inline-flex flex-wrap gap-1">
+    {#each value as file (file.id)}
+      <Badge variant="outline" href={file.url} target="_blank" rel="noopener" onclick={(e: MouseEvent) => e.stopPropagation()} class="max-w-48 gap-1"><PaperclipIcon class="size-3" /><span class="truncate">{file.name}</span></Badge>
+    {/each}
+  </span>
 {:else if field.type === 'link'}
   <span class="inline-flex flex-wrap gap-1">{#each Array.isArray(value) ? value : [value] as v}<Badge variant="outline">{v.label}</Badge>{/each}</span>
 {:else}

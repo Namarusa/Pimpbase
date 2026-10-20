@@ -57,6 +57,7 @@
     formError = ''
     form.submitted = true
     if (!form.validate()) return
+    if (form.uploading) { formError = 'Wait until the files finish uploading.'; return }
     form.submitting = true
     try {
       let result: any = null
@@ -105,7 +106,7 @@
   {#if p.showSubmit !== false}
     <div class={['flex gap-2', p.buttonAlign === 'start' ? 'justify-start' : p.buttonAlign === 'stretch' ? '' : 'justify-end']}>
       {#if p.showReset}<Button type="button" variant="outline" onclick={reset} disabled={form.submitting}>{p.resetText || 'Reset'}</Button>{/if}
-      <Button type="submit" disabled={form.submitting || loading} class={p.buttonAlign === 'stretch' ? 'flex-1' : ''}>
+      <Button type="submit" disabled={form.submitting || loading || form.uploading > 0} class={p.buttonAlign === 'stretch' ? 'flex-1' : ''}>
         {#if form.submitting}<Spinner />{/if}{p.submitText || 'Save'}
       </Button>
     </div>

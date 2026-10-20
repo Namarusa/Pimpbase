@@ -64,14 +64,14 @@
 {/snippet}
 
 {#if design.navigation === 'sidebar' && !compact}
-  <div class="bg-background text-foreground flex h-full min-h-0">
-    <aside class="bg-sidebar text-sidebar-foreground hidden w-60 shrink-0 flex-col border-r md:flex">
+  <div class="bg-background text-foreground flex h-full min-h-0 print:block print:h-auto">
+    <aside class="bg-sidebar text-sidebar-foreground hidden w-60 shrink-0 flex-col border-r md:flex print:hidden">
       <div class="flex h-14 items-center border-b px-4">{@render brand()}</div>
       <nav class="flex flex-1 flex-col gap-1 overflow-y-auto p-3">{@render links(true)}</nav>
       <div class="border-t p-3">{@render account()}</div>
     </aside>
-    <div class="flex min-w-0 flex-1 flex-col">
-      <header class="flex h-14 items-center gap-2 border-b px-4 md:hidden">
+    <div class="flex min-w-0 flex-1 flex-col print:block">
+      <header class="flex h-14 items-center gap-2 border-b px-4 md:hidden print:hidden">
         <Sheet.Root bind:open={menu}>
           <Sheet.Trigger>{#snippet child({ props })}<Button {...props} variant="ghost" size="icon" aria-label="Menu"><MenuIcon /></Button>{/snippet}</Sheet.Trigger>
           <Sheet.Content side="left" class="w-64 p-0">
@@ -82,14 +82,14 @@
         {@render brand()}
         <div class="ml-auto">{@render account()}</div>
       </header>
-      <main class="min-h-0 flex-1 overflow-y-auto">{@render children()}</main>
+      <main class="min-h-0 flex-1 overflow-y-auto print:overflow-visible">{@render children()}</main>
     </div>
   </div>
 {:else if design.navigation === 'none'}
-  <div class="bg-background text-foreground h-full overflow-y-auto">{@render children()}</div>
+  <div class="bg-background text-foreground h-full overflow-y-auto print:h-auto print:overflow-visible">{@render children()}</div>
 {:else}
-  <div class="bg-background text-foreground flex h-full min-h-0 flex-col">
-    <header class="flex h-14 shrink-0 items-center gap-4 border-b px-4">
+  <div class="bg-background text-foreground flex h-full min-h-0 flex-col print:block print:h-auto">
+    <header class="flex h-14 shrink-0 items-center gap-4 border-b px-4 print:hidden">
       {#if nav.length > 1}
         <Sheet.Root bind:open={menu}>
           <Sheet.Trigger class={compact ? '' : 'md:hidden'}>{#snippet child({ props })}<Button {...props} variant="ghost" size="icon" class={compact ? '' : 'md:hidden'} aria-label="Menu"><MenuIcon /></Button>{/snippet}</Sheet.Trigger>
@@ -103,6 +103,6 @@
       {#if !compact}<nav class="hidden items-center gap-1 md:flex">{@render links(false)}</nav>{/if}
       <div class="ml-auto">{@render account()}</div>
     </header>
-    <main class="min-h-0 flex-1 overflow-y-auto">{@render children()}</main>
+    <main class="min-h-0 flex-1 overflow-y-auto print:overflow-visible">{@render children()}</main>
   </div>
 {/if}

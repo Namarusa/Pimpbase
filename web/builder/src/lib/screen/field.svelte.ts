@@ -44,6 +44,10 @@ export class FieldBinding {
   get name(): string {
     return this.getP().field || this.node.id
   }
+  // formState is the form around the field, if any.
+  get formState() {
+    return this.form
+  }
   get field(): Field | undefined {
     return this.form?.table?.fields.find((f) => f.name === this.getP().field)
   }

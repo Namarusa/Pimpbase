@@ -34,16 +34,22 @@ environment variable: `BUBIBASE_ADDR`, `BUBIBASE_DATA`, `BUBIBASE_POSTGRES`,
 - **Apps**: create, rename, delete; each app keeps its data in its own
   database file or schema.
 - **Tables** with text, long text, number, yes/no, date, single select, multi
-  select, link to another table (one or many), auto number and formula
-  fields. Renaming a field rewrites the formulas that use it; converting a
-  field's type converts its data.
+  select, link to another table (one or many), auto number, formula and
+  attachment (files such as PDFs) fields. Renaming a field rewrites the
+  formulas that use it; converting a field's type converts its data.
 - **Formulas**: one Excel-style language (`IF([Qty] > 2, "bulk", "single")`)
   with 45 functions, type checking with error positions, dynamic (computed
   on read) or static (stored) formula fields. Filters are formulas too, and
   are compiled to SQL when possible, so they run in the database; the rest
   run in Go with the same results.
 - **Data studio**: grid with inline editing, sorting, formula filters,
-  paging, row forms with link pickers, CSV import and export.
+  paging, row forms with link pickers and file uploads, CSV import and
+  export.
+- **Files**: attachment fields hold up to 20 files of at most 25 MB each.
+  Files are stored in the app's own database (SQLite or Postgres), so they
+  are backed up and deleted with the app's data. Reading a file needs read
+  access to its table; PDFs and pictures open in the browser, other types
+  are only downloaded.
 - **Users and roles**: workspace roles (owner, admin, builder, member) and
   app roles (Public, Basic, Power, Admin) with read and write permissions per
   table, checked on every request. Sessions use HTTP-only cookies; machines
@@ -67,26 +73,31 @@ preset palette (each with light and dark variants), shades of the accent, or
 five custom colours. A chart can use another palette than the app's and set
 the colour of single slices or series.
 
-Components (40):
+Components (42):
 
 - **Layout**: container, grid, card, tabs, accordion, divider, spacer,
   dialog, side panel.
-- **Content**: heading, text, badge, image, link, button, stat, avatar,
-  alert, progress, empty state.
+- **Content**: heading, text, badge, image, PDF viewer, link, button, stat,
+  avatar, alert, progress, empty state. The PDF viewer draws pages with
+  pdf.js (loaded only when a screen shows one), so it works the same on
+  phones; it shows the PDFs of an attachment field or a web address, with
+  paging, zoom, fit to width, download and a file switcher.
 - **Data**: data provider, row provider, table (server paging, sorting and
   search, row selection, bulk delete, CSV export), list, cards, repeater,
   details, chart (bar, horizontal bar, line, area, pie, donut, grouped by a
   field or by day, week, month or year).
 - **Forms**: form (create or update a row, column layout, server error
   mapping), text, long text, number, select, radio, checkbox group, date
-  (with optional time), checkbox, switch, slider and link (searchable row
-  picker). Fields validate required, min and max, length, pattern and email.
+  (with optional time), checkbox, switch, slider, link (searchable row
+  picker) and file upload (drag and drop, PDF / pictures / any file). Fields validate required, min and max, length, pattern and email.
 
 Any text setting accepts bindings such as `{{ row.Title }}`,
 `{{ url.id }}`, `{{ form.Hours | number:1 }}`, `{{ user.name }}` or
 `{{ state.status }}`. Buttons, forms and table rows run action lists:
 navigate, open a URL, save or delete a row, open or close a dialog, show a
-toast, refresh data, set state, ask for confirmation, export CSV, sign out.
+toast, refresh data, set state, ask for confirmation, export CSV, print or
+save as PDF, sign out. Printing leaves out the app's navigation and any
+component marked "Hide when printing", and prints dark themes light.
 
 The UI uses [shadcn-svelte](https://shadcn-svelte.com) components (bits-ui,
 Tailwind CSS 4) and LayerChart for charts. Known limits: charts and stats
@@ -172,7 +183,12 @@ PATCH  /api/apps/{app}/tables/{table}/rows/{id}
 DELETE /api/apps/{app}/tables/{table}/rows/{id}
 POST   /api/apps/{app}/tables/{table}/import          CSV body or multipart "file"
 GET    /api/apps/{app}/tables/{table}/export?filter=
+POST   /api/apps/{app}/tables/{table}/files           multipart "file"; returns {"id", "name", "type", "size", "url"}
+GET    /api/apps/{app}/files/{file}?download=1
 ```
+
+An attachment field takes the list of uploaded files as returned by the
+upload, e.g. `{"Documents": [{"id": "fil_…", "name": "contract.pdf", …}]}`.
 
 `{app}` is the app's id or URL name. See `internal/api/server.go` for the
 full list.
@@ -188,6 +204,7 @@ internal/auth/     users, Argon2id passwords, sessions, API keys
 internal/apps/     apps and app members
 internal/rbac/     roles and the request actor
 internal/screens/  app screens and their definitions
+internal/files/    files of attachment fields, stored in the app's database
 internal/interp/   {{ binding }} templates for API queries, escaped per context
 internal/xmltree/  XML to JSON-like data and back
 internal/queries/  API data sources, queries, variables and the query runner
