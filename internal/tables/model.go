@@ -64,7 +64,27 @@ type Field struct {
 	ResultType  formula.Type `json:"resultType,omitempty"`
 	// Column is the SQL column (or join table suffix) holding the data.
 	Column string `json:"column,omitempty"`
+	// Indexed fields have a database index, which makes filters, sorts
+	// and grouping on them fast on big tables at a small cost to writes.
+	// Single link fields are indexed when they are made.
+	Indexed bool `json:"indexed,omitempty"`
 }
+
+// indexable reports whether the field's column can carry an index.
+func (f *Field) indexable() bool {
+	if !f.stored() {
+		return false
+	}
+	switch f.Type {
+	case TypeLongText, TypeMultiSelect, TypeAttachment:
+		return false
+	}
+	return true
+}
+
+// MaxIndexedText caps the length of values in indexed text fields, which
+// Postgres indexes cannot hold beyond about 2,700 bytes.
+const MaxIndexedText = 2000
 
 // stored reports whether the field has its own column.
 func (f *Field) stored() bool {

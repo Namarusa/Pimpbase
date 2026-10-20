@@ -268,9 +268,12 @@ func (comp *compiler) binary(n *Binary) (sqlExpr, bool) {
 	}
 	// Comparisons of one type.
 	t := lt
+	if e, ok := comp.bare(n, t, l, r); ok {
+		return e, true
+	}
 	op := " " + n.Op + " "
 	rs := comp.zero(r, t)
-	if t == Text && comp.pg() && n.Op != "=" && n.Op != "<>" {
+	if t == Text && comp.pg() {
 		rs = cat(false, rs, ` COLLATE "C"`) // byte order, as in Go and SQLite
 	}
 	cmp := cat(false, "(", comp.zero(l, t), op, rs, ")")
@@ -278,6 +281,87 @@ func (comp *compiler) binary(n *Binary) (sqlExpr, bool) {
 		return cat(false, "COALESCE(", cmp, ", FALSE)"), true
 	}
 	return cmp, true
+}
+
+var flipped = map[string]string{"=": "=", "<>": "<>", "<": ">", "<=": ">=", ">": "<", ">=": "<="}
+
+// bare compiles a comparison of a stored field with a constant without
+// wrapping the column in COALESCE, so that an index on the column can
+// serve it: a blank field takes part through IS NULL instead, exactly when
+// its zero value would pass the comparison.
+func (comp *compiler) bare(n *Binary, t Type, l, r sqlExpr) (sqlExpr, bool) {
+	if t != Text && t != Number && t != Date {
+		return sqlExpr{}, false
+	}
+	op := n.Op
+	field, value := l, n.R
+	_, isRef := n.L.(*FieldRef)
+	if !isRef || !constant(n.R) {
+		if _, ok := n.R.(*FieldRef); !ok || !constant(n.L) {
+			return sqlExpr{}, false
+		}
+		field, value, op = r, n.L, flipped[op]
+	}
+	if len(field.args) > 0 || !strings.HasPrefix(field.sql, `"`) {
+		return sqlExpr{}, false // a formula, not a column
+	}
+	ev := &evaluator{env: comp.env, c: comp.c}
+	v, err := ev.eval(value)
+	if err != nil || v == nil {
+		return sqlExpr{}, false
+	}
+	param, ok := comp.param(v, t)
+	if !ok {
+		return sqlExpr{}, false
+	}
+	if t == Text && comp.pg() {
+		param = cat(false, param, ` COLLATE "C"`)
+	}
+	// Does a blank field pass? Blank dates never compare; blank numbers and
+	// text compare as 0 and "".
+	blank := false
+	switch t {
+	case Number:
+		x, _ := v.(float64)
+		blank = holds(op, compareFloat(0, x))
+	case Text:
+		x, _ := v.(string)
+		blank = holds(op, strings.Compare("", x))
+	}
+	cmp := cat(false, field, " "+op+" ", param)
+	if blank {
+		return cat(false, "(", field, " IS NULL OR ", cmp, ")"), true
+	}
+	return cat(false, "(", field, " IS NOT NULL AND ", cmp, ")"), true
+}
+
+func compareFloat(a, b float64) int {
+	switch {
+	case a < b:
+		return -1
+	case a > b:
+		return 1
+	}
+	return 0
+}
+
+// holds reports whether a comparison whose operands compare as c passes.
+func holds(op string, c int) bool {
+	switch op {
+	case "=":
+		return c == 0
+	case "<>":
+		return c != 0
+	case "<":
+		return c < 0
+	case "<=":
+		return c <= 0
+	case ">":
+		return c > 0
+	case ">=":
+		return c >= 0
+	}
+	return false
 }
 
 func (comp *compiler) call(n *Call, t Type) (sqlExpr, bool) {
@@ -348,9 +432,17 @@ func (comp *compiler) call(n *Call, t Type) (sqlExpr, bool) {
 			return cat(false, "TRIM(", comp.zero(args[0], Text), ", ' ')"), true
 		}
 	case "UPPER", "LOWER":
-		// SQLite only changes ASCII letters, so only Postgres matches Go.
-		if allText() && comp.pg() {
-			return cat(false, n.Name+"(", comp.zero(args[0], Text), ")"), true
+		if allText() {
+			fn := n.Name
+			if !comp.pg() {
+				// SQLite's own change ASCII letters only; see sqlite.go.
+				fn = "bb_" + strings.ToLower(n.Name)
+			}
+			return cat(false, fn+"(", comp.zero(args[0], Text), ")"), true
+		}
+	case "TEXT":
+		if types[0] == Text {
+			return args[0], true
 		}
 	case "CONTAINS":
 		if allText() {

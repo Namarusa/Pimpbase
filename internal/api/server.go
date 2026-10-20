@@ -153,6 +153,7 @@ func (s *Server) Handler() http.Handler {
 
 	h("GET /api/apps/{app}/tables/{table}/rows", s.listRows)
 	h("POST /api/apps/{app}/tables/{table}/rows", s.createRow)
+	h("GET /api/apps/{app}/tables/{table}/aggregate", s.aggregateRows)
 	h("GET /api/apps/{app}/tables/{table}/rows/{id}", s.getRow)
 	h("PATCH /api/apps/{app}/tables/{table}/rows/{id}", s.updateRow)
 	h("DELETE /api/apps/{app}/tables/{table}/rows/{id}", s.deleteRow)

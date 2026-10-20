@@ -25,6 +25,8 @@ type Service struct {
 	// mu serialises schema changes, which touch two databases.
 	mu sync.Mutex
 
+	counts countCache
+
 	// OnRow, when set, hears every row created, changed or deleted through
 	// CreateRow, UpdateRow and DeleteRows, after the change is committed.
 	// Flows use it to start their row triggers. CSV imports do not call it.
@@ -325,6 +327,7 @@ type FieldInput struct {
 	LinkMany    bool      `json:"linkMany"`
 	Formula     string    `json:"formula"`
 	FormulaMode string    `json:"formulaMode"`
+	Indexed     bool      `json:"indexed"`
 }
 
 // CreateTable creates a table with the given fields. The first text field
@@ -472,7 +475,7 @@ func (s *Service) buildField(ctx context.Context, t *Table, in FieldInput) (*Fie
 	if !slices.Contains(allTypes, in.Type) {
 		return nil, invalid("type", "unknown field type %q", in.Type)
 	}
-	f := &Field{ID: ids.New("fld"), Name: in.Name, Type: in.Type, Required: in.Required, Column: newColumn()}
+	f := &Field{ID: ids.New("fld"), Name: in.Name, Type: in.Type, Required: in.Required, Column: newColumn(), Indexed: in.Indexed}
 	switch in.Type {
 	case TypeSingleSelect, TypeMultiSelect:
 		opts, err := cleanOptions(in.Options)
@@ -490,6 +493,9 @@ func (s *Service) buildField(ctx context.Context, t *Table, in FieldInput) (*Fie
 			}
 		}
 		f.LinkTable, f.LinkMany = in.LinkTable, in.LinkMany
+		// Row lookups through single links are common enough to always pay
+		// for an index.
+		f.Indexed = !f.LinkMany
 	case TypeFormula:
 		f.Formula = strings.TrimSpace(in.Formula)
 		f.FormulaMode = in.FormulaMode
@@ -502,6 +508,9 @@ func (s *Service) buildField(ctx context.Context, t *Table, in FieldInput) (*Fie
 		f.Required = false
 	case TypeAutoNumber:
 		f.Required = false
+	}
+	if f.Indexed && !f.indexable() {
+		return nil, invalid("indexed", "%s fields cannot be indexed", f.Type)
 	}
 	return f, nil
 }
@@ -588,7 +597,31 @@ func createStorage(ctx context.Context, tx *store.Tx, t *Table, f *Field) error 
 	if !f.stored() {
 		return nil
 	}
-	_, err := tx.Exec(ctx, fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s`, db.Table(t.sqlName()), store.Q(f.Column), columnType(db, f)))
+	if _, err := tx.Exec(ctx, fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s`, db.Table(t.sqlName()), store.Q(f.Column), columnType(db, f))); err != nil {
+		return err
+	}
+	if f.Indexed && f.indexable() {
+		return createIndex(ctx, tx, t, f)
+	}
+	return nil
+}
+
+func indexName(f *Field) string { return "i_" + f.Column }
+
+// createIndex indexes a field's column. Text on Postgres is indexed in
+// byte order ("C"), the order filters and sorts compare text in.
+func createIndex(ctx context.Context, tx *store.Tx, t *Table, f *Field) error {
+	db := tx.DB()
+	col := store.Q(f.Column)
+	if db.Dialect == store.Postgres && formulaType(f) == formula.Text && f.Type != TypeLink {
+		col += ` COLLATE "C"`
+	}
+	_, err := tx.Exec(ctx, fmt.Sprintf(`CREATE INDEX %s ON %s (%s)`, store.Q(indexName(f)), db.Table(t.sqlName()), col))
+	return err
+}
+
+func dropIndex(ctx context.Context, tx *store.Tx, f *Field) error {
+	_, err := tx.Exec(ctx, `DROP INDEX IF EXISTS `+tx.DB().Table(indexName(f)))
 	return err
 }
 
@@ -600,6 +633,10 @@ func dropStorage(ctx context.Context, tx *store.Tx, t *Table, f *Field) error {
 	}
 	if !f.stored() {
 		return nil
+	}
+	// SQLite refuses to drop an indexed column.
+	if err := dropIndex(ctx, tx, f); err != nil {
+		return err
 	}
 	_, err := tx.Exec(ctx, fmt.Sprintf(`ALTER TABLE %s DROP COLUMN %s`, db.Table(t.sqlName()), store.Q(f.Column)))
 	return err
@@ -613,6 +650,7 @@ type FieldPatch struct {
 	Options     []string   `json:"options"`
 	Formula     *string    `json:"formula"`
 	FormulaMode *string    `json:"formulaMode"`
+	Indexed     *bool      `json:"indexed"`
 	// Force converts values that do not fit a new type to blank instead of
 	// failing.
 	Force bool `json:"force"`
@@ -699,7 +737,26 @@ func (s *Service) UpdateField(ctx context.Context, appID, tableID, fieldID strin
 			f.Required = *p.Required && f.writable()
 		}
 		if retype {
+			if f.Indexed && !f.indexable() {
+				f.Indexed = false
+			}
 			if err := s.convert(ctx, tx, t, &before, f, p.Force); err != nil {
+				return nil, err
+			}
+		}
+		if p.Indexed != nil && *p.Indexed != f.Indexed {
+			if *p.Indexed && !f.indexable() {
+				return nil, invalid("indexed", "%s fields cannot be indexed", f.Type)
+			}
+			f.Indexed = *p.Indexed
+			if f.Indexed {
+				if err := s.checkIndexedText(ctx, tx, t, f); err != nil {
+					return nil, err
+				}
+				if err := createIndex(ctx, tx, t, f); err != nil {
+					return nil, err
+				}
+			} else if err := dropIndex(ctx, tx, f); err != nil {
 				return nil, err
 			}
 		}
@@ -730,6 +787,22 @@ func (s *Service) UpdateField(ctx context.Context, appID, tableID, fieldID strin
 		}
 		return t, nil
 	})
+}
+
+// checkIndexedText refuses to index text values too long for an index.
+func (s *Service) checkIndexedText(ctx context.Context, tx *store.Tx, t *Table, f *Field) error {
+	if formulaType(f) != formula.Text || f.Type == TypeLink {
+		return nil
+	}
+	var n int
+	q := fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE LENGTH(%s) > %d`, tx.DB().Table(t.sqlName()), store.Q(f.Column), MaxIndexedText)
+	if err := tx.QueryRow(ctx, q).Scan(&n); err != nil {
+		return err
+	}
+	if n > 0 {
+		return invalid("indexed", "%d row(s) hold more than %d characters in [%s], too long to index", n, MaxIndexedText, f.Name)
+	}
+	return nil
 }
 
 // convert moves the values of a field into a new column of its new type.

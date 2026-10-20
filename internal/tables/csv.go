@@ -188,6 +188,7 @@ func (s *Service) ImportCSV(ctx context.Context, actor rbac.Actor, appID, tableI
 		}
 		res.Imported++
 	}
+	defer s.touch(appID, tableID)
 	return res, tx.Commit()
 }
 

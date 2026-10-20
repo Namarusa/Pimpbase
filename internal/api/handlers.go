@@ -673,6 +673,28 @@ func (s *Server) listRows(w http.ResponseWriter, r *http.Request) error {
 	return writeJSON(w, 200, page)
 }
 
+// aggregateRows groups and reduces rows for charts and stat cards:
+// ?groupBy=Stage&values=sum:Amount&values=count&filter=…&dateGroup=month
+// &sortBy=value&limit=10.
+func (s *Server) aggregateRows(w http.ResponseWriter, r *http.Request) error {
+	a, act, err := s.actor(r)
+	if err != nil {
+		return err
+	}
+	q := r.URL.Query()
+	limit, _ := strconv.Atoi(q.Get("limit"))
+	aq := tables.AggQuery{Filter: q.Get("filter"), GroupBy: q.Get("groupBy"), DateGroup: q.Get("dateGroup"), SortBy: q.Get("sortBy"), Limit: limit}
+	for _, v := range q["values"] {
+		op, field, _ := strings.Cut(v, ":")
+		aq.Values = append(aq.Values, tables.AggValue{Op: op, Field: field})
+	}
+	res, err := s.Tables.Aggregate(r.Context(), act, a.ID, r.PathValue("table"), aq)
+	if err != nil {
+		return err
+	}
+	return writeJSON(w, 200, res)
+}
+
 func (s *Server) createRow(w http.ResponseWriter, r *http.Request) error {
 	a, act, err := s.actor(r)
 	if err != nil {

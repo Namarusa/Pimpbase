@@ -60,6 +60,12 @@ var predicates = []string{
 	"[n] = NULL", "NOT ([n] = NULL)", "[t] = NULL",
 	`IF([b], [n], [m]) > 1`, `IF([n] > 0, "pos", "neg") = "pos"`, `ISBLANK(IF([b], [n]))`, `NOT IF([b], [n] > 0)`,
 	`IF([n] > 0, [t], [u]) = ""`, `[n] > 0 AND [t] <> "" OR [b]`,
+	// Column against constant, either way round, which keeps the column
+	// bare for indexes.
+	`1 < [n]`, `0 >= [n]`, `[n] <= -1`, `[n] < 0.5`, `NOT ([n] > 1)`, `NOT (0 = [n])`, `[n] <> 2`,
+	`"b" > [t]`, `[t] <> "apple"`, `NOT ([t] = "apple")`, `[t] < ""`, `[t] >= ""`, `"" = [t]`, `[u] <= "a b"`,
+	`[d] > DATE(2026, 1, 1)`, `DATE(2026, 1, 1) <= [d]`, `NOT ([d] <> DATE(2026, 10, 18))`, `NOT (DATE(2026, 1, 1) > [d])`,
+	`LOWER([u]) = "éclair"`, `CONTAINS(UPPER([t]), "ÉC")`, `CONTAINS(LOWER(TEXT([u])), "zeb")`, `TEXT([t]) = ""`, `ISBLANK(TEXT([t]))`,
 	// These fall back to Go but must still work.
 	`YEAR([d]) = 2026`, `[n] ^ 2 > 4`, `CONTAINS(TEXT([n]), "1")`, `[t] = 1`,
 }

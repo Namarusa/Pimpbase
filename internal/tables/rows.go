@@ -894,24 +894,9 @@ func (s *Service) ListRows(ctx context.Context, actor rbac.Actor, appID, tableID
 	now := s.now()
 	env := newRowEnv(c, &Row{Values: map[string]any{}}, actor, now)
 
-	var filters []*formula.Checked
-	if strings.TrimSpace(q.Filter) != "" {
-		scope := tableScope{t: c.Table, names: true}
-		ch, errs := formula.Compile(q.Filter, scope)
-		if errs != nil {
-			return nil, &ValidationError{Field: "filter", Message: errs[0].Message, Formula: errs}
-		}
-		if ch.Type != formula.Bool && ch.Type != formula.Any && ch.Type != formula.Null {
-			return nil, &ValidationError{Field: "filter", Message: "a filter must be true or false, this one gives " + ch.Type.String()}
-		}
-		filters = append(filters, ch)
-	}
-	rule, err := c.rule(actor)
+	filters, err := s.filters(c, actor, q.Filter)
 	if err != nil {
 		return nil, err
-	}
-	if rule != nil {
-		filters = append(filters, rule)
 	}
 
 	var sortField *Field
@@ -942,20 +927,7 @@ func (s *Service) ListRows(ctx context.Context, actor rbac.Actor, appID, tableID
 		}
 	}
 
-	where, args := "", []any(nil)
-	pushed := true
-	for _, f := range filters {
-		w, ok := f.CompileSQL(string(db.Dialect), resolver{c: c, dialect: string(db.Dialect), env: env}, env)
-		if !ok {
-			pushed = false
-			break
-		}
-		if where != "" {
-			where += " AND "
-		}
-		where += "(" + w.Where + ")"
-		args = append(args, w.Args...)
-	}
+	where, args, pushed := pushdown(db, c, env, filters)
 
 	if pushed && sortSQL {
 		dir := " ASC"
@@ -966,18 +938,27 @@ func (s *Service) ListRows(ctx context.Context, actor rbac.Actor, appID, tableID
 		if db.Dialect == store.Postgres && sortField != nil && formulaType(sortField) == formula.Text {
 			order += ` COLLATE "C"`
 		}
-		var total int
-		countQ := "SELECT COUNT(*) FROM " + db.Table(c.sqlName())
-		if where != "" {
-			countQ += " WHERE " + where
-		}
-		if err := db.QueryRow(ctx, countQ, args...).Scan(&total); err != nil {
+		total, err := s.count(ctx, db, c, where, args)
+		if err != nil {
 			return nil, err
 		}
-		tail := fmt.Sprintf("ORDER BY (%s IS NULL), %s%s, _id%s LIMIT %d OFFSET %d", sortCol, order, dir, dir, q.Limit, q.Offset)
-		// The sort expression appears twice in the tail.
-		all := append(append(append([]any{}, args...), sortArgs...), sortArgs...)
-		rows, err := selectRows(ctx, db, db, c, where, all, tail)
+		var rows []*Row
+		switch {
+		case sortField == nil:
+			// _id and the timestamps are never blank.
+			tail := fmt.Sprintf("ORDER BY %s%s, _id%s LIMIT %d OFFSET %d", sortCol, dir, dir, q.Limit, q.Offset)
+			rows, err = selectRows(ctx, db, db, c, where, args, tail)
+		case sortField.Indexed && sortField.stored():
+			// Rows with a value first, in index order, then blank ones: two
+			// queries an index can serve, where one "blanks last" ordering
+			// would sort the whole table.
+			rows, err = s.indexedPage(ctx, db, c, where, args, sortCol, order+dir, dir, q)
+		default:
+			tail := fmt.Sprintf("ORDER BY (%s IS NULL), %s%s, _id%s LIMIT %d OFFSET %d", sortCol, order, dir, dir, q.Limit, q.Offset)
+			// The sort expression appears twice in the tail.
+			all := append(append(append([]any{}, args...), sortArgs...), sortArgs...)
+			rows, err = selectRows(ctx, db, db, c, where, all, tail)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -994,19 +975,9 @@ func (s *Service) ListRows(ctx context.Context, actor rbac.Actor, appID, tableID
 		return page, nil
 	}
 
-	// Go path: load everything that SQL can narrow, then filter and sort.
-	var n int
-	if err := db.QueryRow(ctx, "SELECT COUNT(*) FROM "+db.Table(c.sqlName())).Scan(&n); err != nil {
-		return nil, err
-	}
-	if n > MaxScan {
-		return nil, invalid("filter", "this filter or sort cannot run in the database and the table has more than %d rows; simplify it", MaxScan)
-	}
-	rows, err := selectRows(ctx, db, db, c, "", nil, "ORDER BY _id")
+	// Go path: load every row, then filter and sort.
+	rows, err := s.scan(ctx, db, c, actor, filters, now)
 	if err != nil {
-		return nil, err
-	}
-	if err := s.hydrate(ctx, db, db, c, rows, 0); err != nil {
 		return nil, err
 	}
 	type item struct {
@@ -1016,16 +987,6 @@ func (s *Service) ListRows(ctx context.Context, actor rbac.Actor, appID, tableID
 	var kept []item
 	for _, r := range rows {
 		env := newRowEnv(c, r, actor, now)
-		keep := true
-		for _, f := range filters {
-			if ok, err := f.EvalBool(env); err != nil || !ok {
-				keep = false
-				break
-			}
-		}
-		if !keep {
-			continue
-		}
 		var key any
 		switch {
 		case sortField != nil:
@@ -1065,6 +1026,125 @@ func (s *Service) ListRows(ctx context.Context, actor rbac.Actor, appID, tableID
 		page.Rows = append(page.Rows, s.rowJSON(c, kept[i].r, actor))
 	}
 	return page, nil
+}
+
+// indexedPage reads a page sorted by an indexed column: rows with a
+// value, then blank rows by _id.
+func (s *Service) indexedPage(ctx context.Context, db *store.DB, c *compiled, where string, args []any, col, order, dir string, q Query) ([]*Row, error) {
+	and := func(cond string) string {
+		if where == "" {
+			return cond
+		}
+		return where + " AND " + cond
+	}
+	filled, err := s.count(ctx, db, c, and(col+" IS NOT NULL"), args)
+	if err != nil {
+		return nil, err
+	}
+	var rows []*Row
+	if q.Offset < filled {
+		tail := fmt.Sprintf("ORDER BY %s, _id%s LIMIT %d OFFSET %d", order, dir, q.Limit, q.Offset)
+		if rows, err = selectRows(ctx, db, db, c, and(col+" IS NOT NULL"), args, tail); err != nil {
+			return nil, err
+		}
+	}
+	if len(rows) < q.Limit {
+		tail := fmt.Sprintf("ORDER BY _id%s LIMIT %d OFFSET %d", dir, q.Limit-len(rows), max(0, q.Offset-filled))
+		blank, err := selectRows(ctx, db, db, c, and(col+" IS NULL"), args, tail)
+		if err != nil {
+			return nil, err
+		}
+		rows = append(rows, blank...)
+	}
+	return rows, nil
+}
+
+// filters compiles a query filter and adds the actor's row rule.
+func (s *Service) filters(c *compiled, actor rbac.Actor, filter string) ([]*formula.Checked, error) {
+	var filters []*formula.Checked
+	if strings.TrimSpace(filter) != "" {
+		scope := tableScope{t: c.Table, names: true}
+		ch, errs := formula.Compile(filter, scope)
+		if errs != nil {
+			return nil, &ValidationError{Field: "filter", Message: errs[0].Message, Formula: errs}
+		}
+		if ch.Type != formula.Bool && ch.Type != formula.Any && ch.Type != formula.Null {
+			return nil, &ValidationError{Field: "filter", Message: "a filter must be true or false, this one gives " + ch.Type.String()}
+		}
+		filters = append(filters, ch)
+	}
+	rule, err := c.rule(actor)
+	if err != nil {
+		return nil, err
+	}
+	if rule != nil {
+		filters = append(filters, rule)
+	}
+	return filters, nil
+}
+
+// pushdown turns filters into one SQL condition; ok is false when one of
+// them has no SQL form.
+func pushdown(db *store.DB, c *compiled, env formula.Env, filters []*formula.Checked) (where string, args []any, ok bool) {
+	for _, f := range filters {
+		w, ok := f.CompileSQL(string(db.Dialect), resolver{c: c, dialect: string(db.Dialect), env: env}, env)
+		if !ok {
+			return "", nil, false
+		}
+		if where != "" {
+			where += " AND "
+		}
+		where += "(" + w.Where + ")"
+		args = append(args, w.Args...)
+	}
+	return where, args, true
+}
+
+// scan loads and hydrates the rows all filters accept, in _id order. SQL
+// narrows the rows when the filters have an SQL form, else every row is
+// loaded and filtered in Go. It refuses to load more than MaxScan rows.
+func (s *Service) scan(ctx context.Context, db *store.DB, c *compiled, actor rbac.Actor, filters []*formula.Checked, now time.Time) ([]*Row, error) {
+	env := newRowEnv(c, &Row{Values: map[string]any{}}, actor, now)
+	where, args, pushed := pushdown(db, c, env, filters)
+	countQ := "SELECT COUNT(*) FROM " + db.Table(c.sqlName())
+	if pushed && where != "" {
+		countQ += " WHERE " + where
+	}
+	var n int
+	if err := db.QueryRow(ctx, countQ, args...).Scan(&n); err != nil {
+		return nil, err
+	}
+	if n > MaxScan {
+		if pushed {
+			return nil, invalid("sort", "this sort or grouping cannot run in the database and more than %d rows match; filter the rows further or choose another field", MaxScan)
+		}
+		return nil, invalid("filter", "this filter or sort cannot run in the database and the table has more than %d rows; simplify it", MaxScan)
+	}
+	rows, err := selectRows(ctx, db, db, c, where, args, "ORDER BY _id")
+	if err != nil {
+		return nil, err
+	}
+	if err := s.hydrate(ctx, db, db, c, rows, 0); err != nil {
+		return nil, err
+	}
+	if pushed {
+		return rows, nil
+	}
+	kept := rows[:0]
+	for _, r := range rows {
+		env := newRowEnv(c, r, actor, now)
+		keep := true
+		for _, f := range filters {
+			if ok, err := f.EvalBool(env); err != nil || !ok {
+				keep = false
+				break
+			}
+		}
+		if keep {
+			kept = append(kept, r)
+		}
+	}
+	return kept, nil
 }
 
 func cmpInt(a, b int64) int {
@@ -1192,6 +1272,9 @@ func (s *Service) prepare(ctx context.Context, ex store.Execer, db *store.DB, c 
 		if err != nil {
 			return nil, invalid(f.Name, "%s", err.Error())
 		}
+		if txt, ok := enc.(string); ok && f.Indexed && f.Type == TypeText && len([]rune(txt)) > MaxIndexedText {
+			return nil, invalid(f.Name, "[%s] is indexed, so it holds at most %d characters", f.Name, MaxIndexedText)
+		}
 		if f.Type == TypeSingleSelect && enc != nil && len(f.Options) > 0 && !slices.Contains(f.Options, enc.(string)) {
 			return nil, invalid(f.Name, "%q is not one of the options", enc)
 		}
@@ -1314,6 +1397,7 @@ func (s *Service) CreateRow(ctx context.Context, actor rbac.Actor, appID, tableI
 
 // emit tells OnRow about a change.
 func (s *Service) emit(ctx context.Context, ev RowEvent) {
+	s.touch(ev.AppID, ev.TableID)
 	if s.OnRow != nil {
 		s.OnRow(ctx, ev)
 	}
