@@ -190,20 +190,3 @@
   background: var(--primary); color: var(--primary-foreground); font-size: 11px; font-weight: 500;
   line-height: 1; padding: 3px 6px; border-radius: 4px 4px 0 0; pointer-events: none; white-space: nowrap;
 }
-
-/* Chart legends: centred legends span the chart so long labels wrap
-   instead of overlapping. */
-.lc-legend-container[data-placement='bottom'],
-.lc-legend-container[data-placement='top'] {
-  left: 0;
-  right: 0;
-  transform: none;
-}
-.lc-legend-swatch-group {
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.25rem 1rem;
-}
-.lc-legend-swatch-button {
-  flex-shrink: 0;
-}
