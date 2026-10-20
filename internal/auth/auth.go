@@ -8,6 +8,7 @@ import (
 	"crypto/subtle"
 	"database/sql"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/mail"
@@ -32,11 +33,18 @@ const (
 var roles = []string{RoleOwner, RoleAdmin, RoleBuilder, RoleMember}
 
 type User struct {
-	ID        string    `json:"id"`
-	Email     string    `json:"email"`
-	Name      string    `json:"name"`
-	Role      string    `json:"role"`
-	CreatedAt time.Time `json:"createdAt"`
+	ID    string `json:"id"`
+	Email string `json:"email"`
+	Name  string `json:"name"`
+	Role  string `json:"role"`
+	// Disabled users cannot sign in, and their API keys stop working.
+	Disabled bool `json:"disabled"`
+	// HasPassword is false for users who only sign in with single sign-on.
+	HasPassword bool `json:"hasPassword"`
+	// Groups come from the user's last single sign-on, for row rules.
+	Groups      []string   `json:"groups"`
+	CreatedAt   time.Time  `json:"createdAt"`
+	LastLoginAt *time.Time `json:"lastLoginAt"`
 }
 
 // IsBuilder reports whether the user may design apps.
@@ -51,6 +59,7 @@ var (
 	ErrBadCredentials = errors.New("wrong email or password")
 	ErrNotFound       = errors.New("user not found")
 	ErrSetupDone      = errors.New("this workspace is already set up")
+	ErrDisabled       = errors.New("this account is switched off; ask a workspace admin")
 )
 
 type InvalidError struct{ Message string }
@@ -126,18 +135,28 @@ func validPassword(pw string) error {
 
 func scanUser(row interface{ Scan(...any) error }) (*User, string, error) {
 	var u User
-	var hash, created string
-	if err := row.Scan(&u.ID, &u.Email, &u.Name, &u.Role, &hash, &created); err != nil {
+	var hash, created, groups, last string
+	var disabled int
+	if err := row.Scan(&u.ID, &u.Email, &u.Name, &u.Role, &hash, &created, &disabled, &groups, &last); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, "", ErrNotFound
 		}
 		return nil, "", err
 	}
 	u.CreatedAt, _ = time.Parse(time.RFC3339, created)
+	if t, err := time.Parse(time.RFC3339, last); err == nil {
+		u.LastLoginAt = &t
+	}
+	u.Disabled = disabled != 0
+	u.HasPassword = hash != ""
+	json.Unmarshal([]byte(groups), &u.Groups)
+	if u.Groups == nil {
+		u.Groups = []string{}
+	}
 	return &u, hash, nil
 }
 
-const userCols = `id, email, name, role, password_hash, created_at`
+const userCols = `id, email, name, role, password_hash, created_at, disabled, sso_groups, last_login_at`
 
 // NeedsSetup reports whether no user exists yet.
 func (s *Service) NeedsSetup(ctx context.Context) (bool, error) {
@@ -158,7 +177,20 @@ func (s *Service) Setup(ctx context.Context, email, name, password string) (*Use
 	return s.CreateUser(ctx, email, name, password, RoleOwner)
 }
 
+// CreateUser adds a user who signs in with a password.
 func (s *Service) CreateUser(ctx context.Context, email, name, password, role string) (*User, error) {
+	if err := validPassword(password); err != nil {
+		return nil, err
+	}
+	return s.create(ctx, email, name, hashPassword(password), role)
+}
+
+// CreateSSOUser adds a user who signs in with single sign-on only.
+func (s *Service) CreateSSOUser(ctx context.Context, email, name, role string) (*User, error) {
+	return s.create(ctx, email, name, "", role)
+}
+
+func (s *Service) create(ctx context.Context, email, name, hash, role string) (*User, error) {
 	email, err := normEmail(email)
 	if err != nil {
 		return nil, err
@@ -167,19 +199,38 @@ func (s *Service) CreateUser(ctx context.Context, email, name, password, role st
 	if name == "" {
 		name = strings.Split(email, "@")[0]
 	}
-	if err := validPassword(password); err != nil {
-		return nil, err
-	}
 	if !contains(roles, role) {
 		return nil, &InvalidError{"unknown workspace role " + role}
 	}
-	u := &User{ID: ids.New("usr"), Email: email, Name: name, Role: role, CreatedAt: s.now().UTC().Truncate(time.Second)}
-	_, err = s.db.Exec(ctx, `INSERT INTO users (`+userCols+`) VALUES (?, ?, ?, ?, ?, ?)`,
-		u.ID, u.Email, u.Name, u.Role, hashPassword(password), u.CreatedAt.Format(time.RFC3339))
+	u := &User{ID: ids.New("usr"), Email: email, Name: name, Role: role, HasPassword: hash != "", Groups: []string{}, CreatedAt: s.now().UTC().Truncate(time.Second)}
+	_, err = s.db.Exec(ctx, `INSERT INTO users (`+userCols+`) VALUES (?, ?, ?, ?, ?, ?, 0, '[]', '')`,
+		u.ID, u.Email, u.Name, u.Role, hash, u.CreatedAt.Format(time.RFC3339))
 	if err != nil && strings.Contains(strings.ToLower(err.Error()), "unique") {
 		return nil, &InvalidError{"a user with this email already exists"}
 	}
 	return u, err
+}
+
+// ByEmail finds a user by email address.
+func (s *Service) ByEmail(ctx context.Context, email string) (*User, error) {
+	u, _, err := scanUser(s.db.QueryRow(ctx, `SELECT `+userCols+` FROM users WHERE email = ?`, strings.ToLower(strings.TrimSpace(email))))
+	return u, err
+}
+
+// SetGroups records the groups single sign-on reported for a user.
+func (s *Service) SetGroups(ctx context.Context, userID string, groups []string) error {
+	if groups == nil {
+		groups = []string{}
+	}
+	b, _ := json.Marshal(groups)
+	_, err := s.db.Exec(ctx, `UPDATE users SET sso_groups = ? WHERE id = ?`, string(b), userID)
+	return err
+}
+
+// SetWorkspaceRole changes a user's workspace role, keeping an owner.
+func (s *Service) SetWorkspaceRole(ctx context.Context, userID, role string) error {
+	_, err := s.Update(ctx, userID, UserPatch{Role: &role})
+	return err
 }
 
 func contains(list []string, s string) bool {
@@ -218,6 +269,7 @@ type UserPatch struct {
 	Name     *string `json:"name"`
 	Role     *string `json:"role"`
 	Password *string `json:"password"`
+	Disabled *bool   `json:"disabled"`
 }
 
 func (s *Service) Update(ctx context.Context, id string, p UserPatch) (*User, error) {
@@ -239,7 +291,22 @@ func (s *Service) Update(ctx context.Context, id string, p UserPatch) (*User, er
 		}
 		u.Role = *p.Role
 	}
-	if _, err := s.db.Exec(ctx, `UPDATE users SET name = ?, role = ? WHERE id = ?`, u.Name, u.Role, u.ID); err != nil {
+	if p.Disabled != nil && *p.Disabled != u.Disabled {
+		if *p.Disabled && u.Role == RoleOwner {
+			return nil, &InvalidError{"an owner cannot be switched off; make them an admin first"}
+		}
+		u.Disabled = *p.Disabled
+		if u.Disabled {
+			if _, err := s.db.Exec(ctx, `DELETE FROM sessions WHERE user_id = ?`, u.ID); err != nil {
+				return nil, err
+			}
+		}
+	}
+	disabled := 0
+	if u.Disabled {
+		disabled = 1
+	}
+	if _, err := s.db.Exec(ctx, `UPDATE users SET name = ?, role = ?, disabled = ? WHERE id = ?`, u.Name, u.Role, disabled, u.ID); err != nil {
 		return nil, err
 	}
 	if p.Password != nil {
@@ -253,6 +320,7 @@ func (s *Service) Update(ctx context.Context, id string, p UserPatch) (*User, er
 		if _, err := s.db.Exec(ctx, `DELETE FROM sessions WHERE user_id = ?`, u.ID); err != nil {
 			return nil, err
 		}
+		u.HasPassword = true
 	}
 	return u, nil
 }
@@ -283,7 +351,7 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 		return err
 	}
 	defer tx.Rollback()
-	for _, q := range []string{`DELETE FROM sessions WHERE user_id = ?`, `DELETE FROM api_keys WHERE user_id = ?`, `DELETE FROM app_users WHERE user_id = ?`, `DELETE FROM users WHERE id = ?`} {
+	for _, q := range []string{`DELETE FROM sessions WHERE user_id = ?`, `DELETE FROM api_keys WHERE user_id = ?`, `DELETE FROM app_users WHERE user_id = ?`, `DELETE FROM user_identities WHERE user_id = ?`, `DELETE FROM users WHERE id = ?`} {
 		if _, err := tx.Exec(ctx, q, id); err != nil {
 			return err
 		}
@@ -302,17 +370,38 @@ func (s *Service) Login(ctx context.Context, email, password string) (*User, str
 	if err != nil {
 		return nil, "", err
 	}
+	if hash == "" {
+		// Single sign-on users have no password.
+		checkPassword(dummyHash, password)
+		return nil, "", ErrBadCredentials
+	}
 	if !checkPassword(hash, password) {
 		return nil, "", ErrBadCredentials
 	}
-	token := ids.Secret("bbs")
-	exp := s.now().Add(SessionTTL).UTC().Format(time.RFC3339)
-	if _, err := s.db.Exec(ctx, `INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)`, ids.Hash(token), u.ID, exp); err != nil {
+	if u.Disabled {
+		return nil, "", ErrDisabled
+	}
+	token, err := s.StartSession(ctx, u.ID)
+	if err != nil {
 		return nil, "", err
 	}
-	// Drop expired sessions now and then.
-	s.db.Exec(ctx, `DELETE FROM sessions WHERE expires_at < ?`, s.now().UTC().Format(time.RFC3339))
 	return u, token, nil
+}
+
+// StartSession signs a user in, returning the session token.
+func (s *Service) StartSession(ctx context.Context, userID string) (string, error) {
+	token := ids.Secret("bbs")
+	now := s.now().UTC()
+	exp := now.Add(SessionTTL).Format(time.RFC3339)
+	if _, err := s.db.Exec(ctx, `INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)`, ids.Hash(token), userID, exp); err != nil {
+		return "", err
+	}
+	if _, err := s.db.Exec(ctx, `UPDATE users SET last_login_at = ? WHERE id = ?`, now.Format(time.RFC3339), userID); err != nil {
+		return "", err
+	}
+	// Drop expired sessions now and then.
+	s.db.Exec(ctx, `DELETE FROM sessions WHERE expires_at < ?`, now.Format(time.RFC3339))
+	return token, nil
 }
 
 func (s *Service) Logout(ctx context.Context, token string) error {
@@ -333,44 +422,98 @@ func (s *Service) FromSession(ctx context.Context, token string) (*User, error) 
 	if t, _ := time.Parse(time.RFC3339, exp); s.now().After(t) {
 		return nil, ErrNotFound
 	}
-	return s.Get(ctx, userID)
+	u, err := s.Get(ctx, userID)
+	if err == nil && u.Disabled {
+		return nil, ErrNotFound
+	}
+	return u, err
 }
 
-// APIKey is a key for machine access; it acts as its user.
+// APIKey is a token for machine access; it acts as its user, limited to
+// one app and one role of that app when AppID is set.
 type APIKey struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	CreatedAt time.Time `json:"createdAt"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// AppID limits the key to one app's data; builder and admin endpoints
+	// refuse it.
+	AppID string `json:"appId"`
+	// Role, with AppID, is the app role the key acts with. The user must
+	// still hold it when the key is used.
+	Role       string     `json:"role"`
+	CreatedAt  time.Time  `json:"createdAt"`
+	ExpiresAt  *time.Time `json:"expiresAt"`
+	LastUsedAt *time.Time `json:"lastUsedAt"`
 	// Key is only set when the key is created.
 	Key string `json:"key,omitempty"`
 }
 
-func (s *Service) CreateAPIKey(ctx context.Context, userID, name string) (*APIKey, error) {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return nil, &InvalidError{"give the key a name"}
+// Scoped reports whether the key is limited to one app.
+func (k *APIKey) Scoped() bool { return k != nil && k.AppID != "" }
+
+// KeyInput makes an API key.
+type KeyInput struct {
+	Name  string `json:"name"`
+	AppID string `json:"appId"`
+	Role  string `json:"role"`
+	// ExpiresInDays is 0 for a key that never expires.
+	ExpiresInDays int `json:"expiresInDays"`
+}
+
+func (s *Service) CreateAPIKey(ctx context.Context, userID string, in KeyInput) (*APIKey, error) {
+	name := strings.TrimSpace(in.Name)
+	if name == "" || len(name) > 100 {
+		return nil, &InvalidError{"give the key a name of up to 100 characters"}
 	}
-	k := &APIKey{ID: ids.New("key"), Name: name, CreatedAt: s.now().UTC().Truncate(time.Second), Key: ids.Secret("bbk")}
-	_, err := s.db.Exec(ctx, `INSERT INTO api_keys (id, user_id, name, key_hash, created_at) VALUES (?, ?, ?, ?, ?)`,
-		k.ID, userID, k.Name, ids.Hash(k.Key), k.CreatedAt.Format(time.RFC3339))
+	if in.ExpiresInDays < 0 || in.ExpiresInDays > 3650 {
+		return nil, &InvalidError{"a key expires in 1 to 3650 days, or never"}
+	}
+	if in.Role != "" && in.AppID == "" {
+		return nil, &InvalidError{"pick the app the role belongs to"}
+	}
+	now := s.now().UTC().Truncate(time.Second)
+	k := &APIKey{ID: ids.New("key"), Name: name, AppID: in.AppID, Role: in.Role, CreatedAt: now, Key: ids.Secret("bbk")}
+	exp := ""
+	if in.ExpiresInDays > 0 {
+		t := now.Add(time.Duration(in.ExpiresInDays) * 24 * time.Hour)
+		k.ExpiresAt = &t
+		exp = t.Format(time.RFC3339)
+	}
+	_, err := s.db.Exec(ctx, `INSERT INTO api_keys (id, user_id, name, key_hash, created_at, app_id, role, expires_at, last_used_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '')`,
+		k.ID, userID, k.Name, ids.Hash(k.Key), k.CreatedAt.Format(time.RFC3339), k.AppID, k.Role, exp)
 	return k, err
 }
 
+const keyCols = `id, name, app_id, role, created_at, expires_at, last_used_at`
+
+func scanKey(row interface{ Scan(...any) error }) (*APIKey, error) {
+	var k APIKey
+	var created, exp, used string
+	if err := row.Scan(&k.ID, &k.Name, &k.AppID, &k.Role, &created, &exp, &used); err != nil {
+		return nil, err
+	}
+	k.CreatedAt, _ = time.Parse(time.RFC3339, created)
+	if t, err := time.Parse(time.RFC3339, exp); err == nil {
+		k.ExpiresAt = &t
+	}
+	if t, err := time.Parse(time.RFC3339, used); err == nil {
+		k.LastUsedAt = &t
+	}
+	return &k, nil
+}
+
 func (s *Service) APIKeys(ctx context.Context, userID string) ([]APIKey, error) {
-	rows, err := s.db.Query(ctx, `SELECT id, name, created_at FROM api_keys WHERE user_id = ? ORDER BY created_at`, userID)
+	rows, err := s.db.Query(ctx, `SELECT `+keyCols+` FROM api_keys WHERE user_id = ? ORDER BY created_at, id`, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	out := []APIKey{}
 	for rows.Next() {
-		var k APIKey
-		var created string
-		if err := rows.Scan(&k.ID, &k.Name, &created); err != nil {
+		k, err := scanKey(rows)
+		if err != nil {
 			return nil, err
 		}
-		k.CreatedAt, _ = time.Parse(time.RFC3339, created)
-		out = append(out, k)
+		out = append(out, *k)
 	}
 	return out, rows.Err()
 }
@@ -380,15 +523,39 @@ func (s *Service) DeleteAPIKey(ctx context.Context, userID, keyID string) error 
 	return err
 }
 
-// FromAPIKey returns the user an API key belongs to.
-func (s *Service) FromAPIKey(ctx context.Context, key string) (*User, error) {
+// FromAPIKey returns the user an API key belongs to, and the key.
+func (s *Service) FromAPIKey(ctx context.Context, key string) (*User, *APIKey, error) {
 	var userID string
-	err := s.db.QueryRow(ctx, `SELECT user_id FROM api_keys WHERE key_hash = ?`, ids.Hash(key)).Scan(&userID)
+	row := s.db.QueryRow(ctx, `SELECT user_id, `+keyCols+` FROM api_keys WHERE key_hash = ?`, ids.Hash(key))
+	k, err := scanKey(scanFirst{row, &userID})
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNotFound
+		return nil, nil, ErrNotFound
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return s.Get(ctx, userID)
+	now := s.now().UTC()
+	if k.ExpiresAt != nil && now.After(*k.ExpiresAt) {
+		return nil, nil, ErrNotFound
+	}
+	u, err := s.Get(ctx, userID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if u.Disabled {
+		return nil, nil, ErrNotFound
+	}
+	// Note the use at most once a minute, to keep writes down.
+	if k.LastUsedAt == nil || now.Sub(*k.LastUsedAt) > time.Minute {
+		s.db.Exec(ctx, `UPDATE api_keys SET last_used_at = ? WHERE id = ?`, now.Format(time.RFC3339), k.ID)
+	}
+	return u, k, nil
 }
+
+// scanFirst scans one leading column into dst, then the rest as usual.
+type scanFirst struct {
+	row interface{ Scan(...any) error }
+	dst any
+}
+
+func (s scanFirst) Scan(dest ...any) error { return s.row.Scan(append([]any{s.dst}, dest...)...) }

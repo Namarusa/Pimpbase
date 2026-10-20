@@ -38,6 +38,9 @@ func (s *Service) ImportCSV(ctx context.Context, actor rbac.Actor, appID, tableI
 	if err := actor.Require(c.Permissions.Write, "adding rows to "+c.Name); err != nil {
 		return nil, err
 	}
+	if _, err := c.rule(actor); err != nil {
+		return nil, err
+	}
 	cr := csv.NewReader(r)
 	cr.FieldsPerRecord = -1
 	cr.TrimLeadingSpace = true
@@ -127,6 +130,10 @@ func (s *Service) ImportCSV(ctx context.Context, actor rbac.Actor, appID, tableI
 		return nil, err
 	}
 	defer tx.Rollback()
+	rule, err := c.rule(actor)
+	if err != nil {
+		return nil, err
+	}
 	for n, rec := range records {
 		values := map[string]any{}
 		for i, name := range header {
@@ -138,16 +145,46 @@ func (s *Service) ImportCSV(ctx context.Context, actor rbac.Actor, appID, tableI
 				values[f.Name] = rec[i]
 			}
 		}
-		if _, err := s.insert(ctx, tx, c, values, true); err != nil {
+		if rule != nil {
+			if _, err := tx.Exec(ctx, "SAVEPOINT bb_import_row"); err != nil {
+				return nil, err
+			}
+		}
+		id, err := s.insert(ctx, tx, c, values, true)
+		if err != nil {
 			var v *ValidationError
 			if !errors.As(err, &v) {
 				return nil, err
+			}
+			if rule != nil {
+				if _, err := tx.Exec(ctx, "ROLLBACK TO SAVEPOINT bb_import_row"); err != nil {
+					return nil, err
+				}
 			}
 			res.Skipped++
 			if len(res.Errors) < 100 {
 				res.Errors = append(res.Errors, fmt.Sprintf("line %d: %s", n+2, v.Error()))
 			}
 			continue
+		}
+		if rule != nil {
+			r, err := s.loadRow(ctx, tx, db, c, id)
+			if err != nil {
+				return nil, err
+			}
+			if !s.allowed(c, rule, actor, r) {
+				if _, err := tx.Exec(ctx, "ROLLBACK TO SAVEPOINT bb_import_row"); err != nil {
+					return nil, err
+				}
+				res.Skipped++
+				if len(res.Errors) < 100 {
+					res.Errors = append(res.Errors, fmt.Sprintf("line %d: the row does not match your row rule", n+2))
+				}
+				continue
+			}
+			if _, err := tx.Exec(ctx, "RELEASE SAVEPOINT bb_import_row"); err != nil {
+				return nil, err
+			}
 		}
 		res.Imported++
 	}

@@ -320,8 +320,11 @@ func (q *Query) Check() error {
 		return invalid("responseType", "the response is read as auto, json, xml or text")
 	}
 	d.ResultPath = strings.Trim(strings.TrimSpace(d.ResultPath), ".")
-	if d.Role < rbac.Public || d.Role > rbac.Admin {
-		return invalid("role", "the role is PUBLIC, BASIC, POWER or ADMIN")
+	if d.Role == "" {
+		d.Role = rbac.Basic
+	}
+	if d.Role == rbac.None {
+		return invalid("role", "pick the role that may run this query")
 	}
 	if d.CacheSeconds < 0 || d.CacheSeconds > 86400 {
 		return invalid("cacheSeconds", "results are cached for 0 to 86400 seconds")

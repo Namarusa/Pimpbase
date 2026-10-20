@@ -81,8 +81,68 @@ func (s tableScope) NameType(parts []string) (formula.Type, bool) {
 	switch strings.ToLower(parts[2]) {
 	case "id", "email", "name", "role":
 		return formula.Text, true
+	case "groups", "roles":
+		return formula.List, true
 	}
 	return formula.Any, false
+}
+
+// checkPermissions checks a table's permissions: every role is set and
+// every row rule is a valid condition, at most one per role.
+func checkPermissions(t *Table, p *Permissions) error {
+	for _, r := range []rbac.Role{p.Read, p.Write, p.Delete} {
+		if r == "" || r == rbac.None {
+			return invalid("permissions", "pick a role for reading, writing and deleting rows")
+		}
+	}
+	seen := map[rbac.Role]bool{}
+	for _, rule := range p.Rows {
+		if rule.Role == "" || rule.Role == rbac.None {
+			return invalid("permissions", "a row rule needs a role")
+		}
+		if rule.Role == rbac.Admin {
+			return invalid("permissions", "admins always see every row")
+		}
+		if seen[rule.Role] {
+			return invalid("permissions", "%s has two row rules", rule.Role)
+		}
+		seen[rule.Role] = true
+		if _, err := compileRule(t, rule.Filter); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// compileRule checks a row rule's filter; an empty filter gives nil.
+func compileRule(t *Table, filter string) (*formula.Checked, error) {
+	if strings.TrimSpace(filter) == "" {
+		return nil, nil
+	}
+	ch, errs := formula.Compile(filter, tableScope{t: t, names: true})
+	if errs != nil {
+		return nil, &ValidationError{Field: "permissions", Message: "row rule: " + errs[0].Message, Formula: errs}
+	}
+	if ch.Type != formula.Bool && ch.Type != formula.Any && ch.Type != formula.Null {
+		return nil, &ValidationError{Field: "permissions", Message: "a row rule must be true or false, this one gives " + ch.Type.String()}
+	}
+	return ch, nil
+}
+
+// RowRuleFor returns the row rule that applies to an actor, or "" when
+// every row is open to them.
+func (t *Table) RowRuleFor(actor rbac.Actor) string {
+	if actor.Builder || actor.Role == rbac.Admin {
+		return ""
+	}
+	for _, r := range actor.Chain() {
+		for _, rule := range t.Permissions.Rows {
+			if rule.Role == r {
+				return rule.Filter
+			}
+		}
+	}
+	return ""
 }
 
 // compile checks every formula field of t, in dependency order, and sets
@@ -168,6 +228,7 @@ func (s *Service) load(ctx context.Context, appID, tableID string) (*Table, erro
 	if err := json.Unmarshal([]byte(def), t); err != nil {
 		return nil, err
 	}
+	t.Permissions.normalize()
 	return t, nil
 }
 
@@ -196,6 +257,7 @@ func (s *Service) List(ctx context.Context, appID string) ([]*Table, error) {
 		if err := json.Unmarshal([]byte(def), t); err != nil {
 			return nil, err
 		}
+		t.Permissions.normalize()
 		out = append(out, t)
 	}
 	return out, rows.Err()
@@ -275,7 +337,7 @@ func (s *Service) CreateTable(ctx context.Context, appID, name string, fields []
 	now := s.now().UTC()
 	t := &Table{
 		ID: ids.New("tbl"), AppID: appID, Name: name, Fields: []*Field{},
-		Permissions: Permissions{Read: rbac.Basic, Write: rbac.Basic},
+		Permissions: Permissions{Read: rbac.Basic, Write: rbac.Basic, Delete: rbac.Basic, Rows: []RowRule{}},
 		CreatedAt:   now, UpdatedAt: now,
 	}
 	return s.change(ctx, appID, true, func(tx *store.Tx) (*Table, error) {
@@ -320,10 +382,12 @@ func (s *Service) UpdateTable(ctx context.Context, appID, tableID string, p Tabl
 			t.PrimaryField = f.ID
 		}
 		if p.Permissions != nil {
-			if p.Permissions.Read < rbac.Public || p.Permissions.Write < rbac.Public {
-				return nil, invalid("permissions", "unknown role")
+			perm := *p.Permissions
+			perm.normalize()
+			if err := checkPermissions(t, &perm); err != nil {
+				return nil, err
 			}
-			t.Permissions = *p.Permissions
+			t.Permissions = perm
 		}
 		return t, nil
 	})

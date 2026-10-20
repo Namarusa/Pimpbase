@@ -55,6 +55,9 @@ func (s *Server) createFlow(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if err := s.bodyRoles(r, a.ID, data, "trigger", "role"); err != nil {
+		return err
+	}
 	f, err := s.Flows.CreateFlow(r.Context(), a.ID, data)
 	if err != nil {
 		return err
@@ -69,6 +72,9 @@ func (s *Server) updateFlow(w http.ResponseWriter, r *http.Request) error {
 	}
 	data, err := readBody(r)
 	if err != nil {
+		return err
+	}
+	if err := s.bodyRoles(r, a.ID, data, "trigger", "role"); err != nil {
 		return err
 	}
 	f, err := s.Flows.UpdateFlow(r.Context(), a.ID, r.PathValue("flow"), data)
@@ -170,7 +176,7 @@ func (s *Server) testFlow(w http.ResponseWriter, r *http.Request) error {
 		}
 		data["params"] = p
 	}
-	run, err := s.Engine.RunNow(r.Context(), f, flows.StartInput{Kind: f.Trigger.Type, Data: data, User: s.userOf(r, act), Test: true}, waitForRun)
+	run, err := s.Engine.RunNow(r.Context(), f, flows.StartInput{Kind: f.Trigger.Type, Data: data, User: s.userOf(r, act), Test: true, Actor: &act}, waitForRun)
 	if err != nil {
 		return err
 	}
@@ -248,7 +254,7 @@ func (s *Server) runFlow(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	run, err := s.Engine.RunNow(r.Context(), f, flows.StartInput{Kind: flows.OnManual, Data: map[string]any{"params": params}, User: s.userOf(r, act), Test: test}, waitForRun)
+	run, err := s.Engine.RunNow(r.Context(), f, flows.StartInput{Kind: flows.OnManual, Data: map[string]any{"params": params}, User: s.userOf(r, act), Test: test, Actor: &act}, waitForRun)
 	if err != nil {
 		return err
 	}
@@ -370,7 +376,7 @@ func (s *Server) runtimeFlows(r *http.Request, appID string, act rbac.Actor) ([]
 	}
 	out := []runtimeFlow{}
 	for _, f := range all {
-		if f.Trigger.Type != flows.OnManual || (!act.Builder && (act.Role < f.Trigger.Role || !f.Enabled)) {
+		if f.Trigger.Type != flows.OnManual || (!act.Builder && (!act.Has(f.Trigger.Role) || !f.Enabled)) {
 			continue
 		}
 		out = append(out, runtimeFlow{ID: f.ID, Name: f.Name, Enabled: f.Enabled, Parameters: f.Trigger.Parameters})

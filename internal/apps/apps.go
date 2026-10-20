@@ -257,7 +257,7 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 		return err
 	}
 	defer tx.Rollback()
-	for _, q := range []string{`DELETE FROM app_queries WHERE app_id = ?`, `DELETE FROM app_datasources WHERE app_id = ?`, `DELETE FROM app_variables WHERE app_id = ?`, `DELETE FROM app_screens WHERE app_id = ?`, `DELETE FROM app_tables WHERE app_id = ?`, `DELETE FROM app_users WHERE app_id = ?`, `DELETE FROM apps WHERE id = ?`} {
+	for _, q := range []string{`DELETE FROM app_queries WHERE app_id = ?`, `DELETE FROM app_datasources WHERE app_id = ?`, `DELETE FROM app_variables WHERE app_id = ?`, `DELETE FROM app_screens WHERE app_id = ?`, `DELETE FROM app_tables WHERE app_id = ?`, `DELETE FROM app_users WHERE app_id = ?`, `DELETE FROM app_roles WHERE app_id = ?`, `DELETE FROM app_flow_runs WHERE app_id = ?`, `DELETE FROM app_flows WHERE app_id = ?`, `DELETE FROM apps WHERE id = ?`} {
 		if _, err := tx.Exec(ctx, q, a.ID); err != nil {
 			return err
 		}
@@ -271,10 +271,13 @@ type Member struct {
 	Email  string    `json:"email"`
 	Name   string    `json:"name"`
 	Role   rbac.Role `json:"role"`
+	// Source is "manual" for roles given in the builder and "sso" for roles
+	// given by a single sign-on role mapping.
+	Source string `json:"source"`
 }
 
 func (s *Service) Members(ctx context.Context, appID string) ([]Member, error) {
-	rows, err := s.store.Meta.Query(ctx, `SELECT u.id, u.email, u.name, au.role FROM app_users au JOIN users u ON u.id = au.user_id WHERE au.app_id = ? ORDER BY u.email`, appID)
+	rows, err := s.store.Meta.Query(ctx, `SELECT u.id, u.email, u.name, au.role, au.source FROM app_users au JOIN users u ON u.id = au.user_id WHERE au.app_id = ? ORDER BY u.email`, appID)
 	if err != nil {
 		return nil, err
 	}
@@ -283,25 +286,101 @@ func (s *Service) Members(ctx context.Context, appID string) ([]Member, error) {
 	for rows.Next() {
 		var m Member
 		var role string
-		if err := rows.Scan(&m.UserID, &m.Email, &m.Name, &role); err != nil {
+		if err := rows.Scan(&m.UserID, &m.Email, &m.Name, &role, &m.Source); err != nil {
 			return nil, err
 		}
-		m.Role, _ = rbac.ParseRole(role)
+		m.Role = rbac.Role(role)
 		out = append(out, m)
 	}
 	return out, rows.Err()
 }
 
-// SetRole gives a user a role in an app; rbac.None removes their access.
+// Grant is one app role of a user.
+type Grant struct {
+	AppID  string    `json:"appId"`
+	Role   rbac.Role `json:"role"`
+	Source string    `json:"source"`
+}
+
+// GrantsOf lists the app roles of a user.
+func (s *Service) GrantsOf(ctx context.Context, userID string) ([]Grant, error) {
+	rows, err := s.store.Meta.Query(ctx, `SELECT app_id, role, source FROM app_users WHERE user_id = ? ORDER BY app_id`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Grant{}
+	for rows.Next() {
+		var g Grant
+		var role string
+		if err := rows.Scan(&g.AppID, &role, &g.Source); err != nil {
+			return nil, err
+		}
+		g.Role = rbac.Role(role)
+		out = append(out, g)
+	}
+	return out, rows.Err()
+}
+
+// SetRole gives a user a role in an app; rbac.None or PUBLIC removes their
+// access. The role must exist in the app.
 func (s *Service) SetRole(ctx context.Context, appID, userID string, role rbac.Role) error {
+	return s.setRole(ctx, appID, userID, role, "manual")
+}
+
+func (s *Service) setRole(ctx context.Context, appID, userID string, role rbac.Role, source string) error {
+	if role != rbac.None && role != rbac.Public && role != "" {
+		set, err := s.Roles(ctx, appID)
+		if err != nil {
+			return err
+		}
+		if !set.Has(role) {
+			return &InvalidError{fmt.Sprintf("this app has no role %s", role)}
+		}
+	}
 	if _, err := s.store.Meta.Exec(ctx, `DELETE FROM app_users WHERE app_id = ? AND user_id = ?`, appID, userID); err != nil {
 		return err
 	}
-	if role < rbac.Basic {
+	if role == rbac.None || role == rbac.Public || role == "" {
 		return nil
 	}
-	_, err := s.store.Meta.Exec(ctx, `INSERT INTO app_users (app_id, user_id, role) VALUES (?, ?, ?)`, appID, userID, role.String())
+	_, err := s.store.Meta.Exec(ctx, `INSERT INTO app_users (app_id, user_id, role, source) VALUES (?, ?, ?, ?)`, appID, userID, string(role), source)
 	return err
+}
+
+// SyncSSO applies the app roles a single sign-on mapping gives a user:
+// roles given in the builder stay as they are, roles an earlier sign-in
+// gave are replaced, and roles the mapping no longer gives are removed.
+func (s *Service) SyncSSO(ctx context.Context, userID string, roles map[string]rbac.Role) error {
+	grants, err := s.GrantsOf(ctx, userID)
+	if err != nil {
+		return err
+	}
+	manual := map[string]bool{}
+	for _, g := range grants {
+		if g.Source == "manual" {
+			manual[g.AppID] = true
+			continue
+		}
+		if _, still := roles[g.AppID]; !still {
+			if _, err := s.store.Meta.Exec(ctx, `DELETE FROM app_users WHERE app_id = ? AND user_id = ?`, g.AppID, userID); err != nil {
+				return err
+			}
+		}
+	}
+	for appID, role := range roles {
+		if manual[appID] {
+			continue
+		}
+		if err := s.setRole(ctx, appID, userID, role, "sso"); err != nil {
+			var inv *InvalidError
+			if errors.As(err, &inv) {
+				continue // a mapping may name a role an app has since removed
+			}
+			return err
+		}
+	}
+	return nil
 }
 
 // RoleOf returns a user's role in an app, or rbac.None.
@@ -314,5 +393,182 @@ func (s *Service) RoleOf(ctx context.Context, appID, userID string) (rbac.Role, 
 	if err != nil {
 		return rbac.None, err
 	}
-	return rbac.ParseRole(role)
+	return rbac.Role(role), nil
 }
+
+// Roles returns the roles of an app: the built-in ones and its own.
+func (s *Service) Roles(ctx context.Context, appID string) (*rbac.Set, error) {
+	rows, err := s.store.Meta.Query(ctx, `SELECT id, name, description, inherits, color FROM app_roles WHERE app_id = ? ORDER BY position, id`, appID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var custom []rbac.Def
+	for rows.Next() {
+		var d rbac.Def
+		var id, inherits string
+		if err := rows.Scan(&id, &d.Name, &d.Description, &inherits, &d.Color); err != nil {
+			return nil, err
+		}
+		d.ID, d.Inherits = rbac.Role(id), rbac.Role(inherits)
+		custom = append(custom, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return rbac.NewSet(custom), nil
+}
+
+// RoleInput makes or changes a custom role.
+type RoleInput struct {
+	ID          rbac.Role `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	Inherits    rbac.Role `json:"inherits"`
+	Color       string    `json:"color"`
+}
+
+func (in *RoleInput) check(set *rbac.Set) error {
+	in.Name = strings.TrimSpace(in.Name)
+	in.Description = strings.TrimSpace(in.Description)
+	if in.Name == "" || len(in.Name) > 60 {
+		return &InvalidError{"a role needs a name of up to 60 characters"}
+	}
+	if len(in.Description) > 300 {
+		return &InvalidError{"the description has at most 300 characters"}
+	}
+	if in.Color != "" && !accentRe.MatchString(in.Color) {
+		return &InvalidError{"the colour is written #rrggbb"}
+	}
+	if err := set.CheckInherits(in.ID, in.Inherits); err != nil {
+		return &InvalidError{err.Error()}
+	}
+	return nil
+}
+
+// roleID makes a role id from a role name, such as "Sales team" to
+// SALES_TEAM.
+func roleID(name string) rbac.Role {
+	var b strings.Builder
+	under := false
+	for _, r := range strings.ToUpper(name) {
+		switch {
+		case r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' && b.Len() > 0:
+			b.WriteRune(r)
+			under = false
+		case !under && b.Len() > 0:
+			b.WriteByte('_')
+			under = true
+		}
+	}
+	id := strings.Trim(b.String(), "_")
+	if len(id) > 32 {
+		id = strings.Trim(id[:32], "_")
+	}
+	if id == "" {
+		id = "ROLE"
+	}
+	return rbac.Role(id)
+}
+
+// CreateRole adds a custom role to an app. An empty id is made from the
+// name.
+func (s *Service) CreateRole(ctx context.Context, appID string, in RoleInput) (*rbac.Def, error) {
+	set, err := s.Roles(ctx, appID)
+	if err != nil {
+		return nil, err
+	}
+	if in.ID == "" || in.ID == rbac.None {
+		base := roleID(in.Name)
+		in.ID = base
+		for i := 2; set.Has(in.ID) || in.ID == rbac.None; i++ {
+			in.ID = rbac.Role(fmt.Sprintf("%s_%d", base, i))
+		}
+	} else if _, err := rbac.ParseRole(string(in.ID)); err != nil {
+		return nil, &InvalidError{err.Error()}
+	}
+	if set.Has(in.ID) || in.ID == rbac.None {
+		return nil, &InvalidError{fmt.Sprintf("the app already has a role %s", in.ID)}
+	}
+	if in.Inherits == "" {
+		in.Inherits = rbac.Basic
+	}
+	if err := in.check(set); err != nil {
+		return nil, err
+	}
+	if len(set.Defs()) >= 4+50 {
+		return nil, &InvalidError{"an app has at most 50 custom roles"}
+	}
+	_, err = s.store.Meta.Exec(ctx, `INSERT INTO app_roles (app_id, id, name, description, inherits, color, position) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		appID, string(in.ID), in.Name, in.Description, string(in.Inherits), in.Color, len(set.Defs()))
+	if err != nil {
+		return nil, err
+	}
+	return &rbac.Def{ID: in.ID, Name: in.Name, Description: in.Description, Inherits: in.Inherits, Color: in.Color}, nil
+}
+
+// UpdateRole changes a custom role's name, description, colour or the
+// role it inherits. Built-in roles cannot change.
+func (s *Service) UpdateRole(ctx context.Context, appID string, id rbac.Role, in RoleInput) (*rbac.Def, error) {
+	if id.IsBuiltin() {
+		return nil, &InvalidError{"built-in roles cannot change"}
+	}
+	set, err := s.Roles(ctx, appID)
+	if err != nil {
+		return nil, err
+	}
+	if !set.Has(id) {
+		return nil, ErrRoleNotFound
+	}
+	in.ID = id
+	if err := in.check(set); err != nil {
+		return nil, err
+	}
+	_, err = s.store.Meta.Exec(ctx, `UPDATE app_roles SET name = ?, description = ?, inherits = ?, color = ? WHERE app_id = ? AND id = ?`,
+		in.Name, in.Description, string(in.Inherits), in.Color, appID, string(id))
+	if err != nil {
+		return nil, err
+	}
+	return &rbac.Def{ID: id, Name: in.Name, Description: in.Description, Inherits: in.Inherits, Color: in.Color}, nil
+}
+
+// DeleteRole removes a custom role. Its members move to the role it
+// inherited, and roles inheriting it inherit that role instead. Tables,
+// screens, queries and flows that still name it become reachable only by
+// app admins.
+func (s *Service) DeleteRole(ctx context.Context, appID string, id rbac.Role) error {
+	if id.IsBuiltin() {
+		return &InvalidError{"built-in roles cannot be removed"}
+	}
+	set, err := s.Roles(ctx, appID)
+	if err != nil {
+		return err
+	}
+	d, ok := set.Def(id)
+	if !ok {
+		return ErrRoleNotFound
+	}
+	tx, err := s.store.Meta.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	parent := string(d.Inherits)
+	if d.Inherits == rbac.Public {
+		if _, err := tx.Exec(ctx, `DELETE FROM app_users WHERE app_id = ? AND role = ?`, appID, string(id)); err != nil {
+			return err
+		}
+	} else if _, err := tx.Exec(ctx, `UPDATE app_users SET role = ? WHERE app_id = ? AND role = ?`, parent, appID, string(id)); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE app_roles SET inherits = ? WHERE app_id = ? AND inherits = ?`, parent, appID, string(id)); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM app_roles WHERE app_id = ? AND id = ?`, appID, string(id)); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// ErrRoleNotFound is returned for an unknown custom role.
+var ErrRoleNotFound = errors.New("role not found")

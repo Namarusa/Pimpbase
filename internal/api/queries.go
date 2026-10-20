@@ -113,6 +113,9 @@ func (s *Server) createQuery(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if err := s.bodyRoles(r, a.ID, data, "role"); err != nil {
+		return err
+	}
 	q, err := s.Queries.CreateQuery(r.Context(), a.ID, data)
 	if err != nil {
 		return err
@@ -127,6 +130,9 @@ func (s *Server) updateQuery(w http.ResponseWriter, r *http.Request) error {
 	}
 	data, err := readBody(r)
 	if err != nil {
+		return err
+	}
+	if err := s.bodyRoles(r, a.ID, data, "role"); err != nil {
 		return err
 	}
 	q, err := s.Queries.UpdateQuery(r.Context(), a.ID, r.PathValue("query"), data)
@@ -300,7 +306,7 @@ func (s *Server) runtimeQueries(r *http.Request, appID string, act rbac.Actor) (
 	}
 	out := []runtimeQuery{}
 	for _, q := range all {
-		if !act.Builder && act.Role < q.Role {
+		if !act.Has(q.Role) {
 			continue
 		}
 		rq := runtimeQuery{ID: q.ID, Name: q.Name, Parameters: []runtimeParam{}, Fields: q.Fields}

@@ -501,8 +501,69 @@ func (e *rowEnv) Name(parts []string) any {
 		return e.actor.Name
 	case "role":
 		return e.actor.Role.String()
+	case "groups":
+		out := make([]any, len(e.actor.Groups))
+		for i, g := range e.actor.Groups {
+			out[i] = g
+		}
+		return out
+	case "roles":
+		chain := e.actor.Chain()
+		out := make([]any, len(chain))
+		for i, r := range chain {
+			out[i] = string(r)
+		}
+		return out
 	}
 	return nil
+}
+
+// rule compiles the row rule that applies to the actor, or gives nil when
+// every row is open to them.
+func (c *compiled) rule(actor rbac.Actor) (*formula.Checked, error) {
+	return compileRule(c.Table, c.RowRuleFor(actor))
+}
+
+// allowed reports whether the actor's row rule lets them at a loaded row.
+func (s *Service) allowed(c *compiled, rule *formula.Checked, actor rbac.Actor, r *Row) bool {
+	if rule == nil {
+		return true
+	}
+	ok, err := rule.EvalBool(newRowEnv(c, r, actor, s.now()))
+	return err == nil && ok
+}
+
+// loadRow reads one row with its links.
+func (s *Service) loadRow(ctx context.Context, ex store.Execer, db *store.DB, c *compiled, id int64) (*Row, error) {
+	rows, err := selectRows(ctx, ex, db, c, "_id = ?", []any{id}, "")
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, fmt.Errorf("row %w", ErrNotFound)
+	}
+	if err := s.hydrate(ctx, ex, db, c, rows, 0); err != nil {
+		return nil, err
+	}
+	return rows[0], nil
+}
+
+// ruleRow loads a row the actor's row rule must allow; other rows do not
+// exist for them.
+func (s *Service) ruleRow(ctx context.Context, ex store.Execer, db *store.DB, c *compiled, rule *formula.Checked, actor rbac.Actor, id int64) (*Row, error) {
+	r, err := s.loadRow(ctx, ex, db, c, id)
+	if err != nil {
+		return nil, err
+	}
+	if !s.allowed(c, rule, actor, r) {
+		return nil, fmt.Errorf("row %w", ErrNotFound)
+	}
+	return r, nil
+}
+
+// errOutsideRule refuses writes that leave a row the actor may not see.
+func errOutsideRule(c *compiled) error {
+	return fmt.Errorf("%w: the row must match your row rule for %s", rbac.ErrForbidden, c.Name)
 }
 
 func (e *rowEnv) Field(name string) any {
@@ -743,7 +804,7 @@ func (s *Service) ListRows(ctx context.Context, actor rbac.Actor, appID, tableID
 	now := s.now()
 	env := newRowEnv(c, &Row{Values: map[string]any{}}, actor, now)
 
-	var filter *formula.Checked
+	var filters []*formula.Checked
 	if strings.TrimSpace(q.Filter) != "" {
 		scope := tableScope{t: c.Table, names: true}
 		ch, errs := formula.Compile(q.Filter, scope)
@@ -753,7 +814,14 @@ func (s *Service) ListRows(ctx context.Context, actor rbac.Actor, appID, tableID
 		if ch.Type != formula.Bool && ch.Type != formula.Any && ch.Type != formula.Null {
 			return nil, &ValidationError{Field: "filter", Message: "a filter must be true or false, this one gives " + ch.Type.String()}
 		}
-		filter = ch
+		filters = append(filters, ch)
+	}
+	rule, err := c.rule(actor)
+	if err != nil {
+		return nil, err
+	}
+	if rule != nil {
+		filters = append(filters, rule)
 	}
 
 	var sortField *Field
@@ -786,9 +854,17 @@ func (s *Service) ListRows(ctx context.Context, actor rbac.Actor, appID, tableID
 
 	where, args := "", []any(nil)
 	pushed := true
-	if filter != nil {
-		w, ok := filter.CompileSQL(string(db.Dialect), resolver{c: c, dialect: string(db.Dialect), env: env}, env)
-		where, args, pushed = w.Where, w.Args, ok
+	for _, f := range filters {
+		w, ok := f.CompileSQL(string(db.Dialect), resolver{c: c, dialect: string(db.Dialect), env: env}, env)
+		if !ok {
+			pushed = false
+			break
+		}
+		if where != "" {
+			where += " AND "
+		}
+		where += "(" + w.Where + ")"
+		args = append(args, w.Args...)
 	}
 
 	if pushed && sortSQL {
@@ -847,10 +923,15 @@ func (s *Service) ListRows(ctx context.Context, actor rbac.Actor, appID, tableID
 	var kept []item
 	for _, r := range rows {
 		env := newRowEnv(c, r, actor, now)
-		if filter != nil {
-			if ok, err := filter.EvalBool(env); err != nil || !ok {
-				continue
+		keep := true
+		for _, f := range filters {
+			if ok, err := f.EvalBool(env); err != nil || !ok {
+				keep = false
+				break
 			}
+		}
+		if !keep {
+			continue
 		}
 		var key any
 		switch {
@@ -935,25 +1016,27 @@ func (s *Service) GetRow(ctx context.Context, actor rbac.Actor, appID, tableID s
 	if err := actor.Require(c.Permissions.Read, "reading "+c.Name); err != nil {
 		return nil, err
 	}
+	rule, err := c.rule(actor)
+	if err != nil {
+		return nil, err
+	}
 	db, err := s.store.AppDB(ctx, appID)
 	if err != nil {
 		return nil, err
 	}
-	return s.getRow(ctx, db, db, c, actor, id)
-}
-
-func (s *Service) getRow(ctx context.Context, ex store.Execer, db *store.DB, c *compiled, actor rbac.Actor, id int64) (map[string]any, error) {
-	rows, err := selectRows(ctx, ex, db, c, "_id = ?", []any{id}, "")
+	r, err := s.ruleRow(ctx, db, db, c, rule, actor, id)
 	if err != nil {
 		return nil, err
 	}
-	if len(rows) == 0 {
-		return nil, fmt.Errorf("row %w", ErrNotFound)
-	}
-	if err := s.hydrate(ctx, ex, db, c, rows, 0); err != nil {
+	return s.rowJSON(c, r, actor), nil
+}
+
+func (s *Service) getRow(ctx context.Context, ex store.Execer, db *store.DB, c *compiled, actor rbac.Actor, id int64) (map[string]any, error) {
+	r, err := s.loadRow(ctx, ex, db, c, id)
+	if err != nil {
 		return nil, err
 	}
-	return s.rowJSON(c, rows[0], actor), nil
+	return s.rowJSON(c, r, actor), nil
 }
 
 // prepared holds encoded values for a write, by field.
@@ -1078,6 +1161,10 @@ func (s *Service) CreateRow(ctx context.Context, actor rbac.Actor, appID, tableI
 	if err := actor.Require(c.Permissions.Write, "adding rows to "+c.Name); err != nil {
 		return nil, err
 	}
+	rule, err := c.rule(actor)
+	if err != nil {
+		return nil, err
+	}
 	db, err := s.store.AppDB(ctx, appID)
 	if err != nil {
 		return nil, err
@@ -1091,10 +1178,14 @@ func (s *Service) CreateRow(ctx context.Context, actor rbac.Actor, appID, tableI
 	if err != nil {
 		return nil, err
 	}
-	row, err := s.getRow(ctx, tx, db, c, actor, id)
+	r, err := s.loadRow(ctx, tx, db, c, id)
 	if err != nil {
 		return nil, err
 	}
+	if !s.allowed(c, rule, actor, r) {
+		return nil, errOutsideRule(c)
+	}
+	row := s.rowJSON(c, r, actor)
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
@@ -1151,6 +1242,10 @@ func (s *Service) UpdateRow(ctx context.Context, actor rbac.Actor, appID, tableI
 	if err := actor.Require(c.Permissions.Write, "changing rows of "+c.Name); err != nil {
 		return nil, err
 	}
+	rule, err := c.rule(actor)
+	if err != nil {
+		return nil, err
+	}
 	db, err := s.store.AppDB(ctx, appID)
 	if err != nil {
 		return nil, err
@@ -1161,10 +1256,12 @@ func (s *Service) UpdateRow(ctx context.Context, actor rbac.Actor, appID, tableI
 	}
 	defer tx.Rollback()
 	var old map[string]any
-	if s.OnRow != nil {
-		if old, err = s.getRow(ctx, tx, db, c, actor, id); err != nil {
+	if s.OnRow != nil || rule != nil {
+		r, err := s.ruleRow(ctx, tx, db, c, rule, actor, id)
+		if err != nil {
 			return nil, err
 		}
+		old = s.rowJSON(c, r, actor)
 	}
 	p, err := s.prepare(ctx, tx, db, c, values, false, false)
 	if err != nil {
@@ -1190,10 +1287,14 @@ func (s *Service) UpdateRow(ctx context.Context, actor rbac.Actor, appID, tableI
 	if err := s.recompute(ctx, tx, c, []int64{id}); err != nil {
 		return nil, err
 	}
-	row, err := s.getRow(ctx, tx, db, c, actor, id)
+	r, err := s.loadRow(ctx, tx, db, c, id)
 	if err != nil {
 		return nil, err
 	}
+	if !s.allowed(c, rule, actor, r) {
+		return nil, errOutsideRule(c)
+	}
+	row := s.rowJSON(c, r, actor)
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
@@ -1207,7 +1308,11 @@ func (s *Service) DeleteRows(ctx context.Context, actor rbac.Actor, appID, table
 	if err != nil {
 		return 0, err
 	}
-	if err := actor.Require(c.Permissions.Write, "deleting rows of "+c.Name); err != nil {
+	if err := actor.Require(c.Permissions.Delete, "deleting rows of "+c.Name); err != nil {
+		return 0, err
+	}
+	rule, err := c.rule(actor)
+	if err != nil {
 		return 0, err
 	}
 	all, err := s.List(ctx, appID)
@@ -1223,6 +1328,25 @@ func (s *Service) DeleteRows(ctx context.Context, actor rbac.Actor, appID, table
 		return 0, err
 	}
 	defer tx.Rollback()
+	if rule != nil {
+		// Rows outside the actor's row rule are left alone.
+		var mine []int64
+		for _, chunk := range chunks(ids, 500) {
+			rows, err := selectRows(ctx, tx, db, c, "_id IN "+inList(len(chunk)), toArgs(chunk), "")
+			if err != nil {
+				return 0, err
+			}
+			if err := s.hydrate(ctx, tx, db, c, rows, 0); err != nil {
+				return 0, err
+			}
+			for _, r := range rows {
+				if s.allowed(c, rule, actor, r) {
+					mine = append(mine, r.ID)
+				}
+			}
+		}
+		ids = mine
+	}
 	// Flows hear about deleted rows as they were, up to 1000 of them.
 	var gone []map[string]any
 	if s.OnRow != nil {

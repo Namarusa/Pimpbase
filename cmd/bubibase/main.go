@@ -68,6 +68,7 @@ func serve(args []string) error {
 	smtp := fs.String("smtp", env("BUBIBASE_SMTP", ""), "mail server for flow emails: smtp://user:pass@host:587, smtps://…, or log (BUBIBASE_SMTP)")
 	mailFrom := fs.String("mail-from", env("BUBIBASE_MAIL_FROM", ""), "sender address of flow emails (BUBIBASE_MAIL_FROM)")
 	secure := fs.Bool("secure-cookies", env("BUBIBASE_SECURE_COOKIES", "") == "true", "mark session cookies HTTPS-only (BUBIBASE_SECURE_COOKIES)")
+	publicURL := fs.String("public-url", env("BUBIBASE_PUBLIC_URL", ""), "address people reach Bubibase at, e.g. https://apps.example.com; single sign-on sends people back there (BUBIBASE_PUBLIC_URL)")
 	fs.Parse(args)
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -82,6 +83,7 @@ func serve(args []string) error {
 
 	srv := api.New(st, web.Builder(), log)
 	srv.Secure = *secure
+	srv.PublicURL = *publicURL
 	mailer, err := flows.NewMailer(*smtp, *mailFrom)
 	if err != nil {
 		return err

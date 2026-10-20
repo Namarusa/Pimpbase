@@ -3,7 +3,6 @@ package api
 import (
 	"net/http"
 
-	"github.com/bubibase/bubibase/internal/rbac"
 	"github.com/bubibase/bubibase/internal/screens"
 	"github.com/bubibase/bubibase/internal/tables"
 )
@@ -29,6 +28,9 @@ func (s *Server) createScreen(w http.ResponseWriter, r *http.Request) error {
 	}
 	var in screens.Input
 	if err := readJSON(r, &in); err != nil {
+		return err
+	}
+	if err := s.screenRoles(r, a.ID, in); err != nil {
 		return err
 	}
 	sc, err := s.Screens.Create(r.Context(), a.ID, in)
@@ -57,6 +59,9 @@ func (s *Server) updateScreen(w http.ResponseWriter, r *http.Request) error {
 	}
 	var in screens.Input
 	if err := readJSON(r, &in); err != nil {
+		return err
+	}
+	if err := s.screenRoles(r, a.ID, in); err != nil {
 		return err
 	}
 	sc, err := s.Screens.Update(r.Context(), a.ID, r.PathValue("screen"), in)
@@ -91,11 +96,13 @@ func (s *Server) runtime(w http.ResponseWriter, r *http.Request) error {
 	}
 	visible := []*screens.Screen{}
 	for _, sc := range all {
-		if act.Builder || act.Role >= sc.Role {
-			visible = append(visible, sc)
+		if act.Has(sc.Role) {
+			cp := *sc
+			cp.Definition = screens.Prune(sc.Definition, act)
+			visible = append(visible, &cp)
 		}
 	}
-	if !act.Builder && act.Role < rbac.Basic && len(visible) == 0 {
+	if !act.SignedIn() && len(visible) == 0 {
 		if userFrom(r) == nil {
 			return errLogin
 		}
@@ -107,7 +114,7 @@ func (s *Server) runtime(w http.ResponseWriter, r *http.Request) error {
 	}
 	readable := []*tables.Table{}
 	for _, t := range ts {
-		if act.Builder || act.Role >= t.Permissions.Read {
+		if act.Has(t.Permissions.Read) {
 			readable = append(readable, t)
 		}
 	}
@@ -121,10 +128,27 @@ func (s *Server) runtime(w http.ResponseWriter, r *http.Request) error {
 	}
 	var user any
 	if u := userFrom(r); u != nil {
-		user = map[string]any{"id": u.ID, "email": u.Email, "name": u.Name}
+		user = map[string]any{"id": u.ID, "email": u.Email, "name": u.Name, "role": act.Role, "roles": act.Chain(), "groups": u.Groups}
 	}
-	return writeJSON(w, 200, map[string]any{
+	out := map[string]any{
 		"app": a, "role": act.Role, "builder": act.Builder, "user": user,
 		"screens": visible, "tables": readable, "queries": qs, "flows": fl,
-	})
+	}
+	// Builders may preview the app as any of its roles.
+	if u := userFrom(r); u != nil && u.IsBuilder() && !apiKeyFrom(r).Scoped() {
+		set, err := s.Apps.Roles(r.Context(), a.ID)
+		if err != nil {
+			return err
+		}
+		out["roles"] = set.Defs()
+		out["preview"] = !act.Builder
+	}
+	if userFrom(r) == nil {
+		ps, err := s.SSO.Enabled(r.Context())
+		if err != nil {
+			return err
+		}
+		out["providers"] = ps
+	}
+	return writeJSON(w, 200, out)
 }

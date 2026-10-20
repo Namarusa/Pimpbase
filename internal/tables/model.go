@@ -82,10 +82,35 @@ func (f *Field) writable() bool {
 	return f.Type != TypeFormula && f.Type != TypeAutoNumber
 }
 
-// Permissions say which app role may read and write a table's rows.
+// Permissions say which app role may read, write and delete a table's
+// rows, and which rows each role sees.
 type Permissions struct {
-	Read  rbac.Role `json:"read"`
-	Write rbac.Role `json:"write"`
+	Read   rbac.Role `json:"read"`
+	Write  rbac.Role `json:"write"`
+	Delete rbac.Role `json:"delete"`
+	// Rows limit the rows a role may read, change and delete. An actor uses
+	// the rule of its own role, else of the nearest role it inherits that
+	// has one; without a rule every row is open. App admins and builders
+	// see every row.
+	Rows []RowRule `json:"rows"`
+}
+
+// RowRule limits one role to the rows where Filter is true. An empty
+// filter opens every row, which stops a rule being inherited.
+type RowRule struct {
+	Role   rbac.Role `json:"role"`
+	Filter string    `json:"filter"`
+}
+
+// normalize fills in what tables saved before delete permissions and row
+// rules lack.
+func (p *Permissions) normalize() {
+	if p.Delete == "" {
+		p.Delete = p.Write
+	}
+	if p.Rows == nil {
+		p.Rows = []RowRule{}
+	}
 }
 
 // Table is a built-in table.

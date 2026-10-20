@@ -177,7 +177,8 @@ func (e *Engine) rowChanged(ctx context.Context, ev tables.RowEvent) {
 			if kind == RowUpdated {
 				data["old"], data["changed"] = ev.Old, changed
 			}
-			in := StartInput{Kind: kind, Data: data, Chain: chain + 1}
+			act := ev.Actor
+			in := StartInput{Kind: kind, Data: data, Chain: chain + 1, Actor: &act}
 			if ev.Actor.UserID != "" {
 				in.User = map[string]any{"id": ev.Actor.UserID, "email": ev.Actor.Email, "name": ev.Actor.Name, "role": ev.Actor.Role.String()}
 			}
@@ -307,6 +308,9 @@ type StartInput struct {
 	Test bool
 	// Chain counts flows started by row changes of other flows.
 	Chain int
+	// Actor is who started the run, for flows that run as the user. Nil
+	// acts as PUBLIC.
+	Actor *rbac.Actor
 }
 
 // Begin starts a run in the background. The channel closes when it ends.
@@ -333,7 +337,7 @@ func (e *Engine) Begin(ctx context.Context, f *Flow, in StartInput) (*Run, <-cha
 	r := &Run{ID: ids.New("run"), AppID: f.AppID, FlowID: f.ID, Status: Running, Test: in.Test, TriggerKind: in.Kind, Trigger: trig, Steps: []StepLog{}, StartedAt: e.now().UTC()}
 	x := &exec{
 		e: e, flow: f, run: r, env: env, secrets: secrets, chain: in.Chain,
-		steps: map[string]any{}, vars: map[string]any{},
+		steps: map[string]any{}, vars: map[string]any{}, starter: in.Actor,
 	}
 	user := in.User
 	if user == nil {
@@ -391,6 +395,8 @@ type exec struct {
 	secrets []string
 	chain   int
 	accent  string
+	// starter is who started the run.
+	starter *rbac.Actor
 
 	scope interp.Map
 	steps map[string]any
@@ -403,8 +409,15 @@ type exec struct {
 	lastSave time.Time
 }
 
-// actor is who row steps act as: an app admin named after the flow.
+// actor is who row steps act as: an app admin named after the flow, or,
+// for flows that run as the user, whoever started the run.
 func (x *exec) actor() rbac.Actor {
+	if x.flow.RunAs == RunAsUser {
+		if x.starter != nil {
+			return *x.starter
+		}
+		return rbac.Actor{Name: "Flow " + x.flow.Name, Role: rbac.Public, Roles: []rbac.Role{rbac.Public}}
+	}
 	return rbac.Actor{Name: "Flow " + x.flow.Name, Role: rbac.Admin, Builder: true}
 }
 
@@ -688,6 +701,9 @@ func (x *exec) step(s *Step, in *inputs, depth, item int) (any, error) {
 			return nil, errors.New("choose the API query this step runs")
 		}
 		in.values["query"] = q.Name
+		if err := x.actor().Require(q.Role, "running "+q.Name); err != nil {
+			return nil, err
+		}
 		params := map[string]any{}
 		if m, ok := s.Inputs["params"].(map[string]any); ok {
 			for k, src := range m {

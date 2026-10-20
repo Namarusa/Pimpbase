@@ -39,7 +39,17 @@ type Flow struct {
 type Definition struct {
 	Trigger Trigger `json:"trigger"`
 	Steps   []*Step `json:"steps"`
+	// RunAs is "flow" (the default) for steps that may do anything in the
+	// app, or "user" for steps that keep to the permissions of whoever
+	// started the run; scheduled and webhook runs then act as PUBLIC.
+	RunAs string `json:"runAs"`
 }
+
+// Run-as modes.
+const (
+	RunAsFlow = "flow"
+	RunAsUser = "user"
+)
 
 // Trigger types.
 const (
@@ -143,6 +153,13 @@ func (f *Flow) Check() error {
 	if err := f.Trigger.check(); err != nil {
 		return err
 	}
+	switch f.RunAs {
+	case "":
+		f.RunAs = RunAsFlow
+	case RunAsFlow, RunAsUser:
+	default:
+		return invalid("runAs", "a flow runs as the flow or as the user")
+	}
 	if f.Steps == nil {
 		f.Steps = []*Step{}
 	}
@@ -209,8 +226,11 @@ func (t *Trigger) check() error {
 			return invalid("trigger", "a parameter is text, number, boolean or json")
 		}
 	}
-	if t.Role < rbac.Public || t.Role > rbac.Admin {
-		return invalid("trigger", "the role is PUBLIC, BASIC, POWER or ADMIN")
+	if t.Role == "" {
+		t.Role = rbac.Basic
+	}
+	if t.Role == rbac.None {
+		return invalid("trigger", "pick the role that may run this flow")
 	}
 	return nil
 }

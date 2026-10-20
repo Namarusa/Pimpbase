@@ -204,8 +204,8 @@ func (s *Service) apply(sc *Screen, in Input) error {
 		sc.Route = r
 	}
 	if in.Role != nil {
-		if *in.Role < rbac.Public {
-			return &InvalidError{"a screen's role is PUBLIC, BASIC, POWER or ADMIN"}
+		if *in.Role == rbac.None || *in.Role == "" {
+			return &InvalidError{"pick the role that may see the screen"}
 		}
 		sc.Role = *in.Role
 	}
@@ -281,4 +281,82 @@ func (s *Service) Delete(ctx context.Context, appID, id string) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+// nodeRoles reads a component's "Visible to" roles from its props.
+func nodeRoles(n map[string]any) []rbac.Role {
+	props, _ := n["props"].(map[string]any)
+	list, _ := props["roles"].([]any)
+	var out []rbac.Role
+	for _, v := range list {
+		if s, ok := v.(string); ok && s != "" {
+			out = append(out, rbac.Role(s))
+		}
+	}
+	return out
+}
+
+// ComponentRoles lists the roles components of a tree are limited to.
+func ComponentRoles(def json.RawMessage) []rbac.Role {
+	var root map[string]any
+	if json.Unmarshal(def, &root) != nil {
+		return nil
+	}
+	var out []rbac.Role
+	var walk func(n map[string]any)
+	walk = func(n map[string]any) {
+		out = append(out, nodeRoles(n)...)
+		kids, _ := n["children"].([]any)
+		for _, k := range kids {
+			if m, ok := k.(map[string]any); ok {
+				walk(m)
+			}
+		}
+	}
+	walk(root)
+	return out
+}
+
+// Prune removes the components an actor may not see, with everything inside
+// them, so a published app never receives them.
+func Prune(def json.RawMessage, actor rbac.Actor) json.RawMessage {
+	if actor.Builder {
+		return def
+	}
+	dec := json.NewDecoder(bytes.NewReader(def))
+	dec.UseNumber()
+	var root map[string]any
+	if dec.Decode(&root) != nil {
+		return def
+	}
+	changed := false
+	var walk func(n map[string]any)
+	walk = func(n map[string]any) {
+		kids, _ := n["children"].([]any)
+		keep := kids[:0]
+		for _, k := range kids {
+			m, ok := k.(map[string]any)
+			if !ok {
+				continue
+			}
+			if !actor.HasAny(nodeRoles(m)) {
+				changed = true
+				continue
+			}
+			walk(m)
+			keep = append(keep, m)
+		}
+		if kids != nil {
+			n["children"] = keep
+		}
+	}
+	walk(root)
+	if !changed {
+		return def
+	}
+	out, err := json.Marshal(root)
+	if err != nil {
+		return def
+	}
+	return out
 }

@@ -21,6 +21,7 @@ import (
 	"github.com/bubibase/bubibase/internal/queries"
 	"github.com/bubibase/bubibase/internal/rbac"
 	"github.com/bubibase/bubibase/internal/screens"
+	"github.com/bubibase/bubibase/internal/sso"
 	"github.com/bubibase/bubibase/internal/store"
 	"github.com/bubibase/bubibase/internal/tables"
 )
@@ -36,6 +37,7 @@ type Server struct {
 	Files   *files.Service
 	Runner  *queries.Runner
 	Flows   *flows.Service
+	SSO     *sso.Service
 	// Engine runs flows; call Engine.Start to begin schedules.
 	Engine *flows.Engine
 	Log    *slog.Logger
@@ -43,6 +45,10 @@ type Server struct {
 	UI fs.FS
 	// Secure marks cookies as HTTPS only.
 	Secure bool
+	// PublicURL is the address people reach Bubibase at, such as
+	// https://apps.example.com; single sign-on providers send people back
+	// there. Empty uses the address of each request.
+	PublicURL string
 
 	limiter *limiter
 }
@@ -62,17 +68,27 @@ func New(s *store.Store, ui fs.FS, log *slog.Logger) *Server {
 		UI:      ui,
 		limiter: &limiter{hits: map[string][]time.Time{}},
 	}
+	srv.SSO = sso.NewService(s, srv.Auth, srv.Apps)
 	srv.Engine = flows.NewEngine(srv.Flows, srv.Tables, srv.Queries, srv.Runner, srv.Files, srv.Apps, log)
 	return srv
 }
 
 type ctxKey int
 
-const userKey ctxKey = 0
+const (
+	userKey ctxKey = iota
+	apiKeyKey
+)
 
 func userFrom(r *http.Request) *auth.User {
 	u, _ := r.Context().Value(userKey).(*auth.User)
 	return u
+}
+
+// apiKeyFrom returns the API key the request was made with, if any.
+func apiKeyFrom(r *http.Request) *auth.APIKey {
+	k, _ := r.Context().Value(apiKeyKey).(*auth.APIKey)
+	return k
 }
 
 // Handler returns the root handler.
@@ -96,6 +112,14 @@ func (s *Server) Handler() http.Handler {
 	h("GET /api/auth/keys", s.listKeys)
 	h("POST /api/auth/keys", s.createKey)
 	h("DELETE /api/auth/keys/{id}", s.deleteKey)
+	h("GET /api/auth/providers", s.listProvidersPublic)
+	h("GET /api/sso/{id}/start", s.ssoStart)
+	h("GET /api/sso/callback", s.ssoCallback)
+	h("GET /api/sso/providers", s.listProviders)
+	h("POST /api/sso/providers", s.createProvider)
+	h("PATCH /api/sso/providers/{id}", s.updateProvider)
+	h("DELETE /api/sso/providers/{id}", s.deleteProvider)
+	h("POST /api/sso/providers/{id}/test", s.testMapping)
 
 	h("GET /api/users", s.listUsers)
 	h("POST /api/users", s.createUser)
@@ -109,6 +133,10 @@ func (s *Server) Handler() http.Handler {
 	h("DELETE /api/apps/{app}", s.deleteApp)
 	h("GET /api/apps/{app}/members", s.listMembers)
 	h("PUT /api/apps/{app}/members/{user}", s.setMember)
+	h("GET /api/apps/{app}/roles", s.listRoles)
+	h("POST /api/apps/{app}/roles", s.createRole)
+	h("PATCH /api/apps/{app}/roles/{role}", s.updateRole)
+	h("DELETE /api/apps/{app}/roles/{role}", s.deleteRole)
 
 	h("GET /api/apps/{app}/tables", s.listTables)
 	h("POST /api/apps/{app}/tables", s.createTable)
@@ -187,12 +215,13 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 		ctx := r.Context()
 		viaCookie := false
 		if key, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
-			u, err := s.Auth.FromAPIKey(ctx, strings.TrimSpace(key))
+			u, k, err := s.Auth.FromAPIKey(ctx, strings.TrimSpace(key))
 			if err != nil {
-				writeJSON(w, 401, map[string]any{"error": "invalid API key"})
+				writeJSON(w, 401, map[string]any{"error": "invalid or expired API key"})
 				return
 			}
 			ctx = context.WithValue(ctx, userKey, u)
+			ctx = context.WithValue(ctx, apiKeyKey, k)
 		} else if c, err := r.Cookie(sessionCookie); err == nil {
 			if u, err := s.Auth.FromSession(ctx, c.Value); err == nil {
 				ctx = context.WithValue(ctx, userKey, u)
@@ -263,7 +292,15 @@ func (s *Server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 	var qr *queries.RunError
 	var fi *files.InvalidError
 	var fl *flows.InvalidError
+	var ri *rbac.InvalidError
+	var ssoErr *sso.InvalidError
 	switch {
+	case errors.As(err, &ri):
+		writeJSON(w, 400, map[string]any{"error": ri.Message})
+	case errors.As(err, &ssoErr):
+		writeJSON(w, 400, map[string]any{"error": ssoErr.Message, "field": ssoErr.Field})
+	case errors.Is(err, auth.ErrDisabled):
+		writeJSON(w, 403, map[string]any{"error": err.Error()})
 	case errors.As(err, &he):
 		writeJSON(w, he.status, map[string]any{"error": he.msg})
 	case errors.As(err, &tv):
@@ -292,7 +329,7 @@ func (s *Server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 			return
 		}
 		writeJSON(w, 403, map[string]any{"error": "you do not have access: " + strings.TrimPrefix(err.Error(), "forbidden: ")})
-	case errors.Is(err, tables.ErrNotFound), errors.Is(err, apps.ErrNotFound), errors.Is(err, auth.ErrNotFound), errors.Is(err, screens.ErrNotFound), errors.Is(err, queries.ErrNotFound), errors.Is(err, files.ErrNotFound), errors.Is(err, flows.ErrNotFound):
+	case errors.Is(err, tables.ErrNotFound), errors.Is(err, apps.ErrNotFound), errors.Is(err, auth.ErrNotFound), errors.Is(err, screens.ErrNotFound), errors.Is(err, queries.ErrNotFound), errors.Is(err, files.ErrNotFound), errors.Is(err, flows.ErrNotFound), errors.Is(err, apps.ErrRoleNotFound), errors.Is(err, sso.ErrNotFound):
 		writeJSON(w, 404, map[string]any{"error": err.Error()})
 	case errors.Is(err, auth.ErrBadCredentials):
 		writeJSON(w, 401, map[string]any{"error": err.Error()})

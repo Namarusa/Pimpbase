@@ -119,6 +119,53 @@ var metaMigrations = []string{
 		finished_at TEXT NOT NULL
 	);
 	CREATE INDEX app_flow_runs_flow ON app_flow_runs (flow_id, started_at);`,
+	// Phase 4: custom app roles, single sign-on, scoped API tokens.
+	`CREATE TABLE app_roles (
+		app_id TEXT NOT NULL REFERENCES apps(id) ON DELETE CASCADE,
+		id TEXT NOT NULL,
+		name TEXT NOT NULL,
+		description TEXT NOT NULL,
+		inherits TEXT NOT NULL,
+		color TEXT NOT NULL,
+		position INTEGER NOT NULL,
+		PRIMARY KEY (app_id, id)
+	);
+	ALTER TABLE app_users ADD COLUMN source TEXT NOT NULL DEFAULT 'manual';
+	ALTER TABLE users ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE users ADD COLUMN sso_groups TEXT NOT NULL DEFAULT '[]';
+	ALTER TABLE users ADD COLUMN last_login_at TEXT NOT NULL DEFAULT '';
+	ALTER TABLE api_keys ADD COLUMN app_id TEXT NOT NULL DEFAULT '';
+	ALTER TABLE api_keys ADD COLUMN role TEXT NOT NULL DEFAULT '';
+	ALTER TABLE api_keys ADD COLUMN expires_at TEXT NOT NULL DEFAULT '';
+	ALTER TABLE api_keys ADD COLUMN last_used_at TEXT NOT NULL DEFAULT '';
+	CREATE TABLE sso_providers (
+		id TEXT PRIMARY KEY,
+		kind TEXT NOT NULL,
+		name TEXT NOT NULL,
+		enabled INTEGER NOT NULL DEFAULT 1,
+		config TEXT NOT NULL,
+		client_secret TEXT NOT NULL,
+		position INTEGER NOT NULL,
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL
+	);
+	CREATE TABLE user_identities (
+		provider_id TEXT NOT NULL REFERENCES sso_providers(id) ON DELETE CASCADE,
+		subject TEXT NOT NULL,
+		user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		email TEXT NOT NULL,
+		created_at TEXT NOT NULL,
+		last_login_at TEXT NOT NULL,
+		PRIMARY KEY (provider_id, subject)
+	);
+	CREATE TABLE sso_states (
+		state_hash TEXT PRIMARY KEY,
+		provider_id TEXT NOT NULL,
+		nonce TEXT NOT NULL,
+		verifier TEXT NOT NULL,
+		return_to TEXT NOT NULL,
+		expires_at TEXT NOT NULL
+	);`,
 }
 
 func migrateMeta(ctx context.Context, db *DB) error {

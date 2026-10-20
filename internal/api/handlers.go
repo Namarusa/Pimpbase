@@ -112,11 +112,42 @@ func (s *Server) createKey(w http.ResponseWriter, r *http.Request) error {
 	if u == nil {
 		return errLogin
 	}
-	var in struct{ Name string }
+	if apiKeyFrom(r).Scoped() {
+		return errStatus(403, "an app API key cannot make other keys")
+	}
+	var in auth.KeyInput
 	if err := readJSON(r, &in); err != nil {
 		return err
 	}
-	k, err := s.Auth.CreateAPIKey(r.Context(), u.ID, in.Name)
+	if in.AppID != "" {
+		a, err := s.Apps.Get(r.Context(), in.AppID)
+		if err != nil {
+			return errStatus(400, "there is no such app")
+		}
+		in.AppID = a.ID
+		if in.Role != "" {
+			role, err := rbac.ParseRole(in.Role)
+			if err != nil {
+				return errStatus(400, err.Error())
+			}
+			act, err := s.userActor(r, a, u)
+			if err != nil {
+				return err
+			}
+			set, err := s.Apps.Roles(r.Context(), a.ID)
+			if err != nil {
+				return err
+			}
+			if !set.Has(role) {
+				return errStatus(400, "this app has no role "+string(role))
+			}
+			if !act.Has(role) {
+				return errStatus(403, "you can only give a key a role you hold yourself")
+			}
+			in.Role = string(role)
+		}
+	}
+	k, err := s.Auth.CreateAPIKey(r.Context(), u.ID, in)
 	if err != nil {
 		return err
 	}
@@ -141,7 +172,7 @@ func (s *Server) requireAdmin(r *http.Request) (*auth.User, error) {
 	if u == nil {
 		return nil, errLogin
 	}
-	if !u.IsAdmin() {
+	if !u.IsAdmin() || apiKeyFrom(r).Scoped() {
 		return nil, errStatus(403, "only workspace owners and admins manage users")
 	}
 	return u, nil
@@ -159,7 +190,11 @@ func (s *Server) listUsers(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	return writeJSON(w, 200, users)
+	rows, err := s.userRows(r, users)
+	if err != nil {
+		return err
+	}
+	return writeJSON(w, 200, rows)
 }
 
 func (s *Server) createUser(w http.ResponseWriter, r *http.Request) error {
@@ -194,8 +229,11 @@ func (s *Server) updateUser(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	// Anyone may change their own name and password; only admins the rest.
-	if !me.IsAdmin() && (id != me.ID || p.Role != nil) {
+	if (!me.IsAdmin() || apiKeyFrom(r).Scoped()) && (id != me.ID || p.Role != nil || p.Disabled != nil) {
 		return errStatus(403, "only workspace owners and admins manage users")
+	}
+	if id == me.ID && p.Disabled != nil && *p.Disabled {
+		return errStatus(400, "you cannot switch off your own account")
 	}
 	if p.Role != nil && *p.Role == auth.RoleOwner && me.Role != auth.RoleOwner {
 		return errStatus(403, "only owners can make someone an owner")
@@ -224,7 +262,7 @@ func (s *Server) requireBuilder(r *http.Request) (*auth.User, error) {
 	if u == nil {
 		return nil, errLogin
 	}
-	if !u.IsBuilder() {
+	if !u.IsBuilder() || apiKeyFrom(r).Scoped() {
 		return nil, errStatus(403, "only builders can change app designs")
 	}
 	return u, nil
@@ -238,21 +276,56 @@ func (s *Server) actor(r *http.Request) (*apps.App, rbac.Actor, error) {
 	}
 	u := userFrom(r)
 	if u == nil {
-		return a, rbac.Actor{Role: rbac.Public}, nil
+		set, err := s.Apps.Roles(r.Context(), a.ID)
+		if err != nil {
+			return nil, rbac.Actor{}, err
+		}
+		return a, rbac.NewActor(set, rbac.Public), nil
 	}
-	act := rbac.Actor{UserID: u.ID, Email: u.Email, Name: u.Name, Role: rbac.Public}
-	if u.IsBuilder() {
-		act.Role, act.Builder = rbac.Admin, true
-		return a, act, nil
-	}
-	role, err := s.Apps.RoleOf(r.Context(), a.ID, u.ID)
+	act, err := s.userActor(r, a, u)
+	return a, act, err
+}
+
+// previewHeader lets builders preview a published app as one of its roles.
+const previewHeader = "X-Bubibase-Preview-Role"
+
+// userActor is what a signed-in user may do in an app: builders hold
+// every role, other users the role they were given. An API key limited to
+// an app works only there and acts with the key's role.
+func (s *Server) userActor(r *http.Request, a *apps.App, u *auth.User) (rbac.Actor, error) {
+	ctx := r.Context()
+	set, err := s.Apps.Roles(ctx, a.ID)
 	if err != nil {
-		return nil, act, err
+		return rbac.Actor{}, err
 	}
-	if role > act.Role {
-		act.Role = role
+	act := rbac.Actor{UserID: u.ID, Email: u.Email, Name: u.Name, Groups: u.Groups}
+	key := apiKeyFrom(r)
+	if key.Scoped() && key.AppID != a.ID {
+		return act, errStatus(403, "this API key only works for another app")
 	}
-	return a, act, nil
+	role := rbac.Public
+	if u.IsBuilder() {
+		role, act.Builder = rbac.Admin, !key.Scoped()
+	} else if given, err := s.Apps.RoleOf(ctx, a.ID, u.ID); err != nil {
+		return act, err
+	} else if set.Has(given) {
+		role = given
+	}
+	if key.Scoped() && key.Role != "" {
+		held := act
+		held.Role, held.Roles = role, set.Chain(role)
+		if !set.Has(rbac.Role(key.Role)) || !held.Has(rbac.Role(key.Role)) {
+			return act, errStatus(403, "this API key's role is no longer yours")
+		}
+		role = rbac.Role(key.Role)
+	}
+	if p := r.Header.Get(previewHeader); p != "" && act.Builder {
+		if pr, err := rbac.ParseRole(p); err == nil && set.Has(pr) {
+			role, act.Builder = pr, false
+		}
+	}
+	act.Role, act.Roles = role, set.Chain(role)
+	return act, nil
 }
 
 func (s *Server) builderApp(r *http.Request) (*apps.App, error) {
@@ -271,12 +344,16 @@ func (s *Server) listApps(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if u.IsBuilder() {
+	key := apiKeyFrom(r)
+	if u.IsBuilder() && !key.Scoped() {
 		return writeJSON(w, 200, all)
 	}
 	mine := []*apps.App{}
 	for _, a := range all {
-		if role, err := s.Apps.RoleOf(r.Context(), a.ID, u.ID); err == nil && role >= rbac.Basic {
+		if key.Scoped() && key.AppID != a.ID {
+			continue
+		}
+		if act, err := s.userActor(r, a, u); err == nil && act.SignedIn() {
 			mine = append(mine, a)
 		}
 	}
@@ -303,7 +380,7 @@ func (s *Server) getApp(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if !act.Builder && act.Role < rbac.Basic {
+	if !act.SignedIn() {
 		return errStatus(404, "app not found")
 	}
 	return writeJSON(w, 200, map[string]any{"app": a, "role": act.Role, "builder": act.Builder})
@@ -386,7 +463,7 @@ func (s *Server) listTables(w http.ResponseWriter, r *http.Request) error {
 	}
 	visible := []*tables.Table{}
 	for _, t := range all {
-		if act.Builder || act.Role >= t.Permissions.Read {
+		if act.Has(t.Permissions.Read) {
 			visible = append(visible, t)
 		}
 	}
@@ -437,6 +514,15 @@ func (s *Server) updateTable(w http.ResponseWriter, r *http.Request) error {
 	var p tables.TablePatch
 	if err := readJSON(r, &p); err != nil {
 		return err
+	}
+	if perm := p.Permissions; perm != nil {
+		roles := []rbac.Role{perm.Read, perm.Write, perm.Delete}
+		for _, rule := range perm.Rows {
+			roles = append(roles, rule.Role)
+		}
+		if err := s.requireRoles(r, a.ID, roles...); err != nil {
+			return err
+		}
 	}
 	t, err := s.Tables.UpdateTable(r.Context(), a.ID, r.PathValue("table"), p)
 	if err != nil {
@@ -505,7 +591,7 @@ func (s *Server) checkFormula(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if act.Role < rbac.Basic && !act.Builder {
+	if !act.SignedIn() {
 		return errLogin
 	}
 	var in struct {
