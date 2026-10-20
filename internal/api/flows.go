@@ -283,6 +283,11 @@ func (s *Server) webhook(w http.ResponseWriter, r *http.Request) error {
 	if err != nil || !f.Enabled || f.Trigger.Type != flows.OnWebhook {
 		return errStatus(404, "no such webhook")
 	}
+	if a, err := s.Apps.Get(r.Context(), f.AppID); err != nil {
+		return err
+	} else if err := s.appRequest(a); err != nil {
+		return err
+	}
 	raw, err := io.ReadAll(http.MaxBytesReader(nil, r.Body, 1<<20))
 	if err != nil {
 		return errStatus(413, "the body is larger than 1 MB")

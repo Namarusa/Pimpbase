@@ -58,7 +58,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) error {
 	if err := readJSON(r, &in); err != nil {
 		return err
 	}
-	ip := clientIP(r)
+	ip := s.clientIP(r)
 	if s.limiter.blocked(ip) {
 		return errStatus(429, "too many failed sign-ins; wait a few minutes")
 	}
@@ -292,9 +292,12 @@ func (s *Server) actor(r *http.Request) (*apps.App, rbac.Actor, error) {
 		if err != nil {
 			return nil, rbac.Actor{}, err
 		}
-		return a, rbac.NewActor(set, rbac.Public), nil
+		return a, rbac.NewActor(set, rbac.Public), s.appRequest(a)
 	}
 	act, err := s.userActor(r, a, u)
+	if err == nil && !act.Builder {
+		err = s.appRequest(a)
+	}
 	return a, act, err
 }
 
@@ -422,10 +425,14 @@ func (s *Server) deleteApp(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	// Contents kept outside the database go first, while the app's file
+	// list still says where they are.
+	if err := s.Files.DeleteApp(r.Context(), a.ID); err != nil {
+		return err
+	}
 	if err := s.Apps.Delete(r.Context(), a.ID); err != nil {
 		return err
 	}
-	s.Files.Forget(a.ID)
 	return writeJSON(w, 200, map[string]any{"ok": true})
 }
 

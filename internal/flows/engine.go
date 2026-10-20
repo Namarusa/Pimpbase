@@ -17,9 +17,11 @@ import (
 	"time"
 
 	"github.com/bubibase/bubibase/internal/apps"
+	"github.com/bubibase/bubibase/internal/cluster"
 	"github.com/bubibase/bubibase/internal/files"
 	"github.com/bubibase/bubibase/internal/ids"
 	"github.com/bubibase/bubibase/internal/interp"
+	"github.com/bubibase/bubibase/internal/metrics"
 	"github.com/bubibase/bubibase/internal/queries"
 	"github.com/bubibase/bubibase/internal/rbac"
 	"github.com/bubibase/bubibase/internal/tables"
@@ -51,6 +53,14 @@ type Engine struct {
 	Log     *slog.Logger
 	// Client sends HTTP request steps.
 	Client *http.Client
+	// Node, when set, shares the work with other servers on the same
+	// database: each scheduled run is claimed by one server, and runs of
+	// servers that died are marked failed. Without it the engine assumes
+	// it is alone.
+	Node *cluster.Node
+	// BeforeRun, when set, may refuse to start a run that is not a test,
+	// such as one over the app's quota.
+	BeforeRun func(ctx context.Context, appID string) error
 
 	base   context.Context
 	cancel context.CancelFunc
@@ -59,9 +69,18 @@ type Engine struct {
 	now    func() time.Time
 
 	mu    sync.Mutex
-	byApp map[string][]*Flow   // enabled row-trigger flows, loaded on demand
+	byApp map[string]rowList   // enabled row-trigger flows, loaded on demand
 	last  map[string]time.Time // the minute each schedule flow last ran
 }
+
+// rowList is an app's row-trigger flows as loaded at a time. Other servers
+// may change flows, so the list is reloaded after rowListTTL.
+type rowList struct {
+	flows []*Flow
+	at    time.Time
+}
+
+const rowListTTL = 5 * time.Second
 
 func NewEngine(svc *Service, ts *tables.Service, qs *queries.Service, runner *queries.Runner, fs *files.Service, as *apps.Service, log *slog.Logger) *Engine {
 	base, cancel := context.WithCancel(context.Background())
@@ -75,7 +94,7 @@ func NewEngine(svc *Service, ts *tables.Service, qs *queries.Service, runner *qu
 			return nil
 		}},
 		base: base, cancel: cancel, slots: make(chan struct{}, maxRunning), now: time.Now,
-		byApp: map[string][]*Flow{}, last: map[string]time.Time{},
+		byApp: map[string]rowList{}, last: map[string]time.Time{},
 	}
 	svc.changed = e.forget
 	ts.OnRow = e.rowChanged
@@ -85,7 +104,7 @@ func NewEngine(svc *Service, ts *tables.Service, qs *queries.Service, runner *qu
 // Start begins the schedule and marks runs left over from a previous
 // server as failed.
 func (e *Engine) Start(ctx context.Context) error {
-	if err := e.Flows.abandon(ctx); err != nil {
+	if err := e.abandon(ctx); err != nil {
 		return err
 	}
 	e.wg.Add(1)
@@ -104,6 +123,22 @@ func (e *Engine) Stop(ctx context.Context) {
 	}
 }
 
+// abandon marks runs as failed that no live server is doing.
+func (e *Engine) abandon(ctx context.Context) error {
+	if e.Node == nil {
+		return e.Flows.abandon(ctx, "", "")
+	}
+	return e.Flows.abandon(ctx, e.Node.ID, e.Node.AliveSince())
+}
+
+// instanceID names this server on runs it starts.
+func (e *Engine) instanceID() string {
+	if e.Node == nil {
+		return ""
+	}
+	return e.Node.ID
+}
+
 func (e *Engine) forget(appID string) {
 	e.mu.Lock()
 	delete(e.byApp, appID)
@@ -112,16 +147,16 @@ func (e *Engine) forget(appID string) {
 
 func (e *Engine) rowFlows(ctx context.Context, appID string) ([]*Flow, error) {
 	e.mu.Lock()
-	list, ok := e.byApp[appID]
+	cached, ok := e.byApp[appID]
 	e.mu.Unlock()
-	if ok {
-		return list, nil
+	if ok && e.now().Sub(cached.at) < rowListTTL {
+		return cached.flows, nil
 	}
 	all, err := e.Flows.list(ctx, `app_id = ? AND enabled = 1`, appID)
 	if err != nil {
 		return nil, err
 	}
-	list = []*Flow{}
+	list := []*Flow{}
 	for _, f := range all {
 		switch f.Trigger.Type {
 		case RowCreated, RowUpdated, RowDeleted:
@@ -129,7 +164,7 @@ func (e *Engine) rowFlows(ctx context.Context, appID string) ([]*Flow, error) {
 		}
 	}
 	e.mu.Lock()
-	e.byApp[appID] = list
+	e.byApp[appID] = rowList{flows: list, at: e.now()}
 	e.mu.Unlock()
 	return list, nil
 }
@@ -227,6 +262,12 @@ func (e *Engine) schedule() {
 		case <-time.After(next.Sub(now) + 50*time.Millisecond):
 		}
 		e.RunDue(next)
+		if e.Node != nil {
+			// Runs of servers that stopped answering will never finish.
+			if err := e.abandon(e.base); err != nil {
+				e.Log.Error("marking abandoned runs failed", "err", err)
+			}
+		}
 	}
 }
 
@@ -264,6 +305,17 @@ func (e *Engine) RunDue(t time.Time) {
 		e.mu.Unlock()
 		if !due {
 			continue
+		}
+		if e.Node != nil {
+			// Every server sees the minute; one of them runs the flow.
+			won, err := e.Node.Claim(ctx, "schedule:"+f.ID+":"+minute.UTC().Format("2006-01-02T15:04"))
+			if err != nil {
+				e.Log.Error("claiming a scheduled flow failed", "flow", f.Name, "err", err)
+				continue
+			}
+			if !won {
+				continue
+			}
 		}
 		data := map[string]any{"time": local.Format(time.RFC3339), "date": local.Format("2006-01-02"), "timezone": loc.String()}
 		if _, _, err := e.Begin(ctx, f, StartInput{Kind: OnSchedule, Data: data}); err != nil {
@@ -318,6 +370,11 @@ func (e *Engine) Begin(ctx context.Context, f *Flow, in StartInput) (*Run, <-cha
 	if e.base.Err() != nil {
 		return nil, nil, errors.New("the server is shutting down")
 	}
+	if e.BeforeRun != nil && !in.Test {
+		if err := e.BeforeRun(ctx, f.AppID); err != nil {
+			return nil, nil, err
+		}
+	}
 	app, err := e.Apps.Get(ctx, f.AppID)
 	if err != nil {
 		return nil, nil, err
@@ -356,7 +413,7 @@ func (e *Engine) Begin(ctx context.Context, f *Flow, in StartInput) (*Run, <-cha
 	}
 	x.accent = app.Design.Accent
 	tj, _ := json.Marshal(trig)
-	if err := e.Flows.insertRun(ctx, r, x.hide(string(tj))); err != nil {
+	if err := e.Flows.insertRun(ctx, r, x.hide(string(tj)), e.instanceID()); err != nil {
 		return nil, nil, err
 	}
 	copy := *r
@@ -481,6 +538,8 @@ func (x *exec) execute() {
 		r.Steps = append(r.Steps, StepLog{Name: fmt.Sprintf("%d more steps ran but were not logged", x.dropped), Type: "note", Status: "ok", StartedAt: r.FinishedAt})
 	}
 	x.save(context.Background())
+	metrics.Default.Inc("bubibase_flow_runs_total", "status", r.Status)
+	metrics.Default.Since("bubibase_flow_run_duration_seconds", r.StartedAt)
 	if err := x.e.Flows.prune(context.Background(), x.flow.ID); err != nil {
 		x.e.Log.Error("pruning flow runs failed", "err", err)
 	}

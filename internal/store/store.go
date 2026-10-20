@@ -110,6 +110,36 @@ func (tx *Tx) QueryRow(ctx context.Context, query string, args ...any) *sql.Row 
 	return tx.Tx.QueryRowContext(ctx, tx.db.Rebind(query), args...)
 }
 
+// Lock takes a lock that servers sharing the database hold one at a time,
+// until unlock is called. SQLite databases have one server, so there it
+// does nothing.
+func (db *DB) Lock(ctx context.Context, key string) (unlock func(), err error) {
+	if db.Dialect != Postgres {
+		return func() {}, nil
+	}
+	conn, err := db.DB.Conn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock(hashtext($1))`, key); err != nil {
+		conn.Close()
+		return nil, err
+	}
+	return func() {
+		conn.ExecContext(context.Background(), `SELECT pg_advisory_unlock(hashtext($1))`, key)
+		conn.Close()
+	}, nil
+}
+
+// Lock holds a lock like DB.Lock until the transaction ends.
+func (tx *Tx) Lock(ctx context.Context, key string) error {
+	if tx.db.Dialect != Postgres {
+		return nil
+	}
+	_, err := tx.Tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, key)
+	return err
+}
+
 // Execer is satisfied by both *DB and *Tx.
 type Execer interface {
 	Exec(ctx context.Context, query string, args ...any) (sql.Result, error)
@@ -200,6 +230,14 @@ func openSQLite(path string) (*DB, error) {
 
 func (s *Store) Dialect() Dialect { return s.dialect }
 
+// DataDir is the folder of the SQLite databases; empty on Postgres.
+func (s *Store) DataDir() string {
+	if s.dialect == Postgres {
+		return ""
+	}
+	return s.dataDir
+}
+
 // AppDB returns the data database of an app, creating it if needed.
 func (s *Store) AppDB(ctx context.Context, appID string) (*DB, error) {
 	s.mu.Lock()
@@ -211,7 +249,10 @@ func (s *Store) AppDB(ctx context.Context, appID string) (*DB, error) {
 	if s.dialect == Postgres {
 		schema := "app_" + appID
 		if _, err := s.Meta.Exec(ctx, "CREATE SCHEMA IF NOT EXISTS "+Q(schema)); err != nil {
-			return nil, err
+			// Another server may have created it at the same moment.
+			if _, err := s.Meta.Exec(ctx, "CREATE SCHEMA IF NOT EXISTS "+Q(schema)); err != nil {
+				return nil, err
+			}
 		}
 		db = &DB{DB: s.Meta.DB, Dialect: Postgres, schema: schema}
 	} else {

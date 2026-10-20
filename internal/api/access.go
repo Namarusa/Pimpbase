@@ -270,7 +270,7 @@ func (s *Server) ssoCallback(w http.ResponseWriter, r *http.Request) error {
 		s.ssoFail(w, r, "/", &sso.SignInError{Message: "the provider stopped the sign-in: " + msg})
 		return nil
 	}
-	ip := clientIP(r)
+	ip := s.clientIP(r)
 	if s.limiter.blocked(ip) {
 		s.ssoFail(w, r, "/", &sso.SignInError{Message: "too many failed sign-ins; wait a few minutes"})
 		return nil

@@ -31,6 +31,10 @@ type Service struct {
 	// CreateRow, UpdateRow and DeleteRows, after the change is committed.
 	// Flows use it to start their row triggers. CSV imports do not call it.
 	OnRow func(ctx context.Context, ev RowEvent)
+	// BeforeInsert, when set, may refuse n new rows of an app, such as
+	// rows over its quota. CreateRow and CSV imports call it before they
+	// write.
+	BeforeInsert func(ctx context.Context, appID string, n int) error
 }
 
 // RowEvent is a committed row change.
@@ -303,6 +307,10 @@ func (s *Service) change(ctx context.Context, appID string, create bool, fn func
 		return nil, err
 	}
 	defer tx.Rollback()
+	// Other servers sharing the database wait for the change too.
+	if err := tx.Lock(ctx, "bubibase:schema:"+appID); err != nil {
+		return nil, err
+	}
 	t, err := fn(tx)
 	if err != nil {
 		return nil, err

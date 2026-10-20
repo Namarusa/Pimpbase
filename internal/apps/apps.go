@@ -23,6 +23,7 @@ type App struct {
 	Slug      string    `json:"slug"`
 	Name      string    `json:"name"`
 	Design    Design    `json:"design"`
+	Quotas    Quotas    `json:"quotas"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
@@ -41,6 +42,54 @@ type Design struct {
 	ChartPalette string `json:"chartPalette"`
 	// ChartColors are the five #rrggbb colours of the "custom" palette.
 	ChartColors []string `json:"chartColors"`
+}
+
+// Quotas cap what one app may use, so one busy or runaway app cannot
+// starve the others. Zero means no limit. Workspace owners and admins set
+// them.
+type Quotas struct {
+	// MaxRows caps the rows of all the app's tables together.
+	MaxRows int `json:"maxRows"`
+	// MaxFileMB caps the size of all the app's files together.
+	MaxFileMB int `json:"maxFileMB"`
+	// RequestsPerMinute caps the API requests made to the app by people
+	// using it (not builders), per server.
+	RequestsPerMinute int `json:"requestsPerMinute"`
+	// FlowRunsPerHour caps the flow runs the app starts, tests excepted.
+	FlowRunsPerHour int `json:"flowRunsPerHour"`
+}
+
+// QuotaError refuses work over an app's quota. Its message is safe to
+// show.
+type QuotaError struct {
+	Message string
+	// Rate marks limits that lift by themselves after a while.
+	Rate bool
+}
+
+func (e *QuotaError) Error() string { return e.Message }
+
+func (q Quotas) check() error {
+	if q.MaxRows < 0 || q.MaxFileMB < 0 || q.RequestsPerMinute < 0 || q.FlowRunsPerHour < 0 {
+		return &InvalidError{"quotas cannot be negative; use 0 for no limit"}
+	}
+	return nil
+}
+
+// SetQuotas replaces an app's quotas.
+func (s *Service) SetQuotas(ctx context.Context, id string, q Quotas) (*App, error) {
+	if err := q.check(); err != nil {
+		return nil, err
+	}
+	qj, _ := json.Marshal(q)
+	res, err := s.store.Meta.Exec(ctx, `UPDATE apps SET quotas = ?, updated_at = ? WHERE id = ?`, string(qj), s.now().UTC().Format(time.RFC3339), id)
+	if err != nil {
+		return nil, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return nil, ErrNotFound
+	}
+	return s.Get(ctx, id)
 }
 
 // ChartPalettes are the chart palettes an app may choose. "theme" follows
@@ -134,8 +183,8 @@ func Slugify(name string) string {
 
 func scanApp(row interface{ Scan(...any) error }) (*App, error) {
 	var a App
-	var created, updated, design string
-	if err := row.Scan(&a.ID, &a.Slug, &a.Name, &design, &created, &updated); err != nil {
+	var created, updated, design, quotas string
+	if err := row.Scan(&a.ID, &a.Slug, &a.Name, &design, &created, &updated, &quotas); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -145,10 +194,14 @@ func scanApp(row interface{ Scan(...any) error }) (*App, error) {
 	a.UpdatedAt, _ = time.Parse(time.RFC3339, updated)
 	json.Unmarshal([]byte(design), &a.Design)
 	a.Design.normalize()
+	json.Unmarshal([]byte(quotas), &a.Quotas)
 	return &a, nil
 }
 
-const cols = `id, slug, name, design, created_at, updated_at`
+const (
+	insertCols = `id, slug, name, design, created_at, updated_at`
+	cols       = insertCols + `, quotas`
+)
 
 func (s *Service) List(ctx context.Context) ([]*App, error) {
 	rows, err := s.store.Meta.Query(ctx, `SELECT `+cols+` FROM apps ORDER BY name`)
@@ -190,7 +243,7 @@ func (s *Service) Create(ctx context.Context, name, slug string) (*App, error) {
 	now := s.now().UTC().Format(time.RFC3339)
 	id := ids.New("app")
 	for i := 2; ; i++ {
-		_, err := s.store.Meta.Exec(ctx, `INSERT INTO apps (`+cols+`) VALUES (?, ?, ?, '{}', ?, ?)`, id, slug, name, now, now)
+		_, err := s.store.Meta.Exec(ctx, `INSERT INTO apps (`+insertCols+`) VALUES (?, ?, ?, '{}', ?, ?)`, id, slug, name, now, now)
 		if err == nil {
 			break
 		}

@@ -7,18 +7,21 @@ import (
 	"errors"
 	"io/fs"
 	"log/slog"
-	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/bubibase/bubibase/internal/ai"
 	"github.com/bubibase/bubibase/internal/apps"
 	"github.com/bubibase/bubibase/internal/auth"
+	"github.com/bubibase/bubibase/internal/cluster"
 	"github.com/bubibase/bubibase/internal/files"
 	"github.com/bubibase/bubibase/internal/flows"
+	"github.com/bubibase/bubibase/internal/metrics"
 	"github.com/bubibase/bubibase/internal/queries"
 	"github.com/bubibase/bubibase/internal/rbac"
 	"github.com/bubibase/bubibase/internal/screens"
@@ -42,7 +45,9 @@ type Server struct {
 	AI      *ai.Service
 	// Engine runs flows; call Engine.Start to begin schedules.
 	Engine *flows.Engine
-	Log    *slog.Logger
+	// Node is this server among those sharing the database, if set.
+	Node *cluster.Node
+	Log  *slog.Logger
 	// UI is the built builder, served at /. It may be nil.
 	UI fs.FS
 	// Secure marks cookies as HTTPS only.
@@ -51,8 +56,24 @@ type Server struct {
 	// https://apps.example.com; single sign-on providers send people back
 	// there. Empty uses the address of each request.
 	PublicURL string
+	// RateLimit is how many API requests a second one client (API key,
+	// user, or address) may make to this server, with bursts of RateBurst;
+	// 0 turns the limit off.
+	RateLimit float64
+	RateBurst int
+	// BehindProxy trusts the last X-Forwarded-For address as the client's.
+	BehindProxy bool
+	// MetricsToken, when set, must come as a Bearer token to read /metrics.
+	MetricsToken string
+	// Version is reported by /healthz and the metrics.
+	Version string
 
-	limiter *limiter
+	store    *store.Store
+	limiter  *limiter
+	rate     rateLimiter
+	requests windows
+	usage    usage
+	draining atomic.Bool
 }
 
 func New(s *store.Store, ui fs.FS, log *slog.Logger) *Server {
@@ -68,11 +89,16 @@ func New(s *store.Store, ui fs.FS, log *slog.Logger) *Server {
 		Flows:   flows.NewService(s),
 		Log:     log,
 		UI:      ui,
+		store:   s,
 		limiter: &limiter{hits: map[string][]time.Time{}},
 	}
 	srv.SSO = sso.NewService(s, srv.Auth, srv.Apps)
 	srv.AI = ai.NewService(s)
 	srv.Engine = flows.NewEngine(srv.Flows, srv.Tables, srv.Queries, srv.Runner, srv.Files, srv.Apps, log)
+	srv.Tables.BeforeInsert = srv.checkRows
+	srv.Files.BeforeSave = srv.checkFiles
+	srv.Engine.BeforeRun = srv.checkRuns
+	srv.describeMetrics(s)
 	return srv
 }
 
@@ -104,9 +130,14 @@ func (s *Server) Handler() http.Handler {
 			}
 		})
 	}
-	h("GET /api/health", func(w http.ResponseWriter, r *http.Request) error {
-		return writeJSON(w, 200, map[string]any{"ok": true})
-	})
+	h("GET /api/health", s.healthz)
+	h("GET /healthz", s.healthz)
+	h("GET /readyz", s.readyz)
+	h("GET /metrics", s.metrics)
+	h("GET /api/admin/status", s.status)
+	h("GET /api/admin/backup", s.downloadBackup)
+	h("GET /api/apps/{app}/usage", s.appUsage)
+	h("PUT /api/apps/{app}/quotas", s.setQuotas)
 	h("GET /api/setup", s.getSetup)
 	h("POST /api/setup", s.postSetup)
 	h("POST /api/auth/login", s.login)
@@ -225,7 +256,7 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 		w.Header().Set("Referrer-Policy", "same-origin")
 		ctx := r.Context()
 		viaCookie := false
-		if key, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
+		if key, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok && r.URL.Path != "/metrics" {
 			u, k, err := s.Auth.FromAPIKey(ctx, strings.TrimSpace(key))
 			if err != nil {
 				writeJSON(w, 401, map[string]any{"error": "invalid or expired API key"})
@@ -243,8 +274,20 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 			writeJSON(w, 403, map[string]any{"error": "cross-site request blocked"})
 			return
 		}
+		r = r.WithContext(ctx)
+		if s.rateLimited(w, r) {
+			return
+		}
 		sw := &statusWriter{ResponseWriter: w, status: 200}
-		next.ServeHTTP(sw, r.WithContext(ctx))
+		inFlight.Add(1)
+		next.ServeHTTP(sw, r)
+		inFlight.Add(-1)
+		route := r.Pattern
+		if route == "" || !strings.HasPrefix(r.URL.Path, "/api/") && route != "GET /healthz" && route != "GET /readyz" && route != "GET /metrics" {
+			route = "builder"
+		}
+		metrics.Default.Inc("bubibase_http_requests_total", "route", route, "code", strconv.Itoa(sw.status/100)+"xx")
+		metrics.Default.Since("bubibase_http_request_duration_seconds", start, "route", route)
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			s.Log.Info("request", "method", r.Method, "path", r.URL.Path, "status", sw.status, "ms", time.Since(start).Milliseconds())
 		}
@@ -306,7 +349,15 @@ func (s *Server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 	var ri *rbac.InvalidError
 	var ssoErr *sso.InvalidError
 	var aiErr *ai.Error
+	var quota *apps.QuotaError
 	switch {
+	case errors.As(err, &quota):
+		status := 403
+		if quota.Rate {
+			status = 429
+			w.Header().Set("Retry-After", "60")
+		}
+		writeJSON(w, status, map[string]any{"error": quota.Message, "code": "quota_exceeded"})
 	case errors.Is(err, ai.ErrNoKey):
 		writeJSON(w, 409, map[string]any{"error": err.Error(), "code": "ai_not_configured"})
 	case errors.As(err, &aiErr):
@@ -371,14 +422,6 @@ func readJSON(r *http.Request, v any) error {
 type limiter struct {
 	mu   sync.Mutex
 	hits map[string][]time.Time
-}
-
-func clientIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
 }
 
 func (l *limiter) blocked(ip string) bool {

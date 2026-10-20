@@ -172,9 +172,33 @@ var metaMigrations = []string{
 		value TEXT NOT NULL,
 		updated_at TEXT NOT NULL
 	);`,
+	// Phase 7: servers sharing one database, jobs only one of them may
+	// run, the server doing each flow run, and per-app quotas.
+	`CREATE TABLE instances (
+		id TEXT PRIMARY KEY,
+		host TEXT NOT NULL,
+		version TEXT NOT NULL,
+		started_at TEXT NOT NULL,
+		seen_at TEXT NOT NULL
+	);
+	CREATE TABLE job_claims (
+		key TEXT PRIMARY KEY,
+		instance_id TEXT NOT NULL,
+		claimed_at TEXT NOT NULL
+	);
+	ALTER TABLE app_flow_runs ADD COLUMN instance_id TEXT NOT NULL DEFAULT '';
+	CREATE INDEX app_flow_runs_status ON app_flow_runs (status);
+	CREATE INDEX app_flow_runs_app ON app_flow_runs (app_id, started_at);
+	ALTER TABLE apps ADD COLUMN quotas TEXT NOT NULL DEFAULT '{}';`,
 }
 
 func migrateMeta(ctx context.Context, db *DB) error {
+	// Servers starting together against one Postgres database take turns.
+	unlock, err := db.Lock(ctx, "bubibase:migrate")
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	if _, err := db.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY)`); err != nil {
 		return err
 	}

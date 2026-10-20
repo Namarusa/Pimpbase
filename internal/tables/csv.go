@@ -121,6 +121,11 @@ func (s *Service) ImportCSV(ctx context.Context, actor rbac.Actor, appID, tableI
 		return nil, err
 	}
 
+	if s.BeforeInsert != nil {
+		if err := s.BeforeInsert(ctx, appID, len(records)); err != nil {
+			return nil, err
+		}
+	}
 	db, err := s.store.AppDB(ctx, appID)
 	if err != nil {
 		return nil, err

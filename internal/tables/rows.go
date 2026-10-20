@@ -1059,6 +1059,27 @@ func (s *Service) indexedPage(ctx context.Context, db *store.DB, c *compiled, wh
 	return rows, nil
 }
 
+// RowCount counts the rows of all an app's tables, whoever may read them.
+func (s *Service) RowCount(ctx context.Context, appID string) (int, error) {
+	list, err := s.List(ctx, appID)
+	if err != nil {
+		return 0, err
+	}
+	db, err := s.store.AppDB(ctx, appID)
+	if err != nil {
+		return 0, err
+	}
+	total := 0
+	for _, t := range list {
+		var n int
+		if err := db.QueryRow(ctx, "SELECT COUNT(*) FROM "+db.Table(t.sqlName())).Scan(&n); err != nil {
+			return 0, err
+		}
+		total += n
+	}
+	return total, nil
+}
+
 // filters compiles a query filter and adds the actor's row rule.
 func (s *Service) filters(c *compiled, actor rbac.Actor, filter string) ([]*formula.Checked, error) {
 	var filters []*formula.Checked
@@ -1358,6 +1379,11 @@ func (s *Service) CreateRow(ctx context.Context, actor rbac.Actor, appID, tableI
 	}
 	if err := actor.Require(c.Permissions.Write, "adding rows to "+c.Name); err != nil {
 		return nil, err
+	}
+	if s.BeforeInsert != nil {
+		if err := s.BeforeInsert(ctx, appID, 1); err != nil {
+			return nil, err
+		}
 	}
 	rule, err := c.rule(actor)
 	if err != nil {

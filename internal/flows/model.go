@@ -649,9 +649,9 @@ func (s *Service) Run(ctx context.Context, appID, id string) (*Run, error) {
 	return scanRun(s.store.Meta.QueryRow(ctx, `SELECT `+runCols+` FROM app_flow_runs WHERE app_id = ? AND id = ?`, appID, id), true)
 }
 
-func (s *Service) insertRun(ctx context.Context, r *Run, trig string) error {
-	_, err := s.store.Meta.Exec(ctx, `INSERT INTO app_flow_runs (`+runCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, '[]', 'null', '', ?, '')`,
-		r.ID, r.AppID, r.FlowID, r.Status, boolInt(r.Test), r.TriggerKind, trig, r.StartedAt.UTC().Format(time.RFC3339Nano))
+func (s *Service) insertRun(ctx context.Context, r *Run, trig, instance string) error {
+	_, err := s.store.Meta.Exec(ctx, `INSERT INTO app_flow_runs (`+runCols+`, instance_id) VALUES (?, ?, ?, ?, ?, ?, ?, '[]', 'null', '', ?, '', ?)`,
+		r.ID, r.AppID, r.FlowID, r.Status, boolInt(r.Test), r.TriggerKind, trig, r.StartedAt.UTC().Format(time.RFC3339Nano), instance)
 	return err
 }
 
@@ -665,16 +665,31 @@ func (s *Service) saveRun(ctx context.Context, r *Run, steps, output string) err
 	return err
 }
 
+// RunsSince counts an app's runs, tests excepted, started at or after t.
+func (s *Service) RunsSince(ctx context.Context, appID string, t time.Time) (int, error) {
+	var n int
+	err := s.store.Meta.QueryRow(ctx, `SELECT COUNT(*) FROM app_flow_runs WHERE app_id = ? AND test = 0 AND started_at >= ?`, appID, t.UTC().Format(time.RFC3339Nano)).Scan(&n)
+	return n, err
+}
+
 // prune keeps the newest runs of a flow.
 func (s *Service) prune(ctx context.Context, flowID string) error {
 	_, err := s.store.Meta.Exec(ctx, `DELETE FROM app_flow_runs WHERE flow_id = ? AND id NOT IN (SELECT id FROM app_flow_runs WHERE flow_id = ? ORDER BY started_at DESC, id DESC LIMIT ?)`, flowID, flowID, keepRuns)
 	return err
 }
 
-// abandon marks runs the server was doing when it stopped as failed.
-func (s *Service) abandon(ctx context.Context) error {
-	_, err := s.store.Meta.Exec(ctx, `UPDATE app_flow_runs SET status = ?, error = ?, finished_at = ? WHERE status = ?`,
-		Failed, "the server stopped during the run", s.now().UTC().Format(time.RFC3339Nano), Running)
+// abandon marks runs as failed that a server was doing when it stopped.
+// With an empty self, the server is alone and every running run is one
+// it left behind. Otherwise runs of servers not seen alive since
+// aliveSince are, but never self's own.
+func (s *Service) abandon(ctx context.Context, self, aliveSince string) error {
+	q := `UPDATE app_flow_runs SET status = ?, error = ?, finished_at = ? WHERE status = ?`
+	args := []any{Failed, "the server stopped during the run", s.now().UTC().Format(time.RFC3339Nano), Running}
+	if self != "" {
+		q += ` AND instance_id <> ? AND instance_id NOT IN (SELECT id FROM instances WHERE seen_at >= ?)`
+		args = append(args, self, aliveSince)
+	}
+	_, err := s.store.Meta.Exec(ctx, q, args...)
 	return err
 }
 

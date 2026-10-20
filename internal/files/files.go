@@ -1,7 +1,9 @@
 // Package files stores the files uploaded to an app's attachment fields.
-// They live in the app's own database, next to its tables, so they work the
-// same on SQLite and Postgres, are backed up with the data and go away with
-// the app.
+// By default they live in the app's own database, next to its tables, so
+// they work the same on SQLite and Postgres, are backed up with the data
+// and go away with the app. A server may keep the contents in a folder or
+// a bucket instead (see Blobs); the database then holds the file's details
+// and where its content is.
 package files
 
 import (
@@ -49,6 +51,12 @@ type File struct {
 type Service struct {
 	store *store.Store
 	now   func() time.Time
+	// Blobs, when set, receives the contents of new files. Files already
+	// stored stay where they are and remain readable.
+	Blobs Blobs
+	// BeforeSave, when set, may refuse a new file of size bytes, such as
+	// one over the app's quota.
+	BeforeSave func(ctx context.Context, appID string, size int64) error
 	// ready remembers the apps whose file table exists.
 	ready sync.Map
 }
@@ -80,10 +88,13 @@ func (s *Service) db(ctx context.Context, appID string) (*store.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Apps made before uploads were tied to their uploader lack the column.
-	if _, err := db.Exec(ctx, `SELECT uploaded_by FROM `+db.Table(tableName)+` WHERE 1 = 0`); err != nil {
-		if _, err := db.Exec(ctx, `ALTER TABLE `+db.Table(tableName)+` ADD COLUMN uploaded_by TEXT NOT NULL DEFAULT ''`); err != nil {
-			return nil, err
+	// Apps made before uploads were tied to their uploader, or before
+	// contents could live elsewhere, lack these columns.
+	for _, col := range []string{"uploaded_by", "storage"} {
+		if _, err := db.Exec(ctx, `SELECT `+col+` FROM `+db.Table(tableName)+` WHERE 1 = 0`); err != nil {
+			if _, err := db.Exec(ctx, `ALTER TABLE `+db.Table(tableName)+` ADD COLUMN `+col+` TEXT NOT NULL DEFAULT ''`); err != nil {
+				return nil, err
+			}
 		}
 	}
 	s.ready.Store(appID, true)
@@ -105,18 +116,86 @@ func (s *Service) Save(ctx context.Context, appID, tableID, uploadedBy, name, de
 	if len(data) == 0 {
 		return nil, &InvalidError{"the file is empty"}
 	}
+	if s.BeforeSave != nil {
+		if err := s.BeforeSave(ctx, appID, int64(len(data))); err != nil {
+			return nil, err
+		}
+	}
 	f := &File{ID: ids.New("fil"), TableID: tableID, UploadedBy: uploadedBy, Name: cleanName(name), Size: int64(len(data)), CreatedAt: s.now().UTC().Truncate(time.Second)}
 	f.Type = contentType(f.Name, declaredType, data)
 	db, err := s.db(ctx, appID)
 	if err != nil {
 		return nil, err
 	}
-	_, err = db.Exec(ctx, `INSERT INTO `+db.Table(tableName)+` (id, table_id, name, type, size, content, created_at, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		f.ID, f.TableID, f.Name, f.Type, f.Size, data, f.CreatedAt.Format(time.RFC3339), f.UploadedBy)
+	storage, content := "", data
+	if s.Blobs != nil {
+		if err := s.Blobs.Put(ctx, blobKey(appID, f.ID), f.Type, data); err != nil {
+			return nil, err
+		}
+		storage, content = s.Blobs.Name(), []byte{}
+	}
+	_, err = db.Exec(ctx, `INSERT INTO `+db.Table(tableName)+` (id, table_id, name, type, size, content, created_at, uploaded_by, storage) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		f.ID, f.TableID, f.Name, f.Type, f.Size, content, f.CreatedAt.Format(time.RFC3339), f.UploadedBy, storage)
 	if err != nil {
+		if s.Blobs != nil {
+			s.Blobs.Delete(context.WithoutCancel(ctx), blobKey(appID, f.ID))
+		}
 		return nil, err
 	}
 	return f, nil
+}
+
+// StorageName says where new file contents go: "database", "dir" or "s3".
+func (s *Service) StorageName() string {
+	if s.Blobs == nil {
+		return "database"
+	}
+	return s.Blobs.Name()
+}
+
+func blobKey(appID, fileID string) string { return appID + "/" + fileID }
+
+// Usage is the number and total size of an app's files.
+func (s *Service) Usage(ctx context.Context, appID string) (count int, bytes int64, err error) {
+	db, err := s.db(ctx, appID)
+	if err != nil {
+		return 0, 0, err
+	}
+	err = db.QueryRow(ctx, `SELECT COUNT(*), COALESCE(SUM(size), 0) FROM `+db.Table(tableName)).Scan(&count, &bytes)
+	return count, bytes, err
+}
+
+// DeleteApp removes the contents an app keeps outside its database; the
+// database goes with the app itself.
+func (s *Service) DeleteApp(ctx context.Context, appID string) error {
+	defer s.Forget(appID)
+	if s.Blobs == nil {
+		return nil
+	}
+	db, err := s.db(ctx, appID)
+	if err != nil {
+		return err
+	}
+	rows, err := db.Query(ctx, `SELECT id FROM `+db.Table(tableName)+` WHERE storage = ?`, s.Blobs.Name())
+	if err != nil {
+		return err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	for _, id := range ids {
+		if err := s.Blobs.Delete(ctx, blobKey(appID, id)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Get returns a file and its content.
@@ -126,10 +205,10 @@ func (s *Service) Get(ctx context.Context, appID, id string) (*File, []byte, err
 		return nil, nil, err
 	}
 	f := &File{ID: id}
-	var created string
+	var created, storage string
 	var data []byte
-	err = db.QueryRow(ctx, `SELECT table_id, name, type, size, content, created_at, uploaded_by FROM `+db.Table(tableName)+` WHERE id = ?`, id).
-		Scan(&f.TableID, &f.Name, &f.Type, &f.Size, &data, &created, &f.UploadedBy)
+	err = db.QueryRow(ctx, `SELECT table_id, name, type, size, content, created_at, uploaded_by, storage FROM `+db.Table(tableName)+` WHERE id = ?`, id).
+		Scan(&f.TableID, &f.Name, &f.Type, &f.Size, &data, &created, &f.UploadedBy, &storage)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil, ErrNotFound
 	}
@@ -137,6 +216,14 @@ func (s *Service) Get(ctx context.Context, appID, id string) (*File, []byte, err
 		return nil, nil, err
 	}
 	f.CreatedAt, _ = time.Parse(time.RFC3339, created)
+	if storage != "" {
+		if s.Blobs == nil || s.Blobs.Name() != storage {
+			return nil, nil, fmt.Errorf("file %s is kept in %s storage, which this server is not set up for", id, storage)
+		}
+		if data, err = s.Blobs.Get(ctx, blobKey(appID, id)); err != nil {
+			return nil, nil, err
+		}
+	}
 	return f, data, nil
 }
 
