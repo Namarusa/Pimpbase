@@ -34,15 +34,17 @@ func (s *Server) uploadFile(w http.ResponseWriter, r *http.Request) error {
 		return errStatus(400, "attach the file as the form field named file")
 	}
 	defer f.Close()
-	saved, err := s.Files.Save(r.Context(), a.ID, t.ID, hdr.Filename, hdr.Header.Get("Content-Type"), f)
+	saved, err := s.Files.Save(r.Context(), a.ID, t.ID, act.UserID, hdr.Filename, hdr.Header.Get("Content-Type"), f)
 	if err != nil {
 		return err
 	}
 	return writeJSON(w, 201, map[string]any{"id": saved.ID, "name": saved.Name, "type": saved.Type, "size": saved.Size, "url": tables.FileURL(a.ID, saved.ID)})
 }
 
-// getFile sends a stored file to whoever may read the table it belongs to.
-// PDFs and pictures open in the browser; ?download=1 saves them instead.
+// getFile sends a stored file to whoever may read the table it belongs to
+// and, when a row rule applies to them, a row of it that holds the file. A
+// file not yet saved to any row is open to its uploader only. PDFs and
+// pictures open in the browser; ?download=1 saves them instead.
 func (s *Server) getFile(w http.ResponseWriter, r *http.Request) error {
 	a, act, err := s.actor(r)
 	if err != nil {
@@ -56,8 +58,12 @@ func (s *Server) getFile(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return files.ErrNotFound // the table went away with its files
 	}
-	if err := act.Require(t.Permissions.Read, "reading "+t.Name); err != nil {
+	access, err := s.Tables.FileAccess(r.Context(), act, a.ID, t.ID, f.ID)
+	if err != nil {
 		return err
+	}
+	if !access.Readable && (access.Held || act.UserID == "" || act.UserID != f.UploadedBy) {
+		return files.ErrNotFound // like rows outside a row rule, the file does not exist for them
 	}
 	disposition := "inline"
 	typ := f.Type

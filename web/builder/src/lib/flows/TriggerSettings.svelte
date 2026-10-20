@@ -26,6 +26,7 @@
   const table = $derived(ed.table(t.table))
   const info = $derived(triggerInfo(t.type))
   const isRow = $derived(t.type.startsWith('row_'))
+  const unattended = $derived(t.type === 'schedule' || t.type === 'webhook')
   const hookURL = $derived(`${location.origin}/api/hooks/${flow.hookToken}`)
 
   function setType(type: TriggerType) {
@@ -33,6 +34,12 @@
     if (type.startsWith('row_') && !next.table) next.table = ed.tables[0]?.id
     if (type === 'schedule' && !next.cron) { next.cron = '0 8 * * 1-5'; next.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' }
     flow.trigger = next
+    if ((type === 'schedule' || type === 'webhook') && flow.runAs === 'user' && !flow.runRole) flow.runRole = 'BASIC'
+    ed.changed()
+  }
+  function setRunAs(v: 'flow' | 'user') {
+    flow.runAs = v
+    if (v === 'user' && !flow.runRole) flow.runRole = 'BASIC'
     ed.changed()
   }
   function set<K extends keyof typeof t>(k: K, v: (typeof t)[K]) {
@@ -256,12 +263,19 @@
   <Separator />
   <div class="flex flex-col gap-1.5">
     <Label class="text-xs">Steps run with</Label>
-    <Select.Root type="single" value={flow.runAs ?? 'flow'} onValueChange={(v) => { flow.runAs = v as 'flow' | 'user'; ed.changed() }}>
-      <Select.Trigger size="sm" class="w-full">{(flow.runAs ?? 'flow') === 'flow' ? 'Full access to the app' : 'The permissions of who started it'}</Select.Trigger>
+    <Select.Root type="single" value={flow.runAs ?? 'flow'} onValueChange={(v) => setRunAs(v as 'flow' | 'user')}>
+      <Select.Trigger size="sm" class="w-full">{(flow.runAs ?? 'flow') === 'flow' ? 'Full access to the app' : unattended ? 'The permissions of a role' : 'The permissions of who started it'}</Select.Trigger>
       <Select.Content>
         <Select.Item value="flow" label="Full access"><div><div>Full access to the app</div><div class="text-muted-foreground text-xs">Row steps and queries may use every table and row</div></div></Select.Item>
-        <Select.Item value="user" label="As the user"><div><div>The permissions of who started it</div><div class="text-muted-foreground text-xs">Table permissions, row rules and query roles apply; schedules and webhooks act as Public</div></div></Select.Item>
+        <Select.Item value="user" label="As the user"><div><div>{unattended ? 'The permissions of a role' : 'The permissions of who started it'}</div><div class="text-muted-foreground text-xs">Table permissions, row rules and query roles apply{unattended ? '; nobody starts a ' + (t.type === 'schedule' ? 'schedule' : 'webhook') + ', so runs act as the role you choose' : ''}</div></div></Select.Item>
       </Select.Content>
     </Select.Root>
+    {#if flow.runAs === 'user' && unattended}
+      <Label class="mt-1 text-xs" for="run-role">Runs act as</Label>
+      <RoleSelect id="run-role" mode="assign" roles={ed.roles} value={flow.runRole ?? ''} onChange={(v) => { flow.runRole = v; ed.changed() }} />
+      <p class="text-muted-foreground text-xs">Each run has exactly this role's access, the way a member with it would. Test runs act as it too.</p>
+    {:else if flow.runAs === 'user' && isRow}
+      <p class="text-muted-foreground text-xs">Runs act as whoever changed the row.</p>
+    {/if}
   </div>
 </div>

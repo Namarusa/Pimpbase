@@ -78,13 +78,18 @@ TLS from the start, and `--smtp log` only writes the mails to the log.
   `CONTAINS(Current.User.Groups, LOWER([Region]))`. A role uses the nearest
   rule in its chain; "every row" stops the inheritance. Rules run in the
   database when they compile to SQL and also guard creating, changing,
-  deleting and importing rows.
+  deleting and importing rows. They also cover a table's files (a file
+  downloads only for people who may see a row holding it; a file not yet
+  saved to a row only for its uploader) and the labels other tables show
+  of its rows (links to rows you may not see read "Hidden row").
 - **Screens and components**: each screen needs a role to open, and any
   component can be limited to some roles (**Visible to**). The server
   removes hidden components before sending the screen, so they never reach
   the browser. Builders can preview an app as any role.
 - **Flows and queries**: button flows and API queries need a role; a flow
   runs its steps either with full access or as the person who started it.
+  Schedules and webhooks have nobody to act as, so such flows name the role
+  their runs act as; without one they refuse to run rather than guess.
 - **Published apps** show a sign-in page in the app's own colours, with
   password and single sign-on, and a "no access yet" page for people
   without a role.
@@ -104,10 +109,10 @@ TLS from the start, and `--smtp log` only writes the mails to the log.
 (client `bubibase-dev`, secret `dev-secret`) with a few demo people and
 groups, for trying single sign-on without a real provider.
 
-Known limits: file downloads check table read access but not row rules
-(file ids are unguessable), link labels shown from another table ignore
-that table's row rules, and scheduled or webhook flows set to run as the
-user run as Public.
+Known limits: filters and sorting on a link field still compare the
+linked rows' real labels, so a reader could probe a hidden label by
+filtering on it; stored (static) formulas computed from link labels are
+shown as stored.
 
 ## UI builder
 

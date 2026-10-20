@@ -58,6 +58,9 @@ func (s *Server) createFlow(w http.ResponseWriter, r *http.Request) error {
 	if err := s.bodyRoles(r, a.ID, data, "trigger", "role"); err != nil {
 		return err
 	}
+	if err := s.bodyRoles(r, a.ID, data, "runRole"); err != nil {
+		return err
+	}
 	f, err := s.Flows.CreateFlow(r.Context(), a.ID, data)
 	if err != nil {
 		return err
@@ -75,6 +78,9 @@ func (s *Server) updateFlow(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	if err := s.bodyRoles(r, a.ID, data, "trigger", "role"); err != nil {
+		return err
+	}
+	if err := s.bodyRoles(r, a.ID, data, "runRole"); err != nil {
 		return err
 	}
 	f, err := s.Flows.UpdateFlow(r.Context(), a.ID, r.PathValue("flow"), data)
@@ -176,7 +182,12 @@ func (s *Server) testFlow(w http.ResponseWriter, r *http.Request) error {
 		}
 		data["params"] = p
 	}
-	run, err := s.Engine.RunNow(r.Context(), f, flows.StartInput{Kind: f.Trigger.Type, Data: data, User: s.userOf(r, act), Test: true, Actor: &act}, waitForRun)
+	in2 := flows.StartInput{Kind: f.Trigger.Type, Data: data, User: s.userOf(r, act), Test: true, Actor: &act}
+	if f.Trigger.Unattended() {
+		// Test as the real runs will go: with nobody, so as the run-as role.
+		in2.User, in2.Actor = nil, nil
+	}
+	run, err := s.Engine.RunNow(r.Context(), f, in2, waitForRun)
 	if err != nil {
 		return err
 	}

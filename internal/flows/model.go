@@ -41,9 +41,16 @@ type Definition struct {
 	Steps   []*Step `json:"steps"`
 	// RunAs is "flow" (the default) for steps that may do anything in the
 	// app, or "user" for steps that keep to the permissions of whoever
-	// started the run; scheduled and webhook runs then act as PUBLIC.
+	// started the run.
 	RunAs string `json:"runAs"`
+	// RunRole is the app role that runs without a user act as, under
+	// RunAs "user": scheduled and webhook runs. Such flows need one; a run
+	// without a user and without a role fails instead of guessing.
+	RunRole rbac.Role `json:"runRole,omitempty"`
 }
+
+// Unattended reports whether the trigger starts runs without a user.
+func (t Trigger) Unattended() bool { return t.Type == OnSchedule || t.Type == OnWebhook }
 
 // Run-as modes.
 const (
@@ -159,6 +166,14 @@ func (f *Flow) Check() error {
 	case RunAsFlow, RunAsUser:
 	default:
 		return invalid("runAs", "a flow runs as the flow or as the user")
+	}
+	if f.RunRole == rbac.None {
+		f.RunRole = ""
+	}
+	if f.RunAs != RunAsUser {
+		f.RunRole = ""
+	} else if f.RunRole == "" && f.Trigger.Unattended() {
+		return invalid("runAs", "a %s has no user to act as; choose the role its runs act as", map[string]string{OnSchedule: "schedule", OnWebhook: "webhook"}[f.Trigger.Type])
 	}
 	if f.Steps == nil {
 		f.Steps = []*Step{}

@@ -98,6 +98,7 @@
     return n
   }
   const buttonFlows = $derived(flows.filter((f) => f.trigger.type === 'manual'))
+  const unattendedFlows = $derived(flows.filter((f) => f.trigger.type === 'schedule' || f.trigger.type === 'webhook'))
   function setTab(v: string) {
     tab = v
     history.replaceState(null, '', `/apps/${slug}/access${v === 'members' ? '' : '/' + v}`)
@@ -250,6 +251,20 @@
                     </select>
                   </div>
                 {:else}<p class="text-muted-foreground px-5 py-4 text-sm">No flows with a screen button trigger.</p>{/each}
+              </Card.Content>
+            </Card.Root>
+            <Card.Root class="gap-0 py-0">
+              <Card.Header class="flex flex-row items-center gap-2 border-b px-5 py-3.5 [.border-b]:pb-3.5"><WorkflowIcon class="text-muted-foreground size-4" /><Card.Title class="text-sm">Scheduled and webhook flows</Card.Title></Card.Header>
+              <Card.Content class="divide-y px-0">
+                {#each unattendedFlows as f (f.id)}
+                  <div class="flex flex-wrap items-center gap-3 px-5 py-2.5">
+                    <div class="min-w-0 flex-1 truncate text-sm font-medium">{f.name} <span class="text-muted-foreground text-xs font-normal">{f.trigger.type === 'schedule' ? 'schedule' : 'webhook'}</span></div>
+                    {#if f.runAs === 'user'}<RoleSelect class="w-48" mode="assign" {roles} value={f.runRole ?? 'BASIC'} onChange={(v) => flowChange(f, { runRole: v })} />{/if}
+                    <select class="border-input bg-background h-8 rounded-md border px-2 text-xs" value={f.runAs ?? 'flow'} onchange={(e) => flowChange(f, { runAs: e.currentTarget.value as 'flow' | 'user', runRole: f.runRole || 'BASIC' })} aria-label="Runs as">
+                      <option value="flow">Runs with full access</option><option value="user">Runs as a role</option>
+                    </select>
+                  </div>
+                {:else}<p class="text-muted-foreground px-5 py-4 text-sm">No flows with a schedule or webhook trigger.</p>{/each}
               </Card.Content>
             </Card.Root>
           </div>

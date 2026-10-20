@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { linkLabel } from '../lib/format'
   import { api, type LinkRef, type Table } from '../lib/api'
 
   let { app, target, many, value = $bindable() }: {
@@ -34,7 +35,7 @@
 <div class="picker">
   <div class="chips">
     {#each chosen as c (c._id)}
-      <span class="chip">{c.label}<button type="button" class="ghost small" onclick={() => toggle(c)} aria-label="Remove">✕</button></span>
+      <span class="chip">{linkLabel(c)}<button type="button" class="ghost small" onclick={() => toggle(c)} aria-label="Remove">✕</button></span>
     {:else}
       <span class="muted">Nothing linked</span>
     {/each}

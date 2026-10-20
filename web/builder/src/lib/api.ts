@@ -41,7 +41,7 @@ export interface Table {
 }
 export interface RowRule { role: Role; filter: string }
 export interface Permissions { read: Role; write: Role; delete: Role; rows: RowRule[] }
-export interface LinkRef { _id: number; label: string }
+export interface LinkRef { _id: number; label: string; hidden?: boolean }
 // FileRef is one file of an attachment field.
 export interface FileRef { id: string; name: string; type: string; size: number; url: string }
 export type Row = Record<string, any> & { _id: number }
@@ -98,7 +98,7 @@ export interface FlowStep {
   then?: FlowStep[]; else?: FlowStep[]; do?: FlowStep[]; disabled?: boolean; continueOnError?: boolean
 }
 export interface Flow {
-  id: string; appId: string; name: string; enabled: boolean; trigger: Trigger; steps: FlowStep[]; runAs?: 'flow' | 'user'
+  id: string; appId: string; name: string; enabled: boolean; trigger: Trigger; steps: FlowStep[]; runAs?: 'flow' | 'user'; runRole?: string
   hookToken: string; createdAt?: string; updatedAt?: string
 }
 export interface StepLog {

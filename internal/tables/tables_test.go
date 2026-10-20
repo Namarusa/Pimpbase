@@ -196,7 +196,7 @@ func TestTablesEndToEnd(t *testing.T) {
 			t.Fatal(err)
 		}
 		r := must[map[string]any](t)(svc.UpdateRow(ctx, admin, app, orders.ID, lampID, map[string]any{"Labels": []any{l1["_id"], l2["_id"], l1["_id"]}}))
-		if fmt.Sprint(r["Labels"]) != "[{"+fmt.Sprint(l1["_id"])+" eco} {"+fmt.Sprint(l2["_id"])+" new}]" {
+		if fmt.Sprint(r["Labels"]) != "[{"+fmt.Sprint(l1["_id"])+" eco false} {"+fmt.Sprint(l2["_id"])+" new false}]" {
 			t.Errorf("labels = %v", r["Labels"])
 		}
 		if _, err := svc.UpdateRow(ctx, admin, app, orders.ID, lampID, map[string]any{"Labels": []any{999.0}}); !isInvalid(err, "Labels") {

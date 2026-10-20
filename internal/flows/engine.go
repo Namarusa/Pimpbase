@@ -309,7 +309,7 @@ type StartInput struct {
 	// Chain counts flows started by row changes of other flows.
 	Chain int
 	// Actor is who started the run, for flows that run as the user. Nil
-	// acts as PUBLIC.
+	// means nobody: such runs act as the flow's RunRole.
 	Actor *rbac.Actor
 }
 
@@ -340,6 +340,13 @@ func (e *Engine) Begin(ctx context.Context, f *Flow, in StartInput) (*Run, <-cha
 		steps: map[string]any{}, vars: map[string]any{}, starter: in.Actor,
 	}
 	user := in.User
+	if f.RunAs == RunAsUser && in.Actor == nil {
+		if x.unattended, err = e.unattended(ctx, f); err != nil {
+			x.refused = err.Error()
+		} else if user == nil {
+			user = map[string]any{"name": x.unattended.Name, "role": string(x.unattended.Role)}
+		}
+	}
 	if user == nil {
 		user = map[string]any{}
 	}
@@ -397,6 +404,10 @@ type exec struct {
 	accent  string
 	// starter is who started the run.
 	starter *rbac.Actor
+	// unattended is who a run without a starter acts as, for flows that
+	// run as the user; refused says why there is no such actor.
+	unattended *rbac.Actor
+	refused    string
 
 	scope interp.Map
 	steps map[string]any
@@ -409,14 +420,37 @@ type exec struct {
 	lastSave time.Time
 }
 
+// unattended is who a run without a user acts as, for a flow that runs as
+// the user: its run-as role, which must still exist in the app.
+func (e *Engine) unattended(ctx context.Context, f *Flow) (*rbac.Actor, error) {
+	if f.RunRole == "" {
+		return nil, errors.New("this flow runs with the permissions of who started it, but nobody did (a schedule or webhook) and it has no run-as role; choose one in the trigger settings")
+	}
+	set, err := e.Apps.Roles(ctx, f.AppID)
+	if err != nil {
+		return nil, err
+	}
+	if !set.Has(f.RunRole) {
+		return nil, fmt.Errorf("this flow's run-as role %s no longer exists; choose another in the trigger settings", f.RunRole)
+	}
+	a := rbac.NewActor(set, f.RunRole)
+	a.Name = "Flow " + f.Name
+	return &a, nil
+}
+
 // actor is who row steps act as: an app admin named after the flow, or,
-// for flows that run as the user, whoever started the run.
+// for flows that run as the user, whoever started the run, or the flow's
+// run-as role when nobody did. A run with none of these never starts its
+// steps, so the last case is only a safe default.
 func (x *exec) actor() rbac.Actor {
 	if x.flow.RunAs == RunAsUser {
 		if x.starter != nil {
 			return *x.starter
 		}
-		return rbac.Actor{Name: "Flow " + x.flow.Name, Role: rbac.Public, Roles: []rbac.Role{rbac.Public}}
+		if x.unattended != nil {
+			return *x.unattended
+		}
+		return rbac.Actor{Name: "Flow " + x.flow.Name, Role: rbac.None, Roles: []rbac.Role{}}
 	}
 	return rbac.Actor{Name: "Flow " + x.flow.Name, Role: rbac.Admin, Builder: true}
 }
@@ -425,7 +459,12 @@ func (x *exec) execute() {
 	ctx, cancel := context.WithTimeout(x.e.base, runTimeout)
 	defer cancel()
 	x.ctx = context.WithValue(ctx, chainKey{}, x.chain)
-	err := x.list(x.flow.Steps, x.scope, 0, 0)
+	var err error
+	if x.refused != "" {
+		err = errors.New(x.refused)
+	} else {
+		err = x.list(x.flow.Steps, x.scope, 0, 0)
+	}
 	r := x.run
 	r.FinishedAt = x.e.now().UTC()
 	r.Status = Succeeded
@@ -1234,7 +1273,7 @@ func (x *exec) generatePDF(in *inputs) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	f, err := x.e.Files.Save(x.ctx, x.flow.AppID, t.ID, name, "application/pdf", bytes.NewReader(data))
+	f, err := x.e.Files.Save(x.ctx, x.flow.AppID, t.ID, x.actor().UserID, name, "application/pdf", bytes.NewReader(data))
 	if err != nil {
 		return nil, err
 	}

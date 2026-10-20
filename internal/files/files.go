@@ -38,6 +38,8 @@ func (e *InvalidError) Error() string { return e.Message }
 type File struct {
 	ID        string    `json:"id"`
 	TableID   string    `json:"-"`
+	// UploadedBy is the id of the user who uploaded the file, if signed in.
+	UploadedBy string    `json:"-"`
 	Name      string    `json:"name"`
 	Type      string    `json:"type"`
 	Size      int64     `json:"size"`
@@ -72,10 +74,17 @@ func (s *Service) db(ctx context.Context, appID string) (*store.DB, error) {
 		type TEXT NOT NULL,
 		size `+db.TypeInt()+` NOT NULL,
 		content `+db.TypeBlob()+` NOT NULL,
-		created_at TEXT NOT NULL
+		created_at TEXT NOT NULL,
+		uploaded_by TEXT NOT NULL DEFAULT ''
 	)`)
 	if err != nil {
 		return nil, err
+	}
+	// Apps made before uploads were tied to their uploader lack the column.
+	if _, err := db.Exec(ctx, `SELECT uploaded_by FROM `+db.Table(tableName)+` WHERE 1 = 0`); err != nil {
+		if _, err := db.Exec(ctx, `ALTER TABLE `+db.Table(tableName)+` ADD COLUMN uploaded_by TEXT NOT NULL DEFAULT ''`); err != nil {
+			return nil, err
+		}
 	}
 	s.ready.Store(appID, true)
 	return db, nil
@@ -85,7 +94,7 @@ func (s *Service) db(ctx context.Context, appID string) (*store.DB, error) {
 func (s *Service) Forget(appID string) { s.ready.Delete(appID) }
 
 // Save stores a file uploaded for a table of an app.
-func (s *Service) Save(ctx context.Context, appID, tableID, name, declaredType string, r io.Reader) (*File, error) {
+func (s *Service) Save(ctx context.Context, appID, tableID, uploadedBy, name, declaredType string, r io.Reader) (*File, error) {
 	data, err := io.ReadAll(io.LimitReader(r, MaxSize+1))
 	if err != nil {
 		return nil, err
@@ -96,14 +105,14 @@ func (s *Service) Save(ctx context.Context, appID, tableID, name, declaredType s
 	if len(data) == 0 {
 		return nil, &InvalidError{"the file is empty"}
 	}
-	f := &File{ID: ids.New("fil"), TableID: tableID, Name: cleanName(name), Size: int64(len(data)), CreatedAt: s.now().UTC().Truncate(time.Second)}
+	f := &File{ID: ids.New("fil"), TableID: tableID, UploadedBy: uploadedBy, Name: cleanName(name), Size: int64(len(data)), CreatedAt: s.now().UTC().Truncate(time.Second)}
 	f.Type = contentType(f.Name, declaredType, data)
 	db, err := s.db(ctx, appID)
 	if err != nil {
 		return nil, err
 	}
-	_, err = db.Exec(ctx, `INSERT INTO `+db.Table(tableName)+` (id, table_id, name, type, size, content, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		f.ID, f.TableID, f.Name, f.Type, f.Size, data, f.CreatedAt.Format(time.RFC3339))
+	_, err = db.Exec(ctx, `INSERT INTO `+db.Table(tableName)+` (id, table_id, name, type, size, content, created_at, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		f.ID, f.TableID, f.Name, f.Type, f.Size, data, f.CreatedAt.Format(time.RFC3339), f.UploadedBy)
 	if err != nil {
 		return nil, err
 	}
@@ -119,8 +128,8 @@ func (s *Service) Get(ctx context.Context, appID, id string) (*File, []byte, err
 	f := &File{ID: id}
 	var created string
 	var data []byte
-	err = db.QueryRow(ctx, `SELECT table_id, name, type, size, content, created_at FROM `+db.Table(tableName)+` WHERE id = ?`, id).
-		Scan(&f.TableID, &f.Name, &f.Type, &f.Size, &data, &created)
+	err = db.QueryRow(ctx, `SELECT table_id, name, type, size, content, created_at, uploaded_by FROM `+db.Table(tableName)+` WHERE id = ?`, id).
+		Scan(&f.TableID, &f.Name, &f.Type, &f.Size, &data, &created, &f.UploadedBy)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil, ErrNotFound
 	}

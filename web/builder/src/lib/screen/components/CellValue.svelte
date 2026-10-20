@@ -2,7 +2,7 @@
   import CheckIcon from '@lucide/svelte/icons/check'
   import PaperclipIcon from '@lucide/svelte/icons/paperclip'
   import { Badge } from '$lib/components/ui/badge'
-  import { display } from '../../format'
+  import { display, linkLabel } from '../../format'
   import type { Field } from '../../api'
 
   // CellValue shows one field's value the way its type reads best.
@@ -27,7 +27,7 @@
     {/each}
   </span>
 {:else if field.type === 'link'}
-  <span class="inline-flex flex-wrap gap-1">{#each Array.isArray(value) ? value : [value] as v}<Badge variant="outline">{v.label}</Badge>{/each}</span>
+  <span class="inline-flex flex-wrap gap-1">{#each Array.isArray(value) ? value : [value] as v}<Badge variant="outline" class={v.hidden ? "text-muted-foreground italic" : ""}>{linkLabel(v)}</Badge>{/each}</span>
 {:else}
   {display(field, value)}
 {/if}

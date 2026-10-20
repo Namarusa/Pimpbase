@@ -22,6 +22,9 @@ import (
 type LinkRef struct {
 	ID    int64  `json:"_id"`
 	Label string `json:"label"`
+	// Hidden marks a linked row the reader may not see under the linked
+	// table's permissions; its label is left blank.
+	Hidden bool `json:"hidden,omitempty"`
 }
 
 // Row is a row with every stored and linked value loaded. Values are keyed
@@ -476,6 +479,93 @@ func (s *Service) label(c *compiled, r *Row) string {
 	return "#" + strconv.FormatInt(r.ID, 10)
 }
 
+// maskLinks blanks the labels of linked rows that the actor may not read:
+// all of them when the actor lacks read access to the linked table,
+// otherwise those outside the actor's row rule there. Rows are hydrated
+// without an actor so that formulas and row rules see every label; this
+// runs last, just before rows are shown.
+func (s *Service) maskLinks(ctx context.Context, ex store.Execer, db *store.DB, c *compiled, rows []*Row, actor rbac.Actor) error {
+	if len(rows) == 0 || actor.Builder || actor.Role == rbac.Admin {
+		return nil
+	}
+	for _, f := range c.Fields {
+		if f.Type != TypeLink {
+			continue
+		}
+		need := map[int64]bool{}
+		for _, r := range rows {
+			switch v := r.Values[f.ID].(type) {
+			case LinkRef:
+				need[v.ID] = true
+			case []LinkRef:
+				for _, l := range v {
+					need[l.ID] = true
+				}
+			}
+		}
+		if len(need) == 0 {
+			continue
+		}
+		target := c
+		if f.LinkTable != c.ID {
+			var err error
+			if target, err = s.loadCompiled(ctx, c.AppID, f.LinkTable); err != nil {
+				return err
+			}
+		}
+		var hidden func(id int64) bool
+		if !actor.Has(target.Permissions.Read) {
+			hidden = func(int64) bool { return true }
+		} else {
+			rule, err := target.rule(actor)
+			if err != nil {
+				return err
+			}
+			if rule == nil {
+				continue
+			}
+			open := map[int64]bool{}
+			var ids []int64
+			for id := range need {
+				ids = append(ids, id)
+			}
+			for _, chunk := range chunks(ids, 500) {
+				linked, err := selectRows(ctx, ex, db, target, "_id IN "+inList(len(chunk)), toArgs(chunk), "")
+				if err != nil {
+					return err
+				}
+				if err := s.hydrate(ctx, ex, db, target, linked, 0); err != nil {
+					return err
+				}
+				for _, lr := range linked {
+					if s.allowed(target, rule, actor, lr) {
+						open[lr.ID] = true
+					}
+				}
+			}
+			hidden = func(id int64) bool { return !open[id] }
+		}
+		for _, r := range rows {
+			switch v := r.Values[f.ID].(type) {
+			case LinkRef:
+				if hidden(v.ID) {
+					r.Values[f.ID] = LinkRef{ID: v.ID, Hidden: true}
+				}
+			case []LinkRef:
+				out := make([]LinkRef, len(v))
+				for i, l := range v {
+					if hidden(l.ID) {
+						l = LinkRef{ID: l.ID, Hidden: true}
+					}
+					out[i] = l
+				}
+				r.Values[f.ID] = out
+			}
+		}
+	}
+	return nil
+}
+
 // rowEnv evaluates formulas over one row.
 type rowEnv struct {
 	c     *compiled
@@ -894,6 +984,9 @@ func (s *Service) ListRows(ctx context.Context, actor rbac.Actor, appID, tableID
 		if err := s.hydrate(ctx, db, db, c, rows, 0); err != nil {
 			return nil, err
 		}
+		if err := s.maskLinks(ctx, db, db, c, rows, actor); err != nil {
+			return nil, err
+		}
 		page := &Page{Rows: []map[string]any{}, Total: total, Engine: "sql"}
 		for _, r := range rows {
 			page.Rows = append(page.Rows, s.rowJSON(c, r, actor))
@@ -961,6 +1054,13 @@ func (s *Service) ListRows(ctx context.Context, actor rbac.Actor, appID, tableID
 		return c < 0
 	})
 	page := &Page{Rows: []map[string]any{}, Total: len(kept), Engine: "go"}
+	var shown []*Row
+	for i := q.Offset; i < len(kept) && i < q.Offset+q.Limit; i++ {
+		shown = append(shown, kept[i].r)
+	}
+	if err := s.maskLinks(ctx, db, db, c, shown, actor); err != nil {
+		return nil, err
+	}
 	for i := q.Offset; i < len(kept) && i < q.Offset+q.Limit; i++ {
 		page.Rows = append(page.Rows, s.rowJSON(c, kept[i].r, actor))
 	}
@@ -1028,7 +1128,22 @@ func (s *Service) GetRow(ctx context.Context, actor rbac.Actor, appID, tableID s
 	if err != nil {
 		return nil, err
 	}
-	return s.rowJSON(c, r, actor), nil
+	return s.shownJSON(ctx, db, db, c, r, actor)
+}
+
+// shownJSON is a row as the actor may see it: rowJSON with the labels of
+// linked rows they may not read blanked. Row events keep the full row,
+// for flows that run with the flow's own access.
+func (s *Service) shownJSON(ctx context.Context, ex store.Execer, db *store.DB, c *compiled, r *Row, actor rbac.Actor) (map[string]any, error) {
+	cp := *r
+	cp.Values = make(map[string]any, len(r.Values))
+	for k, v := range r.Values {
+		cp.Values[k] = v
+	}
+	if err := s.maskLinks(ctx, ex, db, c, []*Row{&cp}, actor); err != nil {
+		return nil, err
+	}
+	return s.rowJSON(c, &cp, actor), nil
 }
 
 func (s *Service) getRow(ctx context.Context, ex store.Execer, db *store.DB, c *compiled, actor rbac.Actor, id int64) (map[string]any, error) {
@@ -1186,11 +1301,15 @@ func (s *Service) CreateRow(ctx context.Context, actor rbac.Actor, appID, tableI
 		return nil, errOutsideRule(c)
 	}
 	row := s.rowJSON(c, r, actor)
+	shown, err := s.shownJSON(ctx, tx, db, c, r, actor)
+	if err != nil {
+		return nil, err
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 	s.emit(ctx, RowEvent{AppID: appID, TableID: c.ID, Kind: "created", Row: row, Actor: actor})
-	return row, nil
+	return shown, nil
 }
 
 // emit tells OnRow about a change.
@@ -1295,11 +1414,15 @@ func (s *Service) UpdateRow(ctx context.Context, actor rbac.Actor, appID, tableI
 		return nil, errOutsideRule(c)
 	}
 	row := s.rowJSON(c, r, actor)
+	shown, err := s.shownJSON(ctx, tx, db, c, r, actor)
+	if err != nil {
+		return nil, err
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 	s.emit(ctx, RowEvent{AppID: appID, TableID: c.ID, Kind: "updated", Row: row, Old: old, Actor: actor})
-	return row, nil
+	return shown, nil
 }
 
 // DeleteRows deletes rows and every link that points at them.

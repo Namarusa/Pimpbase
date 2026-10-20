@@ -1,9 +1,15 @@
 package tables
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"slices"
 	"strings"
+
+	"github.com/bubibase/bubibase/internal/rbac"
+	"github.com/bubibase/bubibase/internal/store"
 )
 
 // FileRef is one file held by an attachment field. The content lives in the
@@ -84,4 +90,77 @@ func filesJSON(appID string, files []FileRef) []map[string]any {
 		out[i] = map[string]any{"id": f.ID, "name": f.Name, "type": f.Type, "size": f.Size, "url": FileURL(appID, f.ID)}
 	}
 	return out
+}
+
+var fileIDRe = regexp.MustCompile(`^fil_[a-z2-7]{1,60}$`)
+
+// FileAccess says whether an actor may download a file uploaded for a
+// table. Readable needs read access to the table and, when a row rule
+// applies to the actor, a row they may see that holds the file. Held
+// reports whether any row holds the file at all, so that a file just
+// uploaded and not yet saved to a row can be shown to its uploader.
+type FileAccess struct {
+	Readable bool
+	Held     bool
+}
+
+// FileAccess checks a download of a file of a table.
+func (s *Service) FileAccess(ctx context.Context, actor rbac.Actor, appID, tableID, fileID string) (FileAccess, error) {
+	var out FileAccess
+	c, err := s.loadCompiled(ctx, appID, tableID)
+	if err != nil {
+		return out, err
+	}
+	if err := actor.Require(c.Permissions.Read, "reading "+c.Name); err != nil {
+		return out, err
+	}
+	rule, err := c.rule(actor)
+	if err != nil {
+		return out, err
+	}
+	if rule == nil {
+		return FileAccess{Readable: true, Held: true}, nil
+	}
+	var conds []string
+	var args []any
+	var fields []*Field
+	for _, f := range c.Fields {
+		if f.Type == TypeAttachment {
+			conds = append(conds, store.Q(f.Column)+" LIKE ?")
+			args = append(args, `%"`+fileID+`"%`)
+			fields = append(fields, f)
+		}
+	}
+	if len(conds) == 0 || strings.ContainsAny(fileID, `%_"\`) && !strings.HasPrefix(fileID, "fil_") {
+		return out, nil
+	}
+	db, err := s.store.AppDB(ctx, appID)
+	if err != nil {
+		return out, err
+	}
+	rows, err := selectRows(ctx, db, db, c, strings.Join(conds, " OR "), args, "ORDER BY _id LIMIT 200")
+	if err != nil {
+		return out, err
+	}
+	if err := s.hydrate(ctx, db, db, c, rows, 0); err != nil {
+		return out, err
+	}
+	for _, r := range rows {
+		holds := false
+		for _, f := range fields {
+			list, _ := r.Values[f.ID].([]FileRef)
+			if slices.ContainsFunc(list, func(x FileRef) bool { return x.ID == fileID }) {
+				holds = true
+			}
+		}
+		if !holds {
+			continue
+		}
+		out.Held = true
+		if s.allowed(c, rule, actor, r) {
+			out.Readable = true
+			return out, nil
+		}
+	}
+	return out, nil
 }

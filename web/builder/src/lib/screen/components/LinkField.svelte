@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { linkLabel } from '../../format'
   import * as Popover from '$lib/components/ui/popover'
   import * as Command from '$lib/components/ui/command'
   import { Button } from '$lib/components/ui/button'
@@ -55,7 +56,7 @@
           <Button {...props} variant="outline" role="combobox" aria-invalid={!!f.error} class="h-auto min-h-9 w-full justify-between font-normal">
             <span class="flex flex-wrap gap-1">
               {#each chosen as c (c._id)}
-                {#if many}<Badge variant="secondary">{c.label}</Badge>{:else}{c.label}{/if}
+                {#if many}<Badge variant="secondary">{linkLabel(c)}</Badge>{:else}{linkLabel(c)}{/if}
               {:else}<span class="text-muted-foreground">{p.placeholder || `Choose from ${target.name}`}</span>{/each}
             </span>
             <ChevronsUpDownIcon class="opacity-50" />
@@ -79,7 +80,7 @@
     {#if many && chosen.length}
       <div class="flex flex-wrap gap-1">
         {#each chosen as c (c._id)}
-          <Badge variant="outline" class="gap-1 pr-1">{c.label}<button type="button" class="hover:text-destructive" onclick={() => toggle(c)} aria-label={`Remove ${c.label}`}><XIcon class="size-3" /></button></Badge>
+          <Badge variant="outline" class="gap-1 pr-1">{linkLabel(c)}<button type="button" class="hover:text-destructive" onclick={() => toggle(c)} aria-label={`Remove ${linkLabel(c)}`}><XIcon class="size-3" /></button></Badge>
         {/each}
       </div>
     {/if}

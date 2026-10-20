@@ -1,7 +1,7 @@
 // {{ bindings }} read values from the scope: {{ row.Name }}, {{ url.id }},
 // {{ user.name }}, {{ data.total }}, {{ state.search }}, {{ form.Email }}.
 // A pipe formats the value: {{ row.Price | currency }}.
-import { formatDate } from '../format'
+import { formatDate, linkLabel } from '../format'
 import type { Scope } from './types'
 
 const re = /\{\{\s*([^}]*?)\s*\}\}/g
@@ -29,7 +29,7 @@ export function toText(v: any): string {
   if (typeof v === 'number') return v.toLocaleString(undefined, { maximumFractionDigits: 10 })
   if (typeof v === 'string') return isoDate.test(v) ? formatDate(v) : v
   if (Array.isArray(v)) return v.map(toText).join(', ')
-  if (typeof v === 'object' && 'label' in v) return String(v.label)
+  if (typeof v === 'object' && 'label' in v) return linkLabel(v)
   return JSON.stringify(v)
 }
 

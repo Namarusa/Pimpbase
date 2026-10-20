@@ -13,8 +13,8 @@ export function display(f: Field, v: any): string {
     case 'boolean':
       return v ? 'Yes' : 'No'
   }
-  if (Array.isArray(v)) return v.map((x) => (typeof x === 'object' ? ((x as LinkRef).label ?? x.name) : String(x))).join(', ')
-  if (typeof v === 'object' && 'label' in v) return (v as LinkRef).label
+  if (Array.isArray(v)) return v.map((x) => (typeof x === 'object' ? ('label' in x ? linkLabel(x) : x.name) : String(x))).join(', ')
+  if (typeof v === 'object' && 'label' in v) return linkLabel(v as LinkRef)
   return String(v)
 }
 
@@ -57,4 +57,9 @@ export function timeAgo(iso: string, now = Date.now()): string {
   if (s < 86400) return rtf.format(-Math.round(s / 3600), 'hour')
   if (s < 86400 * 30) return rtf.format(-Math.round(s / 86400), 'day')
   return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+}
+
+// linkLabel names a linked row; rows the reader may not see stay unnamed.
+export function linkLabel(l: LinkRef): string {
+  return l.hidden ? 'Hidden row' : l.label
 }
