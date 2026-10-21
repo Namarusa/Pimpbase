@@ -12,7 +12,7 @@ installing. Everything on this page past "Big tables" is opt-in.
 | A container | `docker compose up -d` (the same binary, on SQLite) |
 | Several servers behind a load balancer | Postgres + shared file storage: `deploy/compose.cluster.yml` |
 
-The release binary is 34 MB stripped (48 MB with debug symbols), statically
+The release binary is 40 MB stripped (57 MB with debug symbols; the external database drivers add 6 MB), statically
 linked, with no cgo. It starts with an empty environment.
 
 ## Big tables
