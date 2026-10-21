@@ -14,8 +14,9 @@
   import ServerIcon from '@lucide/svelte/icons/server'
   import PlugZapIcon from '@lucide/svelte/icons/plug-zap'
   import CheckIcon from '@lucide/svelte/icons/check'
+  import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw'
   import { toast } from 'svelte-sonner'
-  import { ai, type AIStatus, type AIProviderStatus, type AIUpdate, type AICheck } from '../api'
+  import { ai, type AIStatus, type AIProviderStatus, type AIUpdate, type AICheck, type AIModel } from '../api'
 
   let status = $state<AIStatus | null>(null)
   let selected = $state('')
@@ -26,10 +27,11 @@
   let saving = $state(false)
   let testing = $state(false)
   let check = $state<{ ok: true; c: AICheck } | { ok: false; error: string } | null>(null)
-  const modelNames: Record<string, string> = {
-    'claude-opus-5-5': 'Claude Opus 5.5 (recommended)', 'claude-sonnet-5-5': 'Claude Sonnet 5.5 (faster)',
-    'claude-haiku-5-5': 'Claude Haiku 5.5 (fastest, lowest cost)', 'claude-fable-5-1': 'Claude Fable 5.1 (most capable)',
-  }
+  // The provider's own model list, fetched with the settings on the page.
+  let models = $state<AIModel[] | null>(null)
+  let modelsError = $state('')
+  let listing = $state(false)
+  let manual = $state(false)
 
   const p = $derived(status?.providers.find((x) => x.id === selected) ?? null)
   const inUse = $derived(status?.provider === selected)
@@ -40,7 +42,36 @@
     model = x && x.modelSource === 'workspace' ? x.model : ''
     apiVersion = x && x.apiVersionSource === 'workspace' ? x.apiVersion : ''
   }
-  function choose(id: string) { selected = id; check = null; fill(status?.providers.find((x) => x.id === id) ?? null) }
+  function choose(id: string) {
+    selected = id; check = null; models = null; modelsError = ''; manual = false
+    const x = status?.providers.find((x) => x.id === id) ?? null
+    fill(x)
+    if (x && x.canList && (x.keySource || !x.needsKey) && x.baseUrl) loadModels()
+  }
+
+  // loadModels asks the provider for its models, using a key or address
+  // typed but not saved yet. When that fails the name can be typed.
+  async function loadModels() {
+    const id = selected
+    listing = true; modelsError = ''
+    try {
+      const l = await ai.models({ provider: id, apiKey: key.trim() || undefined, baseUrl: baseUrl.trim() || undefined, apiVersion: apiVersion.trim() || undefined })
+      if (id !== selected) return
+      models = l.models
+      manual = l.models.length === 0
+      if (!l.models.length) modelsError = `${p?.name} listed no models that can use tools; type the name instead.`
+    } catch (e: any) {
+      if (id !== selected) return
+      models = null; manual = true; modelsError = e.message
+    } finally { if (id === selected) listing = false }
+  }
+  const current = $derived(model || p?.model || '')
+  const options = $derived.by(() => {
+    const list = [...(models ?? [])]
+    if (current && !list.some((m) => m.id === current)) list.unshift({ id: current, note: 'current' })
+    return list
+  })
+  const label = (m: AIModel) => m.name || m.id
 
   async function load() {
     try { status = await ai.status(); choose(status.provider) } catch (e: any) { toast.error(e.message) }
@@ -53,6 +84,7 @@
       status = await ai.update({ provider: selected, ...u })
       fill(p); check = null
       toast.success(done)
+      if (u.apiKey || u.baseUrl !== undefined || u.apiVersion !== undefined) { if (p?.canList && (p.keySource || !p.needsKey) && p.baseUrl) loadModels() }
     } catch (e: any) { toast.error(e.message) } finally { saving = false }
   }
 
@@ -62,7 +94,7 @@
     const u: AIUpdate = {}
     const was = (src: string, v: string) => (src === 'workspace' ? v : '')
     if (p.baseUrlSource !== 'server' && baseUrl.trim() !== was(p.baseUrlSource, p.baseUrl)) u.baseUrl = baseUrl.trim()
-    if (p.modelSource !== 'server' && !p.fixedModels && model.trim() !== was(p.modelSource, p.model)) u.model = model.trim()
+    if (p.modelSource !== 'server' && model.trim() !== was(p.modelSource, p.model)) u.model = model.trim()
     if (p.hasApiVersion && p.apiVersionSource !== 'server' && apiVersion.trim() !== was(p.apiVersionSource, p.apiVersion)) u.apiVersion = apiVersion.trim()
     return Object.keys(u).length ? u : null
   })
@@ -126,7 +158,7 @@
                   <Input id="ai-key" type="password" autocomplete="off" bind:value={key} placeholder={p.keySource ? 'Paste a new key to replace it' : (p.keyPrefix ? p.keyPrefix + '…' : 'Paste the key')} />
                   <Button disabled={saving || !key.trim()} onclick={() => save({ apiKey: key }, 'Key saved')}>Save</Button>
                 </div>
-                <p class="text-muted-foreground text-xs">{p.keyHelp}{#if p.needsKey} Usage is billed to that key's account.{/if}</p>
+                <p class="text-muted-foreground text-xs">{p.keyHelp}{p.needsKey ? " Usage is billed to that key's account." : ''}</p>
                 {#if p.keySource === 'workspace'}<Button variant="outline" size="sm" class="self-start" disabled={saving} onclick={() => save({ apiKey: '' }, 'Key removed')}>Remove the key</Button>{/if}
               {/if}
             </div>
@@ -142,21 +174,43 @@
                 {/if}
               </div>
 
-              <div class="flex flex-col gap-1.5">
-                <Label for="ai-model">{p.modelLabel}</Label>
+              <div class="flex flex-col gap-1.5 {p.hasApiVersion ? '' : 'sm:col-span-2'}">
+                <div class="flex items-center gap-2">
+                  <Label for="ai-model">{p.modelLabel}</Label>
+                  {#if p.modelSource !== 'server' && p.canList}
+                    <Button variant="ghost" size="sm" class="text-muted-foreground ml-auto h-6 px-2 text-xs" disabled={listing} onclick={loadModels} data-testid="load-models">
+                      {#if listing}<Spinner class="size-3" />{:else}<RefreshCwIcon class="size-3" />{/if}{models ? 'Refresh list' : `Load ${p.id === 'azure' ? 'deployments' : 'models'}`}
+                    </Button>
+                  {/if}
+                </div>
                 {#if p.modelSource === 'server'}
                   <p class="text-sm"><code class="font-mono text-xs">{p.model}</code> <span class="text-muted-foreground text-xs">{fromServer}</span></p>
-                {:else if p.fixedModels}
-                  <Select.Root type="single" value={p.model} onValueChange={(v) => save({ model: v }, 'Model changed')}>
-                    <Select.Trigger id="ai-model" class="w-full">{modelNames[p.model] ?? p.model}</Select.Trigger>
-                    <Select.Content>{#each p.models as m (m)}<Select.Item value={m} label={modelNames[m] ?? m}>{modelNames[m] ?? m}</Select.Item>{/each}</Select.Content>
+                {:else if models && models.length && !manual}
+                  <Select.Root type="single" value={current} onValueChange={(v) => { if (v === '__other__') { manual = true; model = '' } else model = v }}>
+                    <Select.Trigger id="ai-model" class="w-full" data-testid="model-select">
+                      {#if current}{@const m = options.find((o) => o.id === current)}<span class="truncate">{m ? label(m) : current}</span>{#if m?.name}<span class="text-muted-foreground ml-1 truncate font-mono text-xs">{m.id}</span>{/if}{:else}<span class="text-muted-foreground">Pick a {p.modelLabel.toLowerCase()}</span>{/if}
+                    </Select.Trigger>
+                    <Select.Content class="max-h-80">
+                      {#each options as m (m.id)}
+                        <Select.Item value={m.id} label={label(m)}>
+                          <span class="truncate">{label(m)}</span>
+                          {#if m.name}<span class="text-muted-foreground truncate font-mono text-xs">{m.id}</span>{/if}
+                          {#if m.note}<span class="text-muted-foreground text-xs">· {m.note}</span>{/if}
+                        </Select.Item>
+                      {/each}
+                      <Select.Separator />
+                      <Select.Item value={'__other__'} label="Type another name">Type another name…</Select.Item>
+                    </Select.Content>
                   </Select.Root>
+                  <p class="text-muted-foreground text-xs">{models.length} {p.id === 'azure' ? 'deployments' : 'models'} from {p.name}{p.id === 'azure' ? '' : ' that can use tools'}.</p>
                 {:else}
                   <Input id="ai-model" bind:value={model} autocomplete="off" list="ai-models" class="font-mono"
-                    placeholder={p.defaultModel || (p.id === 'azure' ? 'the deployment name' : 'e.g. llama3.3, qwen3:8b')} />
-                  <datalist id="ai-models">{#each p.models as m (m)}<option value={m}></option>{/each}</datalist>
-                  {#if p.defaultModel}<p class="text-muted-foreground text-xs">Leave empty for {p.defaultModel}, or type any model the account offers.</p>{/if}
+                    placeholder={p.defaultModel || (p.id === 'azure' ? 'the deployment name' : 'the model name')} />
+                  <datalist id="ai-models">{#each models ?? p.models.map((id) => ({ id })) as m (m.id)}<option value={m.id}></option>{/each}</datalist>
+                  {#if models && models.length}<button type="button" class="text-muted-foreground self-start text-xs underline" onclick={() => (manual = false)}>Pick from the list instead</button>{/if}
                 {/if}
+                {#if modelsError}<p class="text-destructive text-xs" data-testid="models-error">Could not load the list: {modelsError}</p>
+                {:else if !models && p.modelSource !== 'server' && p.canList && !listing}<p class="text-muted-foreground text-xs">{p.needsKey && !p.keySource ? 'Add the key, then load the list from ' + p.name + '.' : 'Load the list from ' + p.name + ', or type the name.'}</p>{/if}
               </div>
 
               {#if p.hasApiVersion}
@@ -173,9 +227,7 @@
             </div>
 
             <div class="flex flex-wrap items-center gap-2">
-              {#if !p.fixedModels || p.hasApiVersion || p.baseUrlSource !== 'server'}
-                <Button variant="secondary" size="sm" disabled={saving || !changes} onclick={() => changes && save(changes, 'Settings saved')}>Save settings</Button>
-              {/if}
+              <Button variant="secondary" size="sm" disabled={saving || !changes} onclick={() => changes && save(changes, 'Settings saved')}>Save settings</Button>
               <Button variant="outline" size="sm" disabled={testing || !p.configured || !!changes} onclick={test}>
                 {#if testing}<Spinner />{:else}<PlugZapIcon />{/if}Test connection
               </Button>

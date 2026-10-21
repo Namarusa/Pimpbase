@@ -197,7 +197,7 @@ func TestAIProviders(t *testing.T) {
 					t.Errorf("azure v1 request = %s %v", r.path, r.body["model"])
 				}
 			}},
-			{"mistral", map[string]any{"apiKey": "mistral-abcdefghijkl", "baseUrl": llm.URL + "/v1"}, openaiWire, func(t *testing.T, r seenRequest) {
+			{"mistral", map[string]any{"apiKey": "mistral-abcdefghijkl", "baseUrl": llm.URL + "/v1", "model": "mistral-large-latest"}, openaiWire, func(t *testing.T, r seenRequest) {
 				if r.path != "/v1/chat/completions" || r.body["model"] != "mistral-large-latest" || r.body["max_tokens"] == nil || r.header.Get("Authorization") != "Bearer mistral-abcdefghijkl" {
 					t.Errorf("mistral request = %s %v", r.path, r.body)
 				}
@@ -207,7 +207,7 @@ func TestAIProviders(t *testing.T) {
 					t.Errorf("compatible request = %s %v %v", r.path, r.header, r.body)
 				}
 			}},
-			{"gemini", map[string]any{"apiKey": "AIzaSyabcdefghijklmnopGEMI", "baseUrl": llm.URL + "/v1beta"}, geminiWire, func(t *testing.T, r seenRequest) {
+			{"gemini", map[string]any{"apiKey": "AIzaSyabcdefghijklmnopGEMI", "baseUrl": llm.URL + "/v1beta", "model": "gemini-3.1-pro-preview"}, geminiWire, func(t *testing.T, r seenRequest) {
 				if r.path != "/v1beta/models/gemini-3.1-pro-preview:generateContent" || r.header.Get("X-Goog-Api-Key") != "AIzaSyabcdefghijklmnopGEMI" {
 					t.Errorf("gemini request = %s %v", r.path, r.header)
 				}

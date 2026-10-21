@@ -69,6 +69,22 @@ func (s *Server) aiTest(w http.ResponseWriter, r *http.Request) error {
 	return writeJSON(w, 200, c)
 }
 
+// aiModels lists a provider's models, with settings typed but not saved.
+func (s *Server) aiModels(w http.ResponseWriter, r *http.Request) error {
+	if _, err := s.requireAdmin(r); err != nil {
+		return err
+	}
+	var in ai.Update
+	if err := readJSON(r, &in); err != nil {
+		return err
+	}
+	list, err := s.AI.ListModels(r.Context(), in.Provider, in)
+	if err != nil {
+		return err
+	}
+	return writeJSON(w, 200, list)
+}
+
 // aiApp describes an app to the model: its structure, never its data or
 // the values of its variables.
 func (s *Server) aiApp(ctx context.Context, a *apps.App) (map[string]any, error) {

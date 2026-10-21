@@ -28,9 +28,11 @@ type Provider struct {
 	NeedsBaseURL   bool   `json:"needsBaseUrl"`
 	DefaultBaseURL string `json:"defaultBaseUrl"`
 	DefaultModel   string `json:"defaultModel"`
-	// Models are suggestions; with FixedModels only these may be picked.
-	Models      []string `json:"models"`
-	FixedModels bool     `json:"fixedModels"`
+	// Models are known models, offered when the provider's list cannot be
+	// fetched. The list is fetched from the provider (see ListModels).
+	Models []string `json:"models"`
+	// CanList is false where the provider may not list its models.
+	CanList bool `json:"canList"`
 	// ModelLabel names the model setting, e.g. "Deployment" for Azure.
 	ModelLabel string `json:"modelLabel"`
 	// HasAPIVersion is true for Azure, whose requests carry one.
@@ -45,17 +47,17 @@ const DefaultModel = "claude-opus-5-5"
 // DefaultAzureAPIVersion is the Azure OpenAI API version used unless one is set.
 const DefaultAzureAPIVersion = "2024-10-21"
 
-// Models are the Anthropic models an admin can pick from.
+// Models are the Anthropic models offered when its list cannot be fetched.
 var Models = []string{"claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5-1"}
 
 // Providers lists the vendors, in the order the builder shows them.
 var Providers = []Provider{
-	{ID: Anthropic, Name: "Anthropic", NeedsKey: true, DefaultBaseURL: "https://api.anthropic.com", DefaultModel: DefaultModel, Models: Models, FixedModels: true, ModelLabel: "Model", KeyPrefix: "sk-ant-", KeyHelp: "Create one at console.anthropic.com."},
-	{ID: OpenAI, Name: "OpenAI", NeedsKey: true, DefaultBaseURL: "https://api.openai.com/v1", DefaultModel: "gpt-5.5", Models: []string{"gpt-5.5", "gpt-5.4-mini"}, ModelLabel: "Model", KeyPrefix: "sk-", KeyHelp: "Create one at platform.openai.com."},
-	{ID: Gemini, Name: "Google Gemini", NeedsKey: true, DefaultBaseURL: "https://generativelanguage.googleapis.com/v1beta", DefaultModel: "gemini-3.1-pro-preview", Models: []string{"gemini-3.1-pro-preview", "gemini-3.6-flash"}, ModelLabel: "Model", KeyHelp: "Create one in Google AI Studio (aistudio.google.com)."},
-	{ID: Azure, Name: "Azure OpenAI", NeedsKey: true, NeedsBaseURL: true, ModelLabel: "Deployment", HasAPIVersion: true, KeyHelp: "Find the key and endpoint under the resource's Keys and Endpoint page in the Azure portal."},
-	{ID: Mistral, Name: "Mistral", NeedsKey: true, DefaultBaseURL: "https://api.mistral.ai/v1", DefaultModel: "mistral-large-latest", Models: []string{"mistral-large-latest", "mistral-medium-latest", "mistral-small-latest"}, ModelLabel: "Model", KeyHelp: "Create one at console.mistral.ai."},
-	{ID: Compatible, Name: "OpenAI-compatible", NeedsBaseURL: true, ModelLabel: "Model", KeyHelp: "Any server speaking the OpenAI chat completions API: Ollama (http://localhost:11434/v1), LM Studio (http://localhost:1234/v1), OpenRouter, Groq, Together, vLLM… Leave the key empty when the server needs none."},
+	{ID: Anthropic, Name: "Anthropic", NeedsKey: true, DefaultBaseURL: "https://api.anthropic.com", DefaultModel: DefaultModel, Models: Models, CanList: true, ModelLabel: "Model", KeyPrefix: "sk-ant-", KeyHelp: "Create one at console.anthropic.com."},
+	{ID: OpenAI, Name: "OpenAI", NeedsKey: true, DefaultBaseURL: "https://api.openai.com/v1", CanList: true, ModelLabel: "Model", KeyPrefix: "sk-", KeyHelp: "Create one at platform.openai.com."},
+	{ID: Gemini, Name: "Google Gemini", NeedsKey: true, DefaultBaseURL: "https://generativelanguage.googleapis.com/v1beta", CanList: true, ModelLabel: "Model", KeyHelp: "Create one in Google AI Studio (aistudio.google.com)."},
+	{ID: Azure, Name: "Azure OpenAI", NeedsKey: true, NeedsBaseURL: true, CanList: true, ModelLabel: "Deployment", HasAPIVersion: true, KeyHelp: "Find the key and endpoint under the resource's Keys and Endpoint page in the Azure portal."},
+	{ID: Mistral, Name: "Mistral", NeedsKey: true, DefaultBaseURL: "https://api.mistral.ai/v1", CanList: true, ModelLabel: "Model", KeyHelp: "Create one at console.mistral.ai."},
+	{ID: Compatible, Name: "OpenAI-compatible", NeedsBaseURL: true, CanList: true, ModelLabel: "Model", KeyHelp: "Any server speaking the OpenAI chat completions API: Ollama (http://localhost:11434/v1), LM Studio (http://localhost:1234/v1), OpenRouter, Groq, Together, vLLM… Leave the key empty when the server needs none."},
 }
 
 func provider(id string) (Provider, bool) {
@@ -278,8 +280,8 @@ func (s *Service) Update(ctx context.Context, u Update) error {
 			if strings.ContainsAny(m, " \t\r\n") || len(m) > 200 {
 				return &Error{"a model name has no spaces"}
 			}
-			if p.FixedModels && !contains(p.Models, m) {
-				return &Error{fmt.Sprintf("the model %q is not one the assistant offers", m)}
+			if p.ID == Anthropic && !strings.HasPrefix(m, "claude-") {
+				return &Error{fmt.Sprintf("%q is not a Claude model", m)}
 			}
 		}
 		changes = append(changes, change{"model", m, srv.Model})
@@ -304,15 +306,6 @@ func (s *Service) Update(ctx context.Context, u Update) error {
 		return s.put(ctx, "ai.provider", id)
 	}
 	return nil
-}
-
-func contains(list []string, s string) bool {
-	for _, x := range list {
-		if x == s {
-			return true
-		}
-	}
-	return false
 }
 
 func checkKey(p Provider, k string) error {

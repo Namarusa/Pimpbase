@@ -256,6 +256,7 @@ func (s *Server) Handler() http.Handler {
 	h("GET /api/ai", s.aiStatus)
 	h("PATCH /api/ai", s.aiUpdate)
 	h("POST /api/ai/test", s.aiTest)
+	h("POST /api/ai/models", s.aiModels)
 	h("POST /api/apps/{app}/ai/draft", s.aiDraft)
 	h("POST /api/apps/{app}/ai/formula", s.aiFormula)
 	h("POST /api/apps/{app}/ai/ask", s.aiAsk)

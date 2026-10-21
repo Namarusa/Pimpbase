@@ -445,11 +445,11 @@ that calls a model from the AI provider a workspace admin picks:
 
 | Provider | Key | Address | Model |
 |---|---|---|---|
-| Anthropic | `--anthropic-key`, `ANTHROPIC_API_KEY` | optional | `claude-opus-5-5` (default), Sonnet, Haiku, Fable |
-| OpenAI | `--openai-key`, `OPENAI_API_KEY` | optional | any, `gpt-5.5` by default |
-| Google Gemini | `--gemini-key`, `GEMINI_API_KEY`, `GOOGLE_API_KEY` | optional | any, `gemini-3.1-pro-preview` by default |
+| Anthropic | `--anthropic-key`, `ANTHROPIC_API_KEY` | optional | `claude-opus-5-5` unless another is picked |
+| OpenAI | `--openai-key`, `OPENAI_API_KEY` | optional | picked from the list, or `--ai-model` |
+| Google Gemini | `--gemini-key`, `GEMINI_API_KEY`, `GOOGLE_API_KEY` | optional | picked from the list, or `--ai-model` |
 | Azure OpenAI | `--azure-openai-key`, `AZURE_OPENAI_API_KEY` | `--azure-openai-endpoint`, `AZURE_OPENAI_ENDPOINT` | the deployment: `--azure-openai-deployment` |
-| Mistral | `--mistral-key`, `MISTRAL_API_KEY` | optional | any, `mistral-large-latest` by default |
+| Mistral | `--mistral-key`, `MISTRAL_API_KEY` | optional | picked from the list, or `--ai-model` |
 | OpenAI-compatible | `--openai-compatible-key` (optional) | `--openai-compatible-url` | `--openai-compatible-model` |
 
 Every flag also reads `BUBIBASE_<FLAG>` (e.g. `BUBIBASE_OPENAI_KEY`).
@@ -467,8 +467,19 @@ the model.
 ```
 
 Admins set the same things in **Users → AI assistant**: pick a provider,
-paste its key, change its address or model, and **Test connection**, which
-sends one small request that must call a tool. Settings given to the server
+paste its key, change its address, pick a model, and **Test connection**,
+which sends one small request that must call a tool. The model list comes
+from the provider itself, read with the key and address on the page even
+before they are saved: Anthropic's and Gemini's model lists, the `/models`
+list of OpenAI, Mistral and OpenAI-compatible servers (for Ollama, the
+models you have pulled), and an Azure resource's deployments. Models that
+cannot use tools are left out where the provider says so (Mistral,
+OpenRouter, Gemini) or the name shows it (OpenAI embeddings, audio, images).
+When the list cannot be read, the page says why and the name can be typed
+instead; **Type another name…** does the same for a model not listed. Azure
+lists deployments only on resources that still offer that call; elsewhere
+type the deployment name from Azure AI Foundry. Only Anthropic has a model
+used by default; the others are not set up until a model is picked. Settings given to the server
 win and are shown as such; `--ai-provider` (`BUBIBASE_AI_PROVIDER`) fixes the
 provider and `--ai-model` (`BUBIBASE_AI_MODEL`) its model. Without either, the
 provider an admin picked is used, else the first one that is set up.

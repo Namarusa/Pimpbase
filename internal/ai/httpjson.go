@@ -21,6 +21,15 @@ func (s *Service) postJSON(ctx context.Context, url string, header http.Header, 
 	if err != nil {
 		return err
 	}
+	return s.doJSON(ctx, "POST", url, header, raw, out)
+}
+
+// getJSON reads url into out, with the same retries.
+func (s *Service) getJSON(ctx context.Context, url string, header http.Header, out any) error {
+	return s.doJSON(ctx, "GET", url, header, nil, out)
+}
+
+func (s *Service) doJSON(ctx context.Context, method, url string, header http.Header, raw []byte, out any) error {
 	client := s.HTTPClient
 	if client == nil {
 		client = defaultClient
@@ -38,14 +47,20 @@ func (s *Service) postJSON(ctx context.Context, url string, header http.Header, 
 			case <-time.After(wait):
 			}
 		}
-		req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(raw))
+		var body io.Reader
+		if raw != nil {
+			body = bytes.NewReader(raw)
+		}
+		req, err := http.NewRequestWithContext(ctx, method, url, body)
 		if err != nil {
 			return err
 		}
 		for k, v := range header {
 			req.Header[k] = v
 		}
-		req.Header.Set("Content-Type", "application/json")
+		if raw != nil {
+			req.Header.Set("Content-Type", "application/json")
+		}
 		res, err := client.Do(req)
 		if err != nil {
 			if ctx.Err() != nil {
