@@ -110,7 +110,7 @@ func (s *Service) MakeDraft(ctx context.Context, req DraftRequest) (*Draft, erro
 			return "", true, nil
 		},
 	}
-	res, err := s.converse(ctx, b.String(), user, []Tool{tool}, 32000)
+	res, err := s.converse(ctx, b.String(), user, []Tool{tool}, 32000, tool.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -194,7 +194,7 @@ func (s *Service) MakeFormula(ctx context.Context, req FormulaRequest) (*Formula
 			return "", true, nil
 		},
 	}
-	res, err := s.converse(ctx, system, user, []Tool{tool}, 8000)
+	res, err := s.converse(ctx, system, user, []Tool{tool}, 8000, tool.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -234,7 +234,7 @@ func (s *Service) Ask(ctx context.Context, req AskRequest) (*Answer, error) {
 	}
 	tables, _ := json.Marshal(req.Tables)
 	system := askGuide + "\n\nYou answer for " + req.Who + ". You see only what they may see.\n\n<tables>\n" + string(tables) + "\n</tables>"
-	res, err := s.converse(ctx, system, q, req.Tools, 8000)
+	res, err := s.converse(ctx, system, q, req.Tools, 8000, "")
 	if err != nil {
 		return nil, err
 	}

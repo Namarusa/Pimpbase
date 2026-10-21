@@ -339,14 +339,28 @@ export const api = {
 }
 
 // The AI assistant.
-export interface AIStatus { configured: boolean; source: '' | 'server' | 'workspace'; keyHint: string; model: string; models: string[] }
+export type AISource = '' | 'server' | 'workspace' | 'default'
+export interface AIProviderStatus {
+  id: string; name: string; needsKey: boolean; needsBaseUrl: boolean; defaultBaseUrl: string; defaultModel: string
+  models: string[]; fixedModels: boolean; modelLabel: string; hasApiVersion: boolean; keyPrefix: string; keyHelp: string
+  configured: boolean; missing?: string
+  keySource: AISource; keyHint: string; baseUrl: string; baseUrlSource: AISource
+  model: string; modelSource: AISource; apiVersion: string; apiVersionSource: AISource
+}
+export interface AIStatus {
+  configured: boolean; provider: string; providerSource: AISource
+  source: AISource; keyHint: string; model: string; models: string[]; providers: AIProviderStatus[]
+}
+export interface AIUpdate { provider?: string; apiKey?: string; baseUrl?: string; model?: string; apiVersion?: string; use?: boolean }
+export interface AICheck { provider: string; model: string; reply: string; ms: number }
 export type DraftKind = 'table' | 'screen' | 'query' | 'flow'
 export interface AIDraft { kind: DraftKind; summary: string; changes: string[]; notes: string; draft: any; target: string; current?: any }
 export interface AIFormula { formula: string; explanation: string; type: string }
 export interface AIAnswer { answer: string; calls: { tool: string; input: any; error?: string }[] }
 export const ai = {
   status: () => call<AIStatus>('GET', '/ai'),
-  update: (p: { apiKey?: string; model?: string }) => call<AIStatus>('PATCH', '/ai', p),
+  update: (p: AIUpdate) => call<AIStatus>('PATCH', '/ai', p),
+  test: (provider: string) => call<AICheck>('POST', '/ai/test', { provider }),
   draft: (app: string, kind: DraftKind, prompt: string, catalog: any, target?: string) =>
     call<AIDraft>('POST', `/apps/${enc(app)}/ai/draft`, { kind, prompt, catalog, target: target ?? '' }),
   formula: (app: string, table: string, prompt: string, purpose: 'field' | 'filter' | 'rule', current = '') =>

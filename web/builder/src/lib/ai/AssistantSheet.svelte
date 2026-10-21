@@ -116,6 +116,7 @@
     <Sheet.Header class="border-b">
       <Sheet.Title class="flex items-center gap-2"><SparklesIcon class="size-4 text-violet-500" />Assistant</Sheet.Title>
       <Sheet.Description>Describe what you need. Drafts are shown for review and change nothing until you apply them.</Sheet.Description>
+      {#if status?.configured}<p class="text-muted-foreground text-xs" data-testid="ai-using">Using {status.providers.find((p) => p.id === status?.provider)?.name ?? status.provider} · <span class="font-mono">{status.model}</span></p>{/if}
     </Sheet.Header>
     <div class="flex flex-col gap-4 p-4">
       {#if !status}

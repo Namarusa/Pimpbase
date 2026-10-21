@@ -22,8 +22,9 @@ import (
 	"github.com/bubibase/bubibase/internal/tables"
 )
 
-// The AI assistant. Every route needs a builder; the API key never leaves
-// the server, and published apps cannot reach these routes.
+// The AI assistant. Every route needs a builder, and its settings an
+// admin; API keys never leave the server, and published apps cannot reach
+// these routes.
 
 func (s *Server) aiStatus(w http.ResponseWriter, r *http.Request) error {
 	if _, err := s.requireBuilder(r); err != nil {
@@ -40,20 +41,32 @@ func (s *Server) aiUpdate(w http.ResponseWriter, r *http.Request) error {
 	if _, err := s.requireAdmin(r); err != nil {
 		return err
 	}
+	var in ai.Update
+	if err := readJSON(r, &in); err != nil {
+		return err
+	}
+	if err := s.AI.Update(r.Context(), in); err != nil {
+		return err
+	}
+	return s.aiStatus(w, r)
+}
+
+// aiTest checks a provider's settings with a tiny request.
+func (s *Server) aiTest(w http.ResponseWriter, r *http.Request) error {
+	if _, err := s.requireAdmin(r); err != nil {
+		return err
+	}
 	var in struct {
-		APIKey *string `json:"apiKey"`
-		Model  string  `json:"model"`
+		Provider string `json:"provider"`
 	}
 	if err := readJSON(r, &in); err != nil {
 		return err
 	}
-	if in.APIKey != nil && s.AI.EnvKey != "" {
-		return errStatus(400, "the server was started with an API key, which is used instead; change it there")
-	}
-	if err := s.AI.Update(r.Context(), in.APIKey, in.Model); err != nil {
+	c, err := s.AI.Test(r.Context(), in.Provider)
+	if err != nil {
 		return err
 	}
-	return s.aiStatus(w, r)
+	return writeJSON(w, 200, c)
 }
 
 // aiApp describes an app to the model: its structure, never its data or

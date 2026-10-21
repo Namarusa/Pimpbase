@@ -425,7 +425,7 @@ GET    /api/flows/schedule?cron=&timezone=         the next times a schedule fir
 ## AI assistant
 
 The builder has an assistant (the **Assistant** button next to an app's tabs)
-that calls the Anthropic API:
+that calls a model from the AI provider a workspace admin picks:
 
 - **Drafts**: describe a table, screen, API query or flow and get a draft.
   The server checks it the same way it checks the builder's own saves and
@@ -441,16 +441,53 @@ that calls the Anthropic API:
   reads use the access of whoever you pick: you, a member, or a role, so
   table permissions, row rules and hidden links apply.
 
-The API key belongs to the server. Start it with `--anthropic-key` (or
-`BUBIBASE_ANTHROPIC_KEY` or `ANTHROPIC_API_KEY`), or let a workspace admin
-save one in **Users → AI assistant**, where the model is chosen too
-(`claude-opus-5-5` by default). The key is never sent to the browser, only a
-hint such as `sk-ant-…a1b2`, and published apps cannot reach the assistant:
-every assistant endpoint needs a builder. Without a key, the assistant says
-so and points admins to the setting. What is sent to Anthropic is the app's
-structure (table and field names, screens, queries, flows, role names,
-variable names but never their values) and, for questions, the rows the
-tools read.
+### Providers
+
+| Provider | Key | Address | Model |
+|---|---|---|---|
+| Anthropic | `--anthropic-key`, `ANTHROPIC_API_KEY` | optional | `claude-opus-5-5` (default), Sonnet, Haiku, Fable |
+| OpenAI | `--openai-key`, `OPENAI_API_KEY` | optional | any, `gpt-5.5` by default |
+| Google Gemini | `--gemini-key`, `GEMINI_API_KEY`, `GOOGLE_API_KEY` | optional | any, `gemini-3.1-pro-preview` by default |
+| Azure OpenAI | `--azure-openai-key`, `AZURE_OPENAI_API_KEY` | `--azure-openai-endpoint`, `AZURE_OPENAI_ENDPOINT` | the deployment: `--azure-openai-deployment` |
+| Mistral | `--mistral-key`, `MISTRAL_API_KEY` | optional | any, `mistral-large-latest` by default |
+| OpenAI-compatible | `--openai-compatible-key` (optional) | `--openai-compatible-url` | `--openai-compatible-model` |
+
+Every flag also reads `BUBIBASE_<FLAG>` (e.g. `BUBIBASE_OPENAI_KEY`).
+**OpenAI-compatible** is any server speaking the chat completions API with
+tools: Ollama (`http://localhost:11434/v1`), LM Studio
+(`http://localhost:1234/v1`), OpenRouter, Groq, Together, vLLM and the like.
+With a local model nothing leaves your machines. Azure uses API version
+`2024-10-21` unless `--azure-openai-api-version` (or `OPENAI_API_VERSION`)
+says otherwise; `v1` selects Azure's v1 API, where the deployment is sent as
+the model.
+
+```sh
+./bubibase serve --ai-provider openai_compatible \
+  --openai-compatible-url http://localhost:11434/v1 --openai-compatible-model qwen3:8b
+```
+
+Admins set the same things in **Users → AI assistant**: pick a provider,
+paste its key, change its address or model, and **Test connection**, which
+sends one small request that must call a tool. Settings given to the server
+win and are shown as such; `--ai-provider` (`BUBIBASE_AI_PROVIDER`) fixes the
+provider and `--ai-model` (`BUBIBASE_AI_MODEL`) its model. Without either, the
+provider an admin picked is used, else the first one that is set up.
+
+The provider applies to drafts, formula help and questions alike. All of
+them work by tool calls (a draft or formula is proposed through a tool and
+checked by the server; questions read rows through tools), so the model must
+support tool or function calling. A model that answers in words where a
+tool call was expected is reminded once. Rate limits and overloads are
+retried twice.
+
+Keys belong to the server. They are never sent to the browser, only a hint
+such as `sk-ant-…a1b2`, and published apps cannot reach the assistant: every
+assistant endpoint needs a builder, and its settings an admin. Without a
+provider set up, the assistant says so and points admins to the setting.
+What is sent to the provider is the app's structure (table and field names,
+screens, queries, flows, role names, variable names but never their values)
+and, for questions, the rows the tools read, with the access of whoever the
+question is asked as.
 
 ## REST API
 
@@ -507,7 +544,7 @@ internal/queries/  API and database data sources, queries, variables and the que
 internal/extdb/    PostgreSQL, MySQL, SQL Server and MongoDB drivers, schema, rows, SQL parameters
 internal/exttables/ tables imported from external databases
 internal/flows/    flows, the engine, cron, email, PDF documents
-internal/ai/       the assistant: settings, Anthropic API calls, drafts, formulas, questions
+internal/ai/       the assistant: providers (Anthropic, OpenAI, Gemini, Azure, Mistral, OpenAI-compatible), drafts, formulas, questions
 internal/cluster/  servers sharing a database: heartbeats and job claims
 internal/bundle/   .bubiapp export and import
 internal/backup/   SQLite backups while serving

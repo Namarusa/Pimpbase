@@ -9,6 +9,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/bubibase/bubibase/internal/ai"
 	"github.com/bubibase/bubibase/internal/store"
 	"github.com/bubibase/bubibase/internal/store/storetest"
 )
@@ -95,7 +96,7 @@ func TestAIAssistant(t *testing.T) {
 		fake := &fakeClaude{}
 		claude := httptest.NewServer(fake)
 		defer claude.Close()
-		srv.AI.BaseURL = claude.URL
+		srv.AI.Server[ai.Anthropic] = ai.Config{BaseURL: claude.URL}
 
 		owner := newClient(t, hs.URL)
 		owner.do("POST", "/api/setup", map[string]any{"email": "ada@example.com", "name": "Ada", "password": "correct horse"}, 200)

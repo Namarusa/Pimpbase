@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bubibase/bubibase/internal/ai"
 	"github.com/bubibase/bubibase/internal/store"
 	"github.com/bubibase/bubibase/internal/store/storetest"
 )
@@ -73,7 +74,7 @@ func testLinked(t *testing.T, s *store.Store, kind, uri string, setup []string) 
 	fake := &fakeClaude{}
 	claude := httptest.NewServer(fake)
 	defer claude.Close()
-	srv.AI.BaseURL = claude.URL
+	srv.AI.Server[ai.Anthropic] = ai.Config{BaseURL: claude.URL}
 	owner := newClient(t, hs.URL)
 	owner.do("POST", "/api/setup", map[string]any{"email": "ada@example.com", "name": "Ada", "password": "correct horse"}, 200)
 	owner.do("POST", "/api/apps", map[string]any{"name": "Shop"}, 201)
