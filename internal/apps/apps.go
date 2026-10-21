@@ -1,4 +1,4 @@
-// Package apps manages the apps hosted by a Bubibase instance and who may
+// Package apps manages the apps hosted by a Pimpbase instance and who may
 // use each one.
 package apps
 
@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bubibase/bubibase/internal/ids"
-	"github.com/bubibase/bubibase/internal/rbac"
-	"github.com/bubibase/bubibase/internal/store"
+	"github.com/pimpbase/pimpbase/internal/ids"
+	"github.com/pimpbase/pimpbase/internal/rbac"
+	"github.com/pimpbase/pimpbase/internal/store"
 )
 
 type App struct {

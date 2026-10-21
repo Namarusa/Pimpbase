@@ -1,8 +1,8 @@
-# Round-robin over every bubibase container Docker's DNS returns, taking a
+# Round-robin over every pimpbase container Docker's DNS returns, taking a
 # server out while its /readyz fails (draining, or its database is gone).
 :8080 {
 	reverse_proxy {
-		dynamic a bubibase 8080 {
+		dynamic a pimpbase 8080 {
 			refresh 5s
 		}
 		lb_policy round_robin

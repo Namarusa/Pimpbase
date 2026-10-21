@@ -1,6 +1,6 @@
-# Bubibase
+# Pimpbase
 
-Bubibase is a self-hosted low-code platform in the spirit of Budibase: one Go
+Pimpbase is a self-hosted low-code platform in the spirit of Budibase: one Go
 binary hosts many apps, each with its own data, and a browser builder to
 design them. This repository holds phase 1, the **data core** (built-in
 tables, the formula engine, the REST API and the data studio), phase 2,
@@ -14,34 +14,34 @@ tables, phase 6's **AI assistant**, and phase 7, **scale**: big tables,
 several servers, deployment, quotas and moving apps between servers
 ([docs/scale.md](docs/scale.md)).
 
-It stays one binary: `bubibase serve` needs no database server, no Node, no
+It stays one binary: `pimpbase serve` needs no database server, no Node, no
 Docker and no outside service. Postgres, several servers, shared file
 storage and containers are options for when you need them.
 
 ## Run it
 
 ```sh
-go run ./cmd/bubibase serve    # http://localhost:8080, needs Go 1.26+ only
+go run ./cmd/pimpbase serve    # http://localhost:8080, needs Go 1.26+ only
 ```
 
 The built UI in `web/builder/dist` is committed, so Go alone is enough. After
 changing the UI, `make build` rebuilds it (needs Node 22+) and the binary.
 
 The first visit asks for the owner account. Data lives in `./data`
-(`bubibase.db` for users and app definitions, `apps/<id>.db` per app).
+(`pimpbase.db` for users and app definitions, `apps/<id>.db` per app).
 To use Postgres instead, pass a connection string:
 
 ```sh
-./bubibase serve --postgres "postgres://user:pass@host/bubibase"
+./pimpbase serve --postgres "postgres://user:pass@host/pimpbase"
 ```
 
 Each app then gets its own Postgres schema. Every flag also reads an
-environment variable: `BUBIBASE_ADDR`, `BUBIBASE_DATA`, `BUBIBASE_POSTGRES`,
-`BUBIBASE_SECURE_COOKIES` (set it to `true` behind HTTPS), `BUBIBASE_SMTP`
-and `BUBIBASE_MAIL_FROM` for the flows' Send email step:
+environment variable: `PIMPBASE_ADDR`, `PIMPBASE_DATA`, `PIMPBASE_POSTGRES`,
+`PIMPBASE_SECURE_COOKIES` (set it to `true` behind HTTPS), `PIMPBASE_SMTP`
+and `PIMPBASE_MAIL_FROM` for the flows' Send email step:
 
 ```sh
-./bubibase serve --smtp "smtp://user:pass@mail.example:587" --mail-from "Orders <orders@example.com>"
+./pimpbase serve --smtp "smtp://user:pass@mail.example:587" --mail-from "Orders <orders@example.com>"
 ```
 
 `smtp://` upgrades with STARTTLS when the server offers it, `smtps://` uses
@@ -52,7 +52,7 @@ TLS from the start, and `--smtp log` only writes the mails to the log.
 ```sh
 docker compose up -d                                        # one server, SQLite, daily backups
 docker compose -f deploy/compose.cluster.yml up -d --build  # Postgres, 2 servers, Caddy
-bubibase backup --out backup.zip                            # SQLite backup while serving
+pimpbase backup --out backup.zip                            # SQLite backup while serving
 ```
 
 - `/healthz`, `/readyz` (fails while draining) and Prometheus `/metrics`.
@@ -147,14 +147,14 @@ All of it, with the numbers, how they were measured and the limits, is in
   claim into a workspace role and app roles at every sign-in; roles given
   by hand always win. Accounts can be made on first sign-in, limited to
   some email domains, and linked to existing accounts by verified email.
-  Set `--public-url` (`BUBIBASE_PUBLIC_URL`) when Bubibase runs behind a
+  Set `--public-url` (`PIMPBASE_PUBLIC_URL`) when Pimpbase runs behind a
   proxy, so the redirect URI is right.
 - **API keys** (`Authorization: Bearer bbk_…`) act as their owner, or only
   in one app with one role, and can expire. Keys limited to an app cannot
   reach builder or admin endpoints.
 
-`bubibase dev-idp` runs a test identity provider on `127.0.0.1:9000`
-(client `bubibase-dev`, secret `dev-secret`) with a few demo people and
+`pimpbase dev-idp` runs a test identity provider on `127.0.0.1:9000`
+(client `pimpbase-dev`, secret `dev-secret`) with a few demo people and
 groups, for trying single sign-on without a real provider.
 
 Known limits: filters and sorting on a link field still compare the
@@ -295,7 +295,7 @@ GET    /api/apps/{app}/variables                   PUT /{name} {"secret", "devel
 
 ## External databases
 
-Bubibase keeps its own data in SQLite (or Postgres with `--postgres`); that
+Pimpbase keeps its own data in SQLite (or Postgres with `--postgres`); that
 does not change. Separately, an app can use databases you already run. In
 **APIs**, a new data source can be PostgreSQL (and Supabase, Neon,
 CockroachDB), MySQL or MariaDB, SQL Server (and Azure SQL) or MongoDB. Its
@@ -324,7 +324,7 @@ types are mapped to field types (enums become single selects, binary
 columns are hidden); MongoDB columns are read from a sample of 200
 documents. Table permissions and row rules apply as for built-in tables,
 and filters, search and sorting run in the database when the formula has a
-SQL (or MongoDB) form, else in Bubibase over at most 50,000 rows.
+SQL (or MongoDB) form, else in Pimpbase over at most 50,000 rows.
 **Refresh columns** reads the schema again after it changes; the table's
 settings hide columns or remove the table from the app (the database table
 is never dropped).
@@ -348,7 +348,7 @@ form, and skips and lists those the database or a row rule refuses (it is
 not all or nothing). **Export** writes the rows matching the filter, links
 as labels.
 
-**Flows** can trigger on rows created, changed or deleted through Bubibase
+**Flows** can trigger on rows created, changed or deleted through Pimpbase
 and create, update, delete and find rows in external tables, with the same
 permissions and row rules. **The assistant** knows external tables' columns
 and links, can draft screens and flows on them, and answers questions over
@@ -366,7 +366,7 @@ no database servers ship with it. They add about 8 MB (MongoDB about 5 MB,
 SQL Server about 2 MB, MySQL under 1 MB); build tags leave them out:
 
 ```sh
-go build -tags "nomongo nomssql nomysql" ./cmd/bubibase   # PostgreSQL only, +0.4 MB
+go build -tags "nomongo nomssql nomysql" ./cmd/pimpbase   # PostgreSQL only, +0.4 MB
 ```
 
 ```
@@ -452,7 +452,7 @@ that calls a model from the AI provider a workspace admin picks:
 | Mistral | `--mistral-key`, `MISTRAL_API_KEY` | optional | picked from the list, or `--ai-model` |
 | OpenAI-compatible | `--openai-compatible-key` (optional) | `--openai-compatible-url` | `--openai-compatible-model` |
 
-Every flag also reads `BUBIBASE_<FLAG>` (e.g. `BUBIBASE_OPENAI_KEY`).
+Every flag also reads `PIMPBASE_<FLAG>` (e.g. `PIMPBASE_OPENAI_KEY`).
 **OpenAI-compatible** is any server speaking the chat completions API with
 tools: Ollama (`http://localhost:11434/v1`), LM Studio
 (`http://localhost:1234/v1`), OpenRouter, Groq, Together, vLLM and the like.
@@ -462,7 +462,7 @@ says otherwise; `v1` selects Azure's v1 API, where the deployment is sent as
 the model.
 
 ```sh
-./bubibase serve --ai-provider openai_compatible \
+./pimpbase serve --ai-provider openai_compatible \
   --openai-compatible-url http://localhost:11434/v1 --openai-compatible-model qwen3:8b
 ```
 
@@ -480,8 +480,8 @@ instead; **Type another name…** does the same for a model not listed. Azure
 lists deployments only on resources that still offer that call; elsewhere
 type the deployment name from Azure AI Foundry. Only Anthropic has a model
 used by default; the others are not set up until a model is picked. Settings given to the server
-win and are shown as such; `--ai-provider` (`BUBIBASE_AI_PROVIDER`) fixes the
-provider and `--ai-model` (`BUBIBASE_AI_MODEL`) its model. Without either, the
+win and are shown as such; `--ai-provider` (`PIMPBASE_AI_PROVIDER`) fixes the
+provider and `--ai-model` (`PIMPBASE_AI_MODEL`) its model. Without either, the
 provider an admin picked is used, else the first one that is set up.
 
 The provider applies to drafts, formula help and questions alike. All of
@@ -539,7 +539,7 @@ full list.
 ## Layout
 
 ```
-cmd/bubibase/      the binary
+cmd/pimpbase/      the binary
 internal/store/    SQLite and Postgres behind one interface, migrations
 internal/formula/  lexer, parser, type checker, evaluator, SQL compiler
 internal/tables/   table schemas, DDL, rows, links, CSV
@@ -561,7 +561,7 @@ internal/bundle/   .bubiapp export and import
 internal/backup/   SQLite backups while serving
 internal/metrics/  Prometheus metrics
 internal/api/      HTTP API, rate limits, quotas, health
-cmd/bubibase-load/ load tests
+cmd/pimpbase-load/ load tests
 deploy/            cluster compose file and Caddy config
 web/builder/       Svelte builder, embedded from web/builder/dist
 ```
@@ -570,16 +570,16 @@ web/builder/       Svelte builder, embedded from web/builder/dist
 
 ```sh
 go test ./...                                           # SQLite
-BUBIBASE_TEST_POSTGRES="postgres://…" go test ./...     # SQLite and Postgres
+PIMPBASE_TEST_POSTGRES="postgres://…" go test ./...     # SQLite and Postgres
 ```
 
 External database tests run when their connection strings are set:
-`BUBIBASE_TEST_EXT_POSTGRES`, `BUBIBASE_TEST_EXT_MYSQL`,
-`BUBIBASE_TEST_EXT_MSSQL` and `BUBIBASE_TEST_EXT_MONGO`.
+`PIMPBASE_TEST_EXT_POSTGRES`, `PIMPBASE_TEST_EXT_MYSQL`,
+`PIMPBASE_TEST_EXT_MSSQL` and `PIMPBASE_TEST_EXT_MONGO`.
 
 The formula tests include a differential test that runs every filter both
 in Go and as SQL on each database and checks they select the same rows;
-aggregates are checked the same way. `BUBIBASE_SCALE_ROWS=1000000 go test
+aggregates are checked the same way. `PIMPBASE_SCALE_ROWS=1000000 go test
 ./internal/tables -run TestScale -v` times reads on a million rows.
 
-Bubibase reimplements Budibase's ideas; it contains no Budibase code.
+Pimpbase reimplements Budibase's ideas; it contains no Budibase code.

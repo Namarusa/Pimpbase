@@ -9,9 +9,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/bubibase/bubibase/internal/ai"
-	"github.com/bubibase/bubibase/internal/store"
-	"github.com/bubibase/bubibase/internal/store/storetest"
+	"github.com/pimpbase/pimpbase/internal/ai"
+	"github.com/pimpbase/pimpbase/internal/store"
+	"github.com/pimpbase/pimpbase/internal/store/storetest"
 )
 
 // fakeClaude stands in for the Anthropic API: each reply comes from the

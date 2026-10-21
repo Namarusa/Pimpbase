@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bubibase/bubibase/internal/ai"
-	"github.com/bubibase/bubibase/internal/store"
-	"github.com/bubibase/bubibase/internal/store/storetest"
+	"github.com/pimpbase/pimpbase/internal/ai"
+	"github.com/pimpbase/pimpbase/internal/store"
+	"github.com/pimpbase/pimpbase/internal/store/storetest"
 )
 
 // fakeModels answers each provider's model list the way the provider does.

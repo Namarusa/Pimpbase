@@ -54,7 +54,7 @@ func (d *Document) PDF() ([]byte, error) {
 	}
 	pdf.SetTitle(d.Title, true)
 	pdf.SetAuthor(d.Author, true)
-	pdf.SetCreator("Bubibase", true)
+	pdf.SetCreator("Pimpbase", true)
 	pdf.SetCreationDate(time.Now())
 	pdf.SetMargins(18, 18, 18)
 	pdf.SetAutoPageBreak(true, 20)

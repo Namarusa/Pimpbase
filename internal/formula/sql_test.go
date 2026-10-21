@@ -14,7 +14,7 @@ import (
 )
 
 // The differential test checks that every filter means the same thing in
-// SQL as in Go, on SQLite and (when BUBIBASE_TEST_POSTGRES is set) Postgres.
+// SQL as in Go, on SQLite and (when PIMPBASE_TEST_POSTGRES is set) Postgres.
 
 var diffScope = testScope{"n": Number, "m": Number, "t": Text, "u": Text, "b": Bool, "d": Date}
 
@@ -84,7 +84,7 @@ func openDBs(t *testing.T) map[string]*sql.DB {
 	}
 	lite.SetMaxOpenConns(1)
 	dbs["sqlite"] = lite
-	if dsn := os.Getenv("BUBIBASE_TEST_POSTGRES"); dsn != "" {
+	if dsn := os.Getenv("PIMPBASE_TEST_POSTGRES"); dsn != "" {
 		pg, err := sql.Open("pgx", dsn)
 		if err != nil {
 			t.Fatal(err)

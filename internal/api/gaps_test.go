@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bubibase/bubibase/internal/store"
-	"github.com/bubibase/bubibase/internal/store/storetest"
+	"github.com/pimpbase/pimpbase/internal/store"
+	"github.com/pimpbase/pimpbase/internal/store/storetest"
 )
 
 // TestRowRulesReachFilesAndLinks checks that a table's row rules also hold

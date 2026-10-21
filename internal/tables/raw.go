@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bubibase/bubibase/internal/store"
+	"github.com/pimpbase/pimpbase/internal/store"
 )
 
 // The raw functions copy tables and rows as the database holds them, for

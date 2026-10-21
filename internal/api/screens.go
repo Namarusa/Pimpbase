@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"github.com/bubibase/bubibase/internal/screens"
+	"github.com/pimpbase/pimpbase/internal/screens"
 )
 
 // Screens, for builders.

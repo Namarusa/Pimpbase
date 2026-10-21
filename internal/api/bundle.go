@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bubibase/bubibase/internal/bundle"
+	"github.com/pimpbase/pimpbase/internal/bundle"
 )
 
 // MaxImport is the largest app file an import accepts.
@@ -30,7 +30,7 @@ func (s *Server) exportApp(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	// Write to a temporary file first, so a failure still answers in JSON.
-	tmp, err := os.CreateTemp("", "bubibase-export-*")
+	tmp, err := os.CreateTemp("", "pimpbase-export-*")
 	if err != nil {
 		return err
 	}
@@ -68,7 +68,7 @@ func (s *Server) importApp(w http.ResponseWriter, r *http.Request) error {
 		}
 		opts.Target = a.ID
 	}
-	tmp, err := os.CreateTemp("", "bubibase-import-*")
+	tmp, err := os.CreateTemp("", "pimpbase-import-*")
 	if err != nil {
 		return err
 	}
@@ -95,7 +95,7 @@ func (s *Server) importApp(w http.ResponseWriter, r *http.Request) error {
 	}
 	zr, err := zip.NewReader(tmp, n)
 	if err != nil {
-		return errStatus(400, "this is not a Bubibase app file")
+		return errStatus(400, "this is not a Pimpbase app file")
 	}
 	plan, err := s.Bundles.Import(r.Context(), zr, opts)
 	if err != nil {

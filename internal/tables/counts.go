@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bubibase/bubibase/internal/store"
+	"github.com/pimpbase/pimpbase/internal/store"
 )
 
 // Counting the matches of a filter scans them all, which takes a while

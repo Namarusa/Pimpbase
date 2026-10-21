@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bubibase/bubibase/internal/formula"
+	"github.com/pimpbase/pimpbase/internal/formula"
 )
 
 // dialect is what differs between the SQL databases.

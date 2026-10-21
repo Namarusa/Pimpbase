@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bubibase/bubibase/internal/store"
-	"github.com/bubibase/bubibase/internal/store/storetest"
+	"github.com/pimpbase/pimpbase/internal/store"
+	"github.com/pimpbase/pimpbase/internal/store/storetest"
 )
 
 // upload posts a file the way the browser's file input does.

@@ -102,7 +102,7 @@ func Lookup(kind string) (Driver, error) {
 	d, ok := drivers[kind]
 	if !ok {
 		if Known(kind) {
-			return nil, errorf("this Bubibase was built without the %s connector", kind)
+			return nil, errorf("this Pimpbase was built without the %s connector", kind)
 		}
 		return nil, errorf("there is no %q connector", kind)
 	}
@@ -133,10 +133,10 @@ type TableInfo struct {
 	PrimaryKey []string `json:"primaryKey,omitempty"`
 }
 
-// Column is one column of a table, with the field type Bubibase gives it.
+// Column is one column of a table, with the field type Pimpbase gives it.
 type Column struct {
 	Name string `json:"name"`
-	// Type is a Bubibase field type: text, longtext, number, boolean,
+	// Type is a Pimpbase field type: text, longtext, number, boolean,
 	// date, single_select or autonumber.
 	Type string `json:"type"`
 	// DBType is the database's own type, such as varchar(80).

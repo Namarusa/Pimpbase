@@ -1,4 +1,4 @@
-module github.com/bubibase/bubibase
+module github.com/pimpbase/pimpbase
 
 go 1.26.0
 

@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bubibase/bubibase/internal/formula"
-	"github.com/bubibase/bubibase/internal/rbac"
-	"github.com/bubibase/bubibase/internal/store"
-	"github.com/bubibase/bubibase/internal/store/storetest"
+	"github.com/pimpbase/pimpbase/internal/formula"
+	"github.com/pimpbase/pimpbase/internal/rbac"
+	"github.com/pimpbase/pimpbase/internal/store"
+	"github.com/pimpbase/pimpbase/internal/store/storetest"
 )
 
 // TestAggregate checks that grouping in SQL gives what grouping the same

@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/bubibase/bubibase/internal/formula"
-	"github.com/bubibase/bubibase/internal/rbac"
-	"github.com/bubibase/bubibase/internal/store"
+	"github.com/pimpbase/pimpbase/internal/formula"
+	"github.com/pimpbase/pimpbase/internal/rbac"
+	"github.com/pimpbase/pimpbase/internal/store"
 )
 
 // Formulas read linked rows as [Link].[Field] and through rollups such as

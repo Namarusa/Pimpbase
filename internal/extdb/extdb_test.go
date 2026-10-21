@@ -7,17 +7,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bubibase/bubibase/internal/formula"
-	"github.com/bubibase/bubibase/internal/interp"
+	"github.com/pimpbase/pimpbase/internal/formula"
+	"github.com/pimpbase/pimpbase/internal/interp"
 )
 
 // The database tests run against real servers named by environment
 // variables, for example:
 //
-//	BUBIBASE_TEST_EXT_POSTGRES=postgres://postgres:pw@localhost:5432/shop?sslmode=disable
-//	BUBIBASE_TEST_EXT_MYSQL=root:pw@tcp(localhost:3306)/shop?parseTime=true
-//	BUBIBASE_TEST_EXT_MSSQL=sqlserver://sa:pw@localhost:1433?database=master
-//	BUBIBASE_TEST_EXT_MONGO=mongodb://localhost:27017/shop
+//	PIMPBASE_TEST_EXT_POSTGRES=postgres://postgres:pw@localhost:5432/shop?sslmode=disable
+//	PIMPBASE_TEST_EXT_MYSQL=root:pw@tcp(localhost:3306)/shop?parseTime=true
+//	PIMPBASE_TEST_EXT_MSSQL=sqlserver://sa:pw@localhost:1433?database=master
+//	PIMPBASE_TEST_EXT_MONGO=mongodb://localhost:27017/shop
 func source(t *testing.T, kind, env string) Source {
 	uri := os.Getenv(env)
 	if uri == "" {
@@ -66,7 +66,7 @@ var sqlSetup = map[string][]string{
 }
 
 func TestSQLSources(t *testing.T) {
-	for kind, env := range map[string]string{"postgres": "BUBIBASE_TEST_EXT_POSTGRES", "mysql": "BUBIBASE_TEST_EXT_MYSQL", "mssql": "BUBIBASE_TEST_EXT_MSSQL"} {
+	for kind, env := range map[string]string{"postgres": "PIMPBASE_TEST_EXT_POSTGRES", "mysql": "PIMPBASE_TEST_EXT_MYSQL", "mssql": "PIMPBASE_TEST_EXT_MSSQL"} {
 		t.Run(kind, func(t *testing.T) {
 			src := source(t, kind, env)
 			ctx := context.Background()
@@ -282,7 +282,7 @@ func testCompositeKeys(t *testing.T, src Source, kind, schema string) {
 }
 
 func TestMongoSource(t *testing.T) {
-	src := source(t, "mongodb", "BUBIBASE_TEST_EXT_MONGO")
+	src := source(t, "mongodb", "PIMPBASE_TEST_EXT_MONGO")
 	ctx := context.Background()
 	exec := func(op, filter, doc string) *Result {
 		t.Helper()

@@ -98,7 +98,7 @@
   <Card.Root>
     <Card.Header>
       <Card.Title class="text-sm">Connection</Card.Title>
-      <Card.Description>Bubibase connects to your server; nothing is copied. Point development and production at different databases with variables.</Card.Description>
+      <Card.Description>Pimpbase connects to your server; nothing is copied. Point development and production at different databases with variables.</Card.Description>
     </Card.Header>
     <Card.Content class="flex flex-col gap-4">
       <div class="grid grid-cols-[minmax(0,3fr)_minmax(0,1fr)] gap-3">

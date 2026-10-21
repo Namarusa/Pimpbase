@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bubibase/bubibase/internal/extdb"
-	"github.com/bubibase/bubibase/internal/formula"
-	"github.com/bubibase/bubibase/internal/rbac"
-	"github.com/bubibase/bubibase/internal/tables"
+	"github.com/pimpbase/pimpbase/internal/extdb"
+	"github.com/pimpbase/pimpbase/internal/formula"
+	"github.com/pimpbase/pimpbase/internal/rbac"
+	"github.com/pimpbase/pimpbase/internal/tables"
 )
 
 // Link makes a column of an external table a link: the column holds the

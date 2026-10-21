@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bubibase/bubibase/internal/formula"
+	"github.com/pimpbase/pimpbase/internal/formula"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
@@ -73,7 +73,7 @@ func (mongoDriver) Open(s Settings) (Source, error) {
 	if n <= 0 {
 		n = 5
 	}
-	opts := options.Client().ApplyURI(uri).SetAppName("bubibase").SetMaxPoolSize(uint64(n)).
+	opts := options.Client().ApplyURI(uri).SetAppName("pimpbase").SetMaxPoolSize(uint64(n)).
 		SetConnectTimeout(10 * time.Second).SetServerSelectionTimeout(10 * time.Second)
 	client, err := mongo.Connect(opts)
 	if err != nil {
@@ -421,7 +421,7 @@ func (m *mongoSource) Run(ctx context.Context, q Statement) (*Result, error) {
 		res.Query, res.RowsAffected = false, r.DeletedCount
 		res.Rows = append(res.Rows, map[string]any{"deleted": float64(r.DeletedCount)})
 	default:
-		return nil, errorf("%q is not a MongoDB operation Bubibase runs", q.Operation)
+		return nil, errorf("%q is not a MongoDB operation Pimpbase runs", q.Operation)
 	}
 	seen := map[string]bool{}
 	for _, r := range res.Rows {

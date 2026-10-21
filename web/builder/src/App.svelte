@@ -65,7 +65,7 @@
   <div class="flex h-screen flex-col">
     <header class="bg-card flex h-13 shrink-0 items-center gap-4 border-b px-4">
       <a class="flex items-center gap-2 font-semibold" href="/" onclick={(e) => go(e, '/')}>
-        <span class="bg-primary text-primary-foreground grid size-7 place-items-center rounded-md text-sm">B</span> Bubibase
+        <span class="bg-primary text-primary-foreground grid size-7 place-items-center rounded-md text-sm">B</span> Pimpbase
       </a>
       <nav class="flex gap-1">
         <a href="/" onclick={(e) => go(e, '/')} class={['rounded-md px-2.5 py-1.5 text-sm font-medium', route.path === '/' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground']}>Apps</a>

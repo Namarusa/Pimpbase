@@ -16,7 +16,7 @@ import (
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
 
-	"github.com/bubibase/bubibase/internal/ids"
+	"github.com/pimpbase/pimpbase/internal/ids"
 )
 
 // StateTTL is how long a sign-in may take at the provider.

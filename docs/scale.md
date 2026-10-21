@@ -1,13 +1,13 @@
-# Running Bubibase at scale
+# Running Pimpbase at scale
 
-Bubibase stays one binary. `bubibase serve` with no flags runs everything in
+Pimpbase stays one binary. `pimpbase serve` with no flags runs everything in
 one process: embedded SQLite, the embedded builder, in-process flow
 schedules and files kept inside each app's database. Nothing else needs
 installing. Everything on this page past "Big tables" is opt-in.
 
 | You want | Run |
 |---|---|
-| One server, the simplest setup | `bubibase serve` (SQLite in `./data`) |
+| One server, the simplest setup | `pimpbase serve` (SQLite in `./data`) |
 | Nightly backups on that server | add `--backup-dir /backups` |
 | A container | `docker compose up -d` (the same binary, on SQLite) |
 | Several servers behind a load balancer | Postgres + shared file storage: `deploy/compose.cluster.yml` |
@@ -66,7 +66,7 @@ has a text owner, a single select stage, a number amount and a date.
 | Chart: count by month | 725 ms | 763 ms | 91 ms | 82 ms |
 | Same chart again within 10 s | 0 ms | 0 ms | 0.1 ms | 0.1 ms |
 
-Reproduce with `BUBIBASE_SCALE_ROWS=1000000 go test ./internal/tables -run TestScale -v`.
+Reproduce with `PIMPBASE_SCALE_ROWS=1000000 go test ./internal/tables -run TestScale -v`.
 
 Read it this way: on SQLite, index the fields people filter, sort and write
 row rules on, and a million rows page and filter in milliseconds. Charts over
@@ -75,13 +75,13 @@ on Postgres; repeated views are served from the cache.
 
 ## Load tests
 
-`cmd/bubibase-load` creates an app with a seeded table and sends a mix of
+`cmd/pimpbase-load` creates an app with a seeded table and sends a mix of
 requests from many clients at once: 35% row pages, 20% filtered pages, 15%
 single rows, 10% charts, 12% inserts, 8% updates. Run the servers with
 `--rate-limit 0`, or the limit is what gets measured.
 
 ```sh
-go run ./cmd/bubibase-load -url http://localhost:8080 -email you@example.com -password '…' -rows 100000 -c 32 -d 30s
+go run ./cmd/pimpbase-load -url http://localhost:8080 -email you@example.com -password '…' -rows 100000 -c 32 -d 30s
 ```
 
 Results on one 4 vCPU machine, 100,000 rows, 32 clients for 30 seconds. The
@@ -106,7 +106,7 @@ What this says, honestly:
 - **A second server did not add throughput on this machine**, because
   Postgres was the bottleneck and every container shared the same four cores.
   The two-server run shows the cluster works under load (no errors, and the
-  traffic split about evenly between the two servers), not that it is faster. Adding servers helps when the Bubibase processes, not the
+  traffic split about evenly between the two servers), not that it is faster. Adding servers helps when the Pimpbase processes, not the
   database, are what is busy: many people, heavy flows, many API queries.
 - The first SQLite run, before the read pool, reached only 133 requests/s:
   every read waited behind writes on SQLite's single connection.
@@ -116,7 +116,7 @@ What this says, honestly:
 Point every server at the same Postgres database and the same file storage:
 
 ```sh
-bubibase serve --postgres "postgres://…" --files dir:/shared/files --behind-proxy --drain 10s
+pimpbase serve --postgres "postgres://…" --files dir:/shared/files --behind-proxy --drain 10s
 ```
 
 - **Scheduled flows run once.** Each server claims a minute of a schedule in
@@ -149,24 +149,24 @@ running it; if that server stops, the run is marked failed.
 ## Deployment
 
 - `Dockerfile` builds the same static binary on a distroless base (52 MB
-  image, runs as non-root, healthcheck with `bubibase healthcheck`).
+  image, runs as non-root, healthcheck with `pimpbase healthcheck`).
 - `docker-compose.yml`: one server on SQLite with daily backups in a volume.
-- `deploy/compose.cluster.yml`: Postgres, two Bubibase servers sharing a files
+- `deploy/compose.cluster.yml`: Postgres, two Pimpbase servers sharing a files
   volume, and Caddy balancing between them on `/readyz`. Scale with
-  `--scale bubibase=4`. Both files were built and run for this phase; the
+  `--scale pimpbase=4`. Both files were built and run for this phase; the
   cluster numbers above come from it.
 
-Every flag also reads an environment variable (`BUBIBASE_POSTGRES`,
-`BUBIBASE_FILES`, `BUBIBASE_RATE_LIMIT`, …); `bubibase serve -h` lists them.
+Every flag also reads an environment variable (`PIMPBASE_POSTGRES`,
+`PIMPBASE_FILES`, `PIMPBASE_RATE_LIMIT`, …); `pimpbase serve -h` lists them.
 
 ## Backups
 
 On SQLite:
 
 ```sh
-bubibase serve --backup-dir /backups --backup-every 24h --backup-keep 7
-bubibase backup --data ./data --out backup.zip     # any time, even while serving
-bubibase restore --data ./new-data backup.zip      # into an empty folder, server stopped
+pimpbase serve --backup-dir /backups --backup-every 24h --backup-keep 7
+pimpbase backup --data ./data --out backup.zip     # any time, even while serving
+pimpbase restore --data ./new-data backup.zip      # into an empty folder, server stopped
 ```
 
 Backups copy every database with `VACUUM INTO`, a consistent snapshot taken

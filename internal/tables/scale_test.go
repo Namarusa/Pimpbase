@@ -10,19 +10,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bubibase/bubibase/internal/rbac"
-	"github.com/bubibase/bubibase/internal/store"
-	"github.com/bubibase/bubibase/internal/store/storetest"
+	"github.com/pimpbase/pimpbase/internal/rbac"
+	"github.com/pimpbase/pimpbase/internal/store"
+	"github.com/pimpbase/pimpbase/internal/store/storetest"
 )
 
 // TestScale times reads on a big table. It runs only when
-// BUBIBASE_SCALE_ROWS names a row count, e.g.
+// PIMPBASE_SCALE_ROWS names a row count, e.g.
 //
-//	BUBIBASE_SCALE_ROWS=1000000 go test ./internal/tables -run TestScale -v
+//	PIMPBASE_SCALE_ROWS=1000000 go test ./internal/tables -run TestScale -v
 func TestScale(t *testing.T) {
-	n, _ := strconv.Atoi(os.Getenv("BUBIBASE_SCALE_ROWS"))
+	n, _ := strconv.Atoi(os.Getenv("PIMPBASE_SCALE_ROWS"))
 	if n <= 0 {
-		t.Skip("set BUBIBASE_SCALE_ROWS to run")
+		t.Skip("set PIMPBASE_SCALE_ROWS to run")
 	}
 	storetest.Each(t, func(t *testing.T, s *store.Store) {
 		ctx := context.Background()

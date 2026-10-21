@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bubibase/bubibase/internal/extdb"
-	"github.com/bubibase/bubibase/internal/formula"
-	"github.com/bubibase/bubibase/internal/queries"
-	"github.com/bubibase/bubibase/internal/rbac"
-	"github.com/bubibase/bubibase/internal/tables"
+	"github.com/pimpbase/pimpbase/internal/extdb"
+	"github.com/pimpbase/pimpbase/internal/formula"
+	"github.com/pimpbase/pimpbase/internal/queries"
+	"github.com/pimpbase/pimpbase/internal/rbac"
+	"github.com/pimpbase/pimpbase/internal/tables"
 )
 
 // MaxScan is the most rows a filter without a database form may read.

@@ -17,8 +17,8 @@ import (
 
 	"golang.org/x/crypto/argon2"
 
-	"github.com/bubibase/bubibase/internal/ids"
-	"github.com/bubibase/bubibase/internal/store"
+	"github.com/pimpbase/pimpbase/internal/ids"
+	"github.com/pimpbase/pimpbase/internal/store"
 )
 
 // Workspace roles. Owners and admins manage users; builders design apps;
@@ -112,7 +112,7 @@ func checkPassword(hash, pw string) bool {
 }
 
 // dummyHash keeps sign-in timing the same for unknown emails.
-var dummyHash = hashPassword("bubibase-timing")
+var dummyHash = hashPassword("pimpbase-timing")
 
 func normEmail(e string) (string, error) {
 	e = strings.ToLower(strings.TrimSpace(e))

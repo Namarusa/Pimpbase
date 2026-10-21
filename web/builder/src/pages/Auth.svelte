@@ -36,7 +36,7 @@
   <Card.Root class="w-full max-w-sm">
     <Card.Header>
       <div class="bg-primary text-primary-foreground mb-2 grid size-10 place-items-center rounded-lg text-lg font-bold">B</div>
-      <Card.Title class="text-xl">{setup ? 'Set up Bubibase' : title ? `Sign in to ${title}` : 'Sign in'}</Card.Title>
+      <Card.Title class="text-xl">{setup ? 'Set up Pimpbase' : title ? `Sign in to ${title}` : 'Sign in'}</Card.Title>
       <Card.Description>{setup ? 'Create the owner account for this workspace.' : 'Welcome back.'}</Card.Description>
     </Card.Header>
     <Card.Content>

@@ -7,8 +7,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/bubibase/bubibase/internal/files"
-	"github.com/bubibase/bubibase/internal/tables"
+	"github.com/pimpbase/pimpbase/internal/files"
+	"github.com/pimpbase/pimpbase/internal/tables"
 )
 
 // uploadFile stores a file for a table's attachment fields. The row keeps

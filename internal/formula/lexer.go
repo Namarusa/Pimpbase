@@ -1,4 +1,4 @@
-// Package formula implements Bubibase's expression language: an Excel-style
+// Package formula implements Pimpbase's expression language: an Excel-style
 // syntax with [Field] references, used for formula fields, filters and every
 // other computed value. Source text is parsed into an AST, type checked
 // against a scope, then either evaluated in Go or compiled to SQL.

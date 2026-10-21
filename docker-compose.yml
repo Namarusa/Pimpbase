@@ -1,24 +1,24 @@
-# One Bubibase server on SQLite, with a nightly backup kept beside the data.
+# One Pimpbase server on SQLite, with a nightly backup kept beside the data.
 #
 #   docker compose up -d        then open http://localhost:8080
 #
 # For several servers on Postgres behind a load balancer, see
 # deploy/compose.cluster.yml.
 services:
-  bubibase:
+  pimpbase:
     build: .
-    image: bubibase:latest
+    image: pimpbase:latest
     restart: unless-stopped
     ports:
       - "8080:8080"
     environment:
-      BUBIBASE_BACKUP_DIR: /backups
-      BUBIBASE_BACKUP_EVERY: 24h
-      BUBIBASE_BACKUP_KEEP: "7"
-      # BUBIBASE_PUBLIC_URL: https://apps.example.com
-      # BUBIBASE_SECURE_COOKIES: "true"
-      # BUBIBASE_SMTP: smtp://user:pass@mail.example.com:587
-      # BUBIBASE_MAIL_FROM: apps@example.com
+      PIMPBASE_BACKUP_DIR: /backups
+      PIMPBASE_BACKUP_EVERY: 24h
+      PIMPBASE_BACKUP_KEEP: "7"
+      # PIMPBASE_PUBLIC_URL: https://apps.example.com
+      # PIMPBASE_SECURE_COOKIES: "true"
+      # PIMPBASE_SMTP: smtp://user:pass@mail.example.com:587
+      # PIMPBASE_MAIL_FROM: apps@example.com
     volumes:
       - data:/data
       - backups:/backups

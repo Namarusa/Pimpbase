@@ -1,4 +1,4 @@
-// A thin client for the Bubibase HTTP API.
+// A thin client for the Pimpbase HTTP API.
 import type { Design, Node, Screen } from './screen/types'
 
 // Role is an app role id: PUBLIC, BASIC, POWER, ADMIN or a custom id.
@@ -177,9 +177,9 @@ export const preview = { role: '' }
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const init: RequestInit = { method, headers: {} }
-  if (preview.role) (init.headers as Record<string, string>)['X-Bubibase-Preview-Role'] = preview.role
+  if (preview.role) (init.headers as Record<string, string>)['X-Pimpbase-Preview-Role'] = preview.role
   // The builder reads external tables with the development connection.
-  if (typeof location !== 'undefined' && !location.pathname.startsWith('/app/')) (init.headers as Record<string, string>)['X-Bubibase-Env'] = 'development'
+  if (typeof location !== 'undefined' && !location.pathname.startsWith('/app/')) (init.headers as Record<string, string>)['X-Pimpbase-Env'] = 'development'
   if (body instanceof FormData) {
     init.body = body
   } else if (body !== undefined) {

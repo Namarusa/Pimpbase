@@ -12,12 +12,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bubibase/bubibase/internal/apps"
-	"github.com/bubibase/bubibase/internal/auth"
-	"github.com/bubibase/bubibase/internal/exttables"
-	"github.com/bubibase/bubibase/internal/formula"
-	"github.com/bubibase/bubibase/internal/rbac"
-	"github.com/bubibase/bubibase/internal/tables"
+	"github.com/pimpbase/pimpbase/internal/apps"
+	"github.com/pimpbase/pimpbase/internal/auth"
+	"github.com/pimpbase/pimpbase/internal/exttables"
+	"github.com/pimpbase/pimpbase/internal/formula"
+	"github.com/pimpbase/pimpbase/internal/rbac"
+	"github.com/pimpbase/pimpbase/internal/tables"
 )
 
 // Sessions and setup.
@@ -303,7 +303,7 @@ func (s *Server) actor(r *http.Request) (*apps.App, rbac.Actor, error) {
 }
 
 // previewHeader lets builders preview a published app as one of its roles.
-const previewHeader = "X-Bubibase-Preview-Role"
+const previewHeader = "X-Pimpbase-Preview-Role"
 
 // userActor is what a signed-in user may do in an app: builders hold
 // every role, other users the role they were given. An API key limited to

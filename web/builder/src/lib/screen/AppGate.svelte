@@ -58,5 +58,5 @@
       </Card.Content>
     </Card.Root>
   {/if}
-  <p class="text-muted-foreground absolute bottom-4 text-xs">Made with Bubibase</p>
+  <p class="text-muted-foreground absolute bottom-4 text-xs">Made with Pimpbase</p>
 </div>

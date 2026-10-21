@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bubibase/bubibase/internal/apps"
-	"github.com/bubibase/bubibase/internal/auth"
-	"github.com/bubibase/bubibase/internal/rbac"
-	"github.com/bubibase/bubibase/internal/screens"
-	"github.com/bubibase/bubibase/internal/sso"
+	"github.com/pimpbase/pimpbase/internal/apps"
+	"github.com/pimpbase/pimpbase/internal/auth"
+	"github.com/pimpbase/pimpbase/internal/rbac"
+	"github.com/pimpbase/pimpbase/internal/screens"
+	"github.com/pimpbase/pimpbase/internal/sso"
 )
 
 // requireRoles checks that every named role exists in the app.

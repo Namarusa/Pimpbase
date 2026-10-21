@@ -1,10 +1,10 @@
-// Command bubibase-load measures a running Bubibase server, or a load
+// Command pimpbase-load measures a running Pimpbase server, or a load
 // balancer in front of several, with a mix of the requests apps make:
 // row pages, filtered pages, single rows, chart aggregates, inserts and
 // updates. It creates its own app ("Load test") with a seeded table, then
 // prints a table of latencies and throughput.
 //
-//	bubibase-load -url http://localhost:8080 -email ada@example.com -password '…' -rows 100000 -c 32 -d 30s
+//	pimpbase-load -url http://localhost:8080 -email ada@example.com -password '…' -rows 100000 -c 32 -d 30s
 //
 // Run the servers with --rate-limit 0, or the limit is what gets measured.
 package main
@@ -170,7 +170,7 @@ func urlq(s string) string {
 
 func check(err error) {
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "bubibase-load:", err)
+		fmt.Fprintln(os.Stderr, "pimpbase-load:", err)
 		os.Exit(1)
 	}
 }

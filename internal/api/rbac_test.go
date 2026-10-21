@@ -10,9 +10,9 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/bubibase/bubibase/internal/sso/ssotest"
-	"github.com/bubibase/bubibase/internal/store"
-	"github.com/bubibase/bubibase/internal/store/storetest"
+	"github.com/pimpbase/pimpbase/internal/sso/ssotest"
+	"github.com/pimpbase/pimpbase/internal/store"
+	"github.com/pimpbase/pimpbase/internal/store/storetest"
 )
 
 func newTestServer(t *testing.T, s *store.Store) (*Server, *httptest.Server) {
@@ -366,7 +366,7 @@ func TestSingleSignOn(t *testing.T) {
 		owner.do("POST", "/api/apps/crm/roles", map[string]any{"id": "SALES", "name": "Sales", "inherits": "BASIC"}, 201)
 		owner.do("POST", "/api/users", map[string]any{"email": "old@corp.example", "password": "a long secret", "role": "member"}, 201)
 
-		idp := ssotest.New("", "bubibase", "s3cret",
+		idp := ssotest.New("", "pimpbase", "s3cret",
 			ssotest.User{Subject: "u1", Email: "Kim@corp.example", EmailVerified: true, Name: "Kim Lee", Groups: []string{"sales", "staff"}},
 			ssotest.User{Subject: "u2", Email: "old@corp.example", EmailVerified: false, Name: "Old Timer"},
 			ssotest.User{Subject: "u3", Email: "eve@elsewhere.example", EmailVerified: true, Name: "Eve"},
@@ -381,11 +381,11 @@ func TestSingleSignOn(t *testing.T) {
 			t.Errorf("redirect = %v", providers["redirectUrl"])
 		}
 		owner.do("POST", "/api/sso/providers", map[string]any{"kind": "oidc", "issuer": "not a url", "clientId": "x", "clientSecret": "y"}, 400)
-		owner.do("POST", "/api/sso/providers", map[string]any{"kind": "oidc", "issuer": ids.URL, "clientId": "bubibase"}, 400)
-		owner.do("POST", "/api/sso/providers", map[string]any{"kind": "oidc", "issuer": ids.URL, "clientId": "bubibase", "clientSecret": "s3cret",
+		owner.do("POST", "/api/sso/providers", map[string]any{"kind": "oidc", "issuer": ids.URL, "clientId": "pimpbase"}, 400)
+		owner.do("POST", "/api/sso/providers", map[string]any{"kind": "oidc", "issuer": ids.URL, "clientId": "pimpbase", "clientSecret": "s3cret",
 			"mappings": []any{map[string]any{"claim": "group", "value": "sales", "apps": []any{map[string]any{"appId": app["id"], "role": "GHOST"}}}}}, 400)
 		p := owner.do("POST", "/api/sso/providers", map[string]any{
-			"kind": "oidc", "name": "Corp login", "issuer": ids.URL, "clientId": "bubibase", "clientSecret": "s3cret",
+			"kind": "oidc", "name": "Corp login", "issuer": ids.URL, "clientId": "pimpbase", "clientSecret": "s3cret",
 			"scopes": []any{"groups"}, "allowedDomains": []any{"corp.example"}, "autoCreate": true,
 			"mappings": []any{
 				map[string]any{"claim": "group", "value": "sales", "apps": []any{map[string]any{"appId": app["id"], "role": "SALES"}}},
@@ -448,7 +448,7 @@ func TestSingleSignOn(t *testing.T) {
 		if !strings.Contains(landed.Query().Get("sso_error"), "already exists") {
 			t.Errorf("old landed on %v", landed)
 		}
-		owner.do("PATCH", "/api/sso/providers/"+pid, map[string]any{"name": "Corp login", "issuer": ids.URL, "clientId": "bubibase", "trustEmail": true,
+		owner.do("PATCH", "/api/sso/providers/"+pid, map[string]any{"name": "Corp login", "issuer": ids.URL, "clientId": "pimpbase", "trustEmail": true,
 			"allowedDomains": []any{"corp.example"}, "autoCreate": true, "mappings": []any{
 				map[string]any{"claim": "email_domain", "value": "corp.example", "apps": []any{map[string]any{"appId": app["id"], "role": "BASIC"}}},
 			}}, 200)
@@ -486,7 +486,7 @@ func TestSingleSignOn(t *testing.T) {
 		if _, landed := signIn("u1", "/"); !strings.Contains(landed.Query().Get("sso_error"), "switched off") {
 			t.Errorf("disabled kim landed on %v", landed)
 		}
-		owner.do("PATCH", "/api/sso/providers/"+pid, map[string]any{"enabled": false, "issuer": ids.URL, "clientId": "bubibase"}, 200)
+		owner.do("PATCH", "/api/sso/providers/"+pid, map[string]any{"enabled": false, "issuer": ids.URL, "clientId": "pimpbase"}, 200)
 		if _, landed := signIn("u4", "/"); !strings.Contains(landed.Query().Get("sso_error"), "switched off") {
 			t.Errorf("landed on %v", landed)
 		}
@@ -502,7 +502,7 @@ func TestSingleSignOn(t *testing.T) {
 			t.Errorf("forged state landed on %v", res.Request.URL)
 		}
 		// Unsafe return addresses fall back to the start page.
-		owner.do("PATCH", "/api/sso/providers/"+pid, map[string]any{"enabled": true, "issuer": ids.URL, "clientId": "bubibase"}, 200)
+		owner.do("PATCH", "/api/sso/providers/"+pid, map[string]any{"enabled": true, "issuer": ids.URL, "clientId": "pimpbase"}, 200)
 		if _, landed := signIn("u4", "//evil.example/x"); landed.Host != strings.TrimPrefix(hs.URL, "http://") || landed.Path != "/" {
 			t.Errorf("open redirect to %v", landed)
 		}

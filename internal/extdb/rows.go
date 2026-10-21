@@ -11,7 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/bubibase/bubibase/internal/formula"
+	"github.com/pimpbase/pimpbase/internal/formula"
 )
 
 // Target is the table that row operations work on.

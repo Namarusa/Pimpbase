@@ -2,7 +2,7 @@
 // built-in ones: a builder imports a table (or MongoDB collection) from a
 // database data source, and screens, the data studio and the REST API
 // read and write its rows, with the same table permissions and row rules.
-// Bubibase keeps only the description of the table; the rows stay in the
+// Pimpbase keeps only the description of the table; the rows stay in the
 // database.
 package exttables
 
@@ -15,13 +15,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bubibase/bubibase/internal/extdb"
-	"github.com/bubibase/bubibase/internal/formula"
-	"github.com/bubibase/bubibase/internal/ids"
-	"github.com/bubibase/bubibase/internal/queries"
-	"github.com/bubibase/bubibase/internal/rbac"
-	"github.com/bubibase/bubibase/internal/store"
-	"github.com/bubibase/bubibase/internal/tables"
+	"github.com/pimpbase/pimpbase/internal/extdb"
+	"github.com/pimpbase/pimpbase/internal/formula"
+	"github.com/pimpbase/pimpbase/internal/ids"
+	"github.com/pimpbase/pimpbase/internal/queries"
+	"github.com/pimpbase/pimpbase/internal/rbac"
+	"github.com/pimpbase/pimpbase/internal/store"
+	"github.com/pimpbase/pimpbase/internal/tables"
 )
 
 // Prefix starts the id of every external table.
@@ -191,7 +191,7 @@ type Service struct {
 	tables  *tables.Service
 	now     func() time.Time
 	// OnRow, when set, hears every row created, changed or deleted through
-	// Bubibase; changes made in the database directly are not seen.
+	// Pimpbase; changes made in the database directly are not seen.
 	OnRow func(ctx context.Context, ev tables.RowEvent)
 }
 

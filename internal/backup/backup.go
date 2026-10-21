@@ -24,20 +24,20 @@ import (
 
 // manifestName is a short note inside every backup, which also marks the
 // zip as one.
-const manifestName = "bubibase-backup.txt"
+const manifestName = "pimpbase-backup.txt"
 
-// Write copies every database in dataDir (bubibase.db and apps/*.db) into
+// Write copies every database in dataDir (pimpbase.db and apps/*.db) into
 // a zip written to w. Files kept in a folder outside the databases are not
 // included.
 func Write(ctx context.Context, dataDir string, w io.Writer) (n int, err error) {
-	paths := []string{filepath.Join(dataDir, "bubibase.db")}
+	paths := []string{filepath.Join(dataDir, "pimpbase.db")}
 	apps, _ := filepath.Glob(filepath.Join(dataDir, "apps", "*.db"))
 	sort.Strings(apps)
 	paths = append(paths, apps...)
 	if _, err := os.Stat(paths[0]); err != nil {
-		return 0, fmt.Errorf("no Bubibase data in %s", dataDir)
+		return 0, fmt.Errorf("no Pimpbase data in %s", dataDir)
 	}
-	tmp, err := os.MkdirTemp("", "bubibase-backup-*")
+	tmp, err := os.MkdirTemp("", "pimpbase-backup-*")
 	if err != nil {
 		return 0, err
 	}
@@ -59,7 +59,7 @@ func Write(ctx context.Context, dataDir string, w io.Writer) (n int, err error) 
 	if err != nil {
 		return n, err
 	}
-	fmt.Fprintf(mw, "Bubibase backup\ncreated: %s\ndatabases: %d\nrestore: bubibase restore --data <empty folder> <this file>\n", time.Now().UTC().Format(time.RFC3339), n)
+	fmt.Fprintf(mw, "Pimpbase backup\ncreated: %s\ndatabases: %d\nrestore: pimpbase restore --data <empty folder> <this file>\n", time.Now().UTC().Format(time.RFC3339), n)
 	return n, zw.Close()
 }
 
@@ -87,13 +87,13 @@ func addFile(zw *zip.Writer, name, path string) error {
 	return err
 }
 
-// ToFile writes a backup to dir/bubibase-<time>.zip and keeps the newest
+// ToFile writes a backup to dir/pimpbase-<time>.zip and keeps the newest
 // keep backups there (all of them when keep is 0).
 func ToFile(ctx context.Context, dataDir, dir string, keep int) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
-	name := filepath.Join(dir, "bubibase-"+time.Now().UTC().Format("20060102-150405")+".zip")
+	name := filepath.Join(dir, "pimpbase-"+time.Now().UTC().Format("20060102-150405")+".zip")
 	f, err := os.Create(name + ".part")
 	if err != nil {
 		return "", err
@@ -110,7 +110,7 @@ func ToFile(ctx context.Context, dataDir, dir string, keep int) (string, error) 
 		return "", err
 	}
 	if keep > 0 {
-		old, _ := filepath.Glob(filepath.Join(dir, "bubibase-*.zip"))
+		old, _ := filepath.Glob(filepath.Join(dir, "pimpbase-*.zip"))
 		sort.Strings(old)
 		for len(old) > keep {
 			os.Remove(old[0])
@@ -120,7 +120,7 @@ func ToFile(ctx context.Context, dataDir, dir string, keep int) (string, error) 
 	return name, nil
 }
 
-// Restore unpacks a backup into dataDir, which must hold no Bubibase data
+// Restore unpacks a backup into dataDir, which must hold no Pimpbase data
 // unless force is set. The server must not be running on dataDir.
 func Restore(zipPath, dataDir string, force bool) (int, error) {
 	zr, err := zip.OpenReader(zipPath)
@@ -135,10 +135,10 @@ func Restore(zipPath, dataDir string, force bool) (int, error) {
 		}
 	}
 	if !found {
-		return 0, errors.New("this is not a Bubibase backup")
+		return 0, errors.New("this is not a Pimpbase backup")
 	}
-	if _, err := os.Stat(filepath.Join(dataDir, "bubibase.db")); err == nil && !force {
-		return 0, fmt.Errorf("%s already holds Bubibase data; restore into an empty folder, or pass --force to replace it", dataDir)
+	if _, err := os.Stat(filepath.Join(dataDir, "pimpbase.db")); err == nil && !force {
+		return 0, fmt.Errorf("%s already holds Pimpbase data; restore into an empty folder, or pass --force to replace it", dataDir)
 	}
 	if err := os.MkdirAll(filepath.Join(dataDir, "apps"), 0o755); err != nil {
 		return 0, err
@@ -148,7 +148,7 @@ func Restore(zipPath, dataDir string, force bool) (int, error) {
 		if f.Name == manifestName {
 			continue
 		}
-		if f.Name != "bubibase.db" && !(strings.HasPrefix(f.Name, "apps/") && strings.HasSuffix(f.Name, ".db") && !strings.Contains(f.Name[5:], "/")) {
+		if f.Name != "pimpbase.db" && !(strings.HasPrefix(f.Name, "apps/") && strings.HasSuffix(f.Name, ".db") && !strings.Contains(f.Name[5:], "/")) {
 			return n, fmt.Errorf("unexpected file %q in the backup", f.Name)
 		}
 		dst := filepath.Join(dataDir, filepath.FromSlash(f.Name))

@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bubibase/bubibase/internal/extdb"
-	"github.com/bubibase/bubibase/internal/interp"
+	"github.com/pimpbase/pimpbase/internal/extdb"
+	"github.com/pimpbase/pimpbase/internal/interp"
 )
 
 // Settings fills the bindings of a database data source's settings with

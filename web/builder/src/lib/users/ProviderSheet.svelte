@@ -137,7 +137,7 @@
         </div>
         {#if p.kind === 'oidc'}
           <div class="flex flex-col gap-1.5"><Label for="p-issuer">Issuer URL</Label><Input id="p-issuer" bind:value={p.issuer} placeholder="https://login.example.com" required />
-            <p class="text-muted-foreground text-xs">Bubibase reads <code>/.well-known/openid-configuration</code> from it.</p></div>
+            <p class="text-muted-foreground text-xs">Pimpbase reads <code>/.well-known/openid-configuration</code> from it.</p></div>
         {:else if p.kind === 'microsoft'}
           <div class="flex flex-col gap-1.5"><Label for="p-tenant">Tenant</Label><Input id="p-tenant" bind:value={p.tenant} placeholder="organizations" />
             <p class="text-muted-foreground text-xs">Your directory (tenant) id or domain. Leave empty to accept any work or school account.</p></div>

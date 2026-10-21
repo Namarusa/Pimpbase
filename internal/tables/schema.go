@@ -11,10 +11,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bubibase/bubibase/internal/formula"
-	"github.com/bubibase/bubibase/internal/ids"
-	"github.com/bubibase/bubibase/internal/rbac"
-	"github.com/bubibase/bubibase/internal/store"
+	"github.com/pimpbase/pimpbase/internal/formula"
+	"github.com/pimpbase/pimpbase/internal/ids"
+	"github.com/pimpbase/pimpbase/internal/rbac"
+	"github.com/pimpbase/pimpbase/internal/store"
 )
 
 // Service manages tables and their rows.
@@ -388,7 +388,7 @@ func (s *Service) change(ctx context.Context, appID string, create bool, fn func
 	}
 	defer tx.Rollback()
 	// Other servers sharing the database wait for the change too.
-	if err := tx.Lock(ctx, "bubibase:schema:"+appID); err != nil {
+	if err := tx.Lock(ctx, "pimpbase:schema:"+appID); err != nil {
 		return nil, err
 	}
 	t, err := fn(tx)

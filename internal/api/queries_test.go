@@ -12,8 +12,8 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/bubibase/bubibase/internal/store"
-	"github.com/bubibase/bubibase/internal/store/storetest"
+	"github.com/pimpbase/pimpbase/internal/store"
+	"github.com/pimpbase/pimpbase/internal/store/storetest"
 )
 
 // upstream is a fake third-party API: a JSON sign-in, a JSON list that
@@ -108,7 +108,7 @@ func TestQueries(t *testing.T) {
 
 		owner.do("POST", base+"/datasources", map[string]any{"name": "Shop API", "config": map[string]any{"baseUrl": "ftp://x"}}, 400)
 		ds := owner.do("POST", base+"/datasources", map[string]any{"name": "Shop API", "config": map[string]any{
-			"baseUrl": "{{ env.API_URL }}", "headers": []any{map[string]any{"key": "X-Client", "value": "bubibase"}},
+			"baseUrl": "{{ env.API_URL }}", "headers": []any{map[string]any{"key": "X-Client", "value": "pimpbase"}},
 		}}, 201)
 		dsID := ds["id"].(string)
 		if ds["config"].(map[string]any)["timeoutSeconds"].(float64) != 30 {

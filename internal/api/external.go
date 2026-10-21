@@ -9,11 +9,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/bubibase/bubibase/internal/extdb"
-	"github.com/bubibase/bubibase/internal/exttables"
-	"github.com/bubibase/bubibase/internal/queries"
-	"github.com/bubibase/bubibase/internal/rbac"
-	"github.com/bubibase/bubibase/internal/tables"
+	"github.com/pimpbase/pimpbase/internal/extdb"
+	"github.com/pimpbase/pimpbase/internal/exttables"
+	"github.com/pimpbase/pimpbase/internal/queries"
+	"github.com/pimpbase/pimpbase/internal/rbac"
+	"github.com/pimpbase/pimpbase/internal/tables"
 )
 
 // External databases: connector kinds, connection tests, schema browsing,
@@ -21,7 +21,7 @@ import (
 
 // envHeader asks for the development connection settings of external
 // tables; only builders get them.
-const envHeader = "X-Bubibase-Env"
+const envHeader = "X-Pimpbase-Env"
 
 func (s *Server) dataEnv(r *http.Request, act rbac.Actor) string {
 	if r.Header.Get(envHeader) == queries.Development && act.Builder {

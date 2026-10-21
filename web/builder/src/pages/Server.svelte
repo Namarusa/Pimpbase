@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Server shows how this Bubibase runs: its version and storage, the
+  // Server shows how this Pimpbase runs: its version and storage, the
   // servers sharing its database, and a backup to download on SQLite.
   import * as Card from '$lib/components/ui/card'
   import * as Table from '$lib/components/ui/table'
@@ -82,7 +82,7 @@
         <Card.Title>Backup</Card.Title>
         <Card.Description>
           {#if status.backups}
-            A copy of every database, taken while the server runs. Restore it with <code>bubibase restore</code>. Files kept in a folder or bucket are not included.
+            A copy of every database, taken while the server runs. Restore it with <code>pimpbase restore</code>. Files kept in a folder or bucket are not included.
           {:else}
             This server keeps its data in Postgres; back it up with pg_dump or your provider’s snapshots.
           {/if}

@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/bubibase/bubibase/internal/apps"
-	"github.com/bubibase/bubibase/internal/queries"
-	"github.com/bubibase/bubibase/internal/rbac"
+	"github.com/pimpbase/pimpbase/internal/apps"
+	"github.com/pimpbase/pimpbase/internal/queries"
+	"github.com/pimpbase/pimpbase/internal/rbac"
 )
 
 // API data sources, queries and variables, for builders; running queries,

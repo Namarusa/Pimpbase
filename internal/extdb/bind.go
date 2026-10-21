@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bubibase/bubibase/internal/interp"
+	"github.com/pimpbase/pimpbase/internal/interp"
 )
 
 // BindSQL turns a query the builder wrote into SQL with placeholders and
@@ -29,7 +29,7 @@ func BindSQL(kind, src string, scope interp.Scope) (string, []any, error) {
 		return nil
 	}, func(e *interp.Expr, v any) error {
 		if where := lx.inside(); where != "" {
-			return errorf("{{ %s }} is inside %s; write it without quotes, as in WHERE name = {{ %s }}: Bubibase sends it as a parameter", strings.TrimSpace(e.Source), where, strings.TrimSpace(e.Source))
+			return errorf("{{ %s }} is inside %s; write it without quotes, as in WHERE name = {{ %s }}: Pimpbase sends it as a parameter", strings.TrimSpace(e.Source), where, strings.TrimSpace(e.Source))
 		}
 		add := func(v any) {
 			args = append(args, sqlArg(v))

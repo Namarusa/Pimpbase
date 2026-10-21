@@ -1,4 +1,4 @@
-// Package cluster lets several Bubibase servers share one database: each
+// Package cluster lets several Pimpbase servers share one database: each
 // server registers itself and says it is alive every few seconds, and jobs
 // that must run once, such as a scheduled flow, are claimed in the
 // database by whichever server gets there first.
@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bubibase/bubibase/internal/ids"
-	"github.com/bubibase/bubibase/internal/store"
+	"github.com/pimpbase/pimpbase/internal/ids"
+	"github.com/pimpbase/pimpbase/internal/store"
 )
 
 const (

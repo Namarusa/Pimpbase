@@ -68,7 +68,7 @@
     <div class="plan card">
       <div class="row">
         <strong class="grow">{plan.manifest.app.name}</strong>
-        <span class="muted small">exported {new Date(plan.manifest.exportedAt).toLocaleString()}{plan.manifest.server ? ` from Bubibase ${plan.manifest.server}` : ''}</span>
+        <span class="muted small">exported {new Date(plan.manifest.exportedAt).toLocaleString()}{plan.manifest.server ? ` from Pimpbase ${plan.manifest.server}` : ''}</span>
       </div>
       <p class="muted small">
         {plan.manifest.tables} {plan.manifest.tables === 1 ? 'table' : 'tables'}{plan.manifest.data ? `, ${plan.manifest.rows.toLocaleString()} rows and ${plan.manifest.files} files` : ', no rows'}{plan.manifest.secrets ? ', with secrets' : ', secrets left out'}.

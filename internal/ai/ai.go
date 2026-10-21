@@ -19,7 +19,7 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 
-	"github.com/bubibase/bubibase/internal/store"
+	"github.com/pimpbase/pimpbase/internal/store"
 )
 
 // ErrNoKey is returned when the provider in use is not set up.

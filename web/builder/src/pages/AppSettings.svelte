@@ -120,7 +120,7 @@
     {/if}
     <section class="card">
       <h2>Move this app</h2>
-      <p class="muted">Download the app as one <span class="mono">.bubiapp</span> file to copy it to another Bubibase, or to hand a new version from development to production.</p>
+      <p class="muted">Download the app as one <span class="mono">.bubiapp</span> file to copy it to another Pimpbase, or to hand a new version from development to production.</p>
       <label class="check"><input type="checkbox" bind:checked={withData} /> Include rows and files</label>
       <label class="check"><input type="checkbox" bind:checked={withSecrets} disabled={!isAdmin()} /><span>Include secret values and data source passwords {#if !isAdmin()}<span class="muted">(admins only)</span>{/if}</span></label>
       <div class="row">

@@ -1,4 +1,4 @@
-// Package bundle moves an app between Bubibase servers as one file: its
+// Package bundle moves an app between Pimpbase servers as one file: its
 // tables, screens, roles, API data sources and queries, variables and
 // flows, and optionally its rows and files. Importing either creates a new
 // app or updates an existing one in place, keeping that app's rows, as a
@@ -23,15 +23,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bubibase/bubibase/internal/apps"
-	"github.com/bubibase/bubibase/internal/files"
-	"github.com/bubibase/bubibase/internal/flows"
-	"github.com/bubibase/bubibase/internal/store"
-	"github.com/bubibase/bubibase/internal/tables"
+	"github.com/pimpbase/pimpbase/internal/apps"
+	"github.com/pimpbase/pimpbase/internal/files"
+	"github.com/pimpbase/pimpbase/internal/flows"
+	"github.com/pimpbase/pimpbase/internal/store"
+	"github.com/pimpbase/pimpbase/internal/tables"
 )
 
 const (
-	Format  = "bubibase-app"
+	Format  = "pimpbase-app"
 	Version = 1
 	// Extension is the file name ending the builder offers.
 	Extension = ".bubiapp"
@@ -42,7 +42,7 @@ type Manifest struct {
 	Format     string    `json:"format"`
 	Version    int       `json:"version"`
 	ExportedAt time.Time `json:"exportedAt"`
-	// Server is the version of the Bubibase that wrote the file.
+	// Server is the version of the Pimpbase that wrote the file.
 	Server string `json:"server"`
 	App    struct {
 		ID   string `json:"id"`
@@ -91,7 +91,7 @@ var (
 	flowCols    = metaTable{"app_flows", []string{"id", "name", "enabled", "definition", "created_at", "updated_at"}}
 	extCols     = metaTable{"app_ext_tables", []string{"id", "datasource_id", "name", "definition", "created_at", "updated_at"}}
 	orderBy     = map[string]string{"app_roles": "position, id", "app_screens": "position, id", "app_variables": "name"}
-	errNotAZip  = &Error{"this is not a Bubibase app file"}
+	errNotAZip  = &Error{"this is not a Pimpbase app file"}
 	maxAppJSON  = int64(64 << 20)
 	rowsInBatch = 2000
 )

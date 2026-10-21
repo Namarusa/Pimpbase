@@ -1,4 +1,4 @@
-// Package api serves Bubibase's HTTP API and the embedded builder.
+// Package api serves Pimpbase's HTTP API and the embedded builder.
 package api
 
 import (
@@ -15,24 +15,24 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/bubibase/bubibase/internal/ai"
-	"github.com/bubibase/bubibase/internal/apps"
-	"github.com/bubibase/bubibase/internal/auth"
-	"github.com/bubibase/bubibase/internal/bundle"
-	"github.com/bubibase/bubibase/internal/cluster"
-	"github.com/bubibase/bubibase/internal/exttables"
-	"github.com/bubibase/bubibase/internal/files"
-	"github.com/bubibase/bubibase/internal/flows"
-	"github.com/bubibase/bubibase/internal/metrics"
-	"github.com/bubibase/bubibase/internal/queries"
-	"github.com/bubibase/bubibase/internal/rbac"
-	"github.com/bubibase/bubibase/internal/screens"
-	"github.com/bubibase/bubibase/internal/sso"
-	"github.com/bubibase/bubibase/internal/store"
-	"github.com/bubibase/bubibase/internal/tables"
+	"github.com/pimpbase/pimpbase/internal/ai"
+	"github.com/pimpbase/pimpbase/internal/apps"
+	"github.com/pimpbase/pimpbase/internal/auth"
+	"github.com/pimpbase/pimpbase/internal/bundle"
+	"github.com/pimpbase/pimpbase/internal/cluster"
+	"github.com/pimpbase/pimpbase/internal/exttables"
+	"github.com/pimpbase/pimpbase/internal/files"
+	"github.com/pimpbase/pimpbase/internal/flows"
+	"github.com/pimpbase/pimpbase/internal/metrics"
+	"github.com/pimpbase/pimpbase/internal/queries"
+	"github.com/pimpbase/pimpbase/internal/rbac"
+	"github.com/pimpbase/pimpbase/internal/screens"
+	"github.com/pimpbase/pimpbase/internal/sso"
+	"github.com/pimpbase/pimpbase/internal/store"
+	"github.com/pimpbase/pimpbase/internal/tables"
 )
 
-const sessionCookie = "bubibase_session"
+const sessionCookie = "pimpbase_session"
 
 type Server struct {
 	Auth    *auth.Service
@@ -57,7 +57,7 @@ type Server struct {
 	UI fs.FS
 	// Secure marks cookies as HTTPS only.
 	Secure bool
-	// PublicURL is the address people reach Bubibase at, such as
+	// PublicURL is the address people reach Pimpbase at, such as
 	// https://apps.example.com; single sign-on providers send people back
 	// there. Empty uses the address of each request.
 	PublicURL string
@@ -307,8 +307,8 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 		if route == "" || !strings.HasPrefix(r.URL.Path, "/api/") && route != "GET /healthz" && route != "GET /readyz" && route != "GET /metrics" {
 			route = "builder"
 		}
-		metrics.Default.Inc("bubibase_http_requests_total", "route", route, "code", strconv.Itoa(sw.status/100)+"xx")
-		metrics.Default.Since("bubibase_http_request_duration_seconds", start, "route", route)
+		metrics.Default.Inc("pimpbase_http_requests_total", "route", route, "code", strconv.Itoa(sw.status/100)+"xx")
+		metrics.Default.Since("pimpbase_http_request_duration_seconds", start, "route", route)
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			s.Log.Info("request", "method", r.Method, "path", r.URL.Path, "status", sw.status, "ms", time.Since(start).Milliseconds())
 		}

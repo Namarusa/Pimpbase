@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bubibase/bubibase/internal/flows"
-	"github.com/bubibase/bubibase/internal/rbac"
-	"github.com/bubibase/bubibase/internal/tables"
+	"github.com/pimpbase/pimpbase/internal/flows"
+	"github.com/pimpbase/pimpbase/internal/rbac"
+	"github.com/pimpbase/pimpbase/internal/tables"
 )
 
 // Flows, for builders; running manual flows, for app users; webhooks, for

@@ -15,10 +15,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bubibase/bubibase/internal/apps"
-	"github.com/bubibase/bubibase/internal/files"
-	"github.com/bubibase/bubibase/internal/ids"
-	"github.com/bubibase/bubibase/internal/tables"
+	"github.com/pimpbase/pimpbase/internal/apps"
+	"github.com/pimpbase/pimpbase/internal/files"
+	"github.com/pimpbase/pimpbase/internal/ids"
+	"github.com/pimpbase/pimpbase/internal/tables"
 )
 
 // ImportOptions say what an import does.
@@ -95,7 +95,7 @@ func open(zr *zip.Reader) (*file, error) {
 		return nil, errNotAZip
 	}
 	if m.Version > Version {
-		return nil, &Error{fmt.Sprintf("this file was made by a newer Bubibase (format %d); update this server first", m.Version)}
+		return nil, &Error{fmt.Sprintf("this file was made by a newer Pimpbase (format %d); update this server first", m.Version)}
 	}
 	f.manifest = &m
 	raw, err := f.read("app.json", maxAppJSON)

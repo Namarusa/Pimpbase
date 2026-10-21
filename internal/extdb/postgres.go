@@ -40,7 +40,7 @@ var postgres = &dialect{
 		default:
 			q.Set("sslmode", "prefer")
 		}
-		q.Set("application_name", "bubibase")
+		q.Set("application_name", "pimpbase")
 		q.Set("connect_timeout", "10")
 		for _, o := range s.Options {
 			if o.Key != "" {

@@ -206,7 +206,7 @@ var metaMigrations = []string{
 
 func migrateMeta(ctx context.Context, db *DB) error {
 	// Servers starting together against one Postgres database take turns.
-	unlock, err := db.Lock(ctx, "bubibase:migrate")
+	unlock, err := db.Lock(ctx, "pimpbase:migrate")
 	if err != nil {
 		return err
 	}

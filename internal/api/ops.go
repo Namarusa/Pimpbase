@@ -8,10 +8,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/bubibase/bubibase/internal/backup"
-	"github.com/bubibase/bubibase/internal/cluster"
-	"github.com/bubibase/bubibase/internal/metrics"
-	"github.com/bubibase/bubibase/internal/store"
+	"github.com/pimpbase/pimpbase/internal/backup"
+	"github.com/pimpbase/pimpbase/internal/cluster"
+	"github.com/pimpbase/pimpbase/internal/metrics"
+	"github.com/pimpbase/pimpbase/internal/store"
 )
 
 var (
@@ -25,37 +25,37 @@ func (s *Server) Drain() { s.draining.Store(true) }
 
 func (s *Server) describeMetrics(st *store.Store) {
 	m := metrics.Default
-	m.Describe("bubibase_http_requests_total", "counter", "HTTP requests answered, by route and status class.")
-	m.Describe("bubibase_http_request_duration_seconds", "histogram", "Time to answer HTTP requests, by route.")
-	m.Describe("bubibase_http_in_flight", "gauge", "HTTP requests being answered.")
-	m.Describe("bubibase_rate_limited_total", "counter", "Requests refused by the per-client rate limit.")
-	m.Describe("bubibase_quota_refused_total", "counter", "Work refused by app quotas, by quota.")
-	m.Describe("bubibase_flow_runs_total", "counter", "Flow runs finished, by status.")
-	m.Describe("bubibase_flow_run_duration_seconds", "histogram", "Time flow runs took.")
-	m.Describe("bubibase_db_connections", "gauge", "Connections of the metadata database pool, by state.")
-	m.Describe("bubibase_db_wait_seconds_total", "counter", "Time spent waiting for a free database connection.")
-	m.Describe("bubibase_instances", "gauge", "Servers sharing the database that are alive.")
-	m.Describe("bubibase_build_info", "gauge", "Always 1; the labels name the build.")
+	m.Describe("pimpbase_http_requests_total", "counter", "HTTP requests answered, by route and status class.")
+	m.Describe("pimpbase_http_request_duration_seconds", "histogram", "Time to answer HTTP requests, by route.")
+	m.Describe("pimpbase_http_in_flight", "gauge", "HTTP requests being answered.")
+	m.Describe("pimpbase_rate_limited_total", "counter", "Requests refused by the per-client rate limit.")
+	m.Describe("pimpbase_quota_refused_total", "counter", "Work refused by app quotas, by quota.")
+	m.Describe("pimpbase_flow_runs_total", "counter", "Flow runs finished, by status.")
+	m.Describe("pimpbase_flow_run_duration_seconds", "histogram", "Time flow runs took.")
+	m.Describe("pimpbase_db_connections", "gauge", "Connections of the metadata database pool, by state.")
+	m.Describe("pimpbase_db_wait_seconds_total", "counter", "Time spent waiting for a free database connection.")
+	m.Describe("pimpbase_instances", "gauge", "Servers sharing the database that are alive.")
+	m.Describe("pimpbase_build_info", "gauge", "Always 1; the labels name the build.")
 	m.Describe("go_goroutines", "gauge", "Goroutines.")
 	m.Describe("go_memstats_heap_alloc_bytes", "gauge", "Heap bytes in use.")
 	m.Describe("process_start_time_seconds", "gauge", "When the process started, in Unix seconds.")
 	m.OnCollect(func(m *metrics.Registry) {
-		m.Set("bubibase_http_in_flight", float64(inFlight.Load()))
+		m.Set("pimpbase_http_in_flight", float64(inFlight.Load()))
 		stats := st.Meta.Stats()
-		m.Set("bubibase_db_connections", float64(stats.InUse), "state", "in_use")
-		m.Set("bubibase_db_connections", float64(stats.Idle), "state", "idle")
-		m.Set("bubibase_db_wait_seconds_total", stats.WaitDuration.Seconds())
+		m.Set("pimpbase_db_connections", float64(stats.InUse), "state", "in_use")
+		m.Set("pimpbase_db_connections", float64(stats.Idle), "state", "idle")
+		m.Set("pimpbase_db_wait_seconds_total", stats.WaitDuration.Seconds())
 		var ms runtime.MemStats
 		runtime.ReadMemStats(&ms)
 		m.Set("go_goroutines", float64(runtime.NumGoroutine()))
 		m.Set("go_memstats_heap_alloc_bytes", float64(ms.HeapAlloc))
 		m.Set("process_start_time_seconds", float64(startedAt.Unix()))
-		m.Set("bubibase_build_info", 1, "version", s.Version, "storage", string(st.Dialect()))
+		m.Set("pimpbase_build_info", 1, "version", s.Version, "storage", string(st.Dialect()))
 		if s.Node != nil {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 			if alive, err := s.Node.Alive(ctx); err == nil {
-				m.Set("bubibase_instances", float64(len(alive)))
+				m.Set("pimpbase_instances", float64(len(alive)))
 			}
 		}
 	})
@@ -119,7 +119,7 @@ func (s *Server) downloadBackup(w http.ResponseWriter, r *http.Request) error {
 	if s.store.Dialect() != store.SQLite {
 		return errStatus(400, "this server keeps its data in Postgres; back it up with pg_dump or your provider's snapshots")
 	}
-	name := fmt.Sprintf("bubibase-%s.zip", time.Now().UTC().Format("20060102-150405"))
+	name := fmt.Sprintf("pimpbase-%s.zip", time.Now().UTC().Format("20060102-150405"))
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
 	if _, err := backup.Write(r.Context(), s.store.DataDir(), w); err != nil {

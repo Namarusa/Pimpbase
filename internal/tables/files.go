@@ -8,8 +8,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/bubibase/bubibase/internal/rbac"
-	"github.com/bubibase/bubibase/internal/store"
+	"github.com/pimpbase/pimpbase/internal/rbac"
+	"github.com/pimpbase/pimpbase/internal/store"
 )
 
 // FileRef is one file held by an attachment field. The content lives in the

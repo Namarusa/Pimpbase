@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bubibase/bubibase/internal/apps"
-	"github.com/bubibase/bubibase/internal/metrics"
+	"github.com/pimpbase/pimpbase/internal/apps"
+	"github.com/pimpbase/pimpbase/internal/metrics"
 )
 
 // rateLimiter gives each client a bucket of Burst requests that refills
@@ -154,7 +154,7 @@ func (s *Server) rateLimited(w http.ResponseWriter, r *http.Request) bool {
 	if ok {
 		return false
 	}
-	metrics.Default.Inc("bubibase_rate_limited_total", "limit", "client")
+	metrics.Default.Inc("pimpbase_rate_limited_total", "limit", "client")
 	w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(wait.Seconds()))))
 	writeJSON(w, 429, map[string]any{"error": "too many requests; slow down and try again shortly", "code": "rate_limited"})
 	return true
@@ -165,7 +165,7 @@ func (s *Server) rateLimited(w http.ResponseWriter, r *http.Request) bool {
 func (s *Server) appRequest(a *apps.App) error {
 	n := s.requests.hit(a.ID, time.Now())
 	if max := a.Quotas.RequestsPerMinute; max > 0 && n > max {
-		metrics.Default.Inc("bubibase_quota_refused_total", "quota", "requests")
+		metrics.Default.Inc("pimpbase_quota_refused_total", "quota", "requests")
 		return &apps.QuotaError{Message: fmt.Sprintf("this app has reached its limit of %d requests a minute; try again shortly", max), Rate: true}
 	}
 	return nil
@@ -193,7 +193,7 @@ func (s *Server) checkRows(ctx context.Context, appID string, n int) error {
 		u = rowUsage{n: count, at: now}
 	}
 	if u.n+n > max {
-		metrics.Default.Inc("bubibase_quota_refused_total", "quota", "rows")
+		metrics.Default.Inc("pimpbase_quota_refused_total", "quota", "rows")
 		return &apps.QuotaError{Message: fmt.Sprintf("this app may hold at most %d rows and holds %d; delete rows or ask an admin to raise the limit", max, u.n)}
 	}
 	u.n += n
@@ -220,7 +220,7 @@ func (s *Server) checkFiles(ctx context.Context, appID string, size int64) error
 		return err
 	}
 	if max := int64(a.Quotas.MaxFileMB) << 20; used+size > max {
-		metrics.Default.Inc("bubibase_quota_refused_total", "quota", "files")
+		metrics.Default.Inc("pimpbase_quota_refused_total", "quota", "files")
 		return &apps.QuotaError{Message: fmt.Sprintf("this app may store at most %d MB of files and holds %.1f MB", a.Quotas.MaxFileMB, float64(used)/(1<<20))}
 	}
 	return nil
@@ -241,7 +241,7 @@ func (s *Server) checkRuns(ctx context.Context, appID string) error {
 		return err
 	}
 	if n >= max {
-		metrics.Default.Inc("bubibase_quota_refused_total", "quota", "flow_runs")
+		metrics.Default.Inc("pimpbase_quota_refused_total", "quota", "flow_runs")
 		return &apps.QuotaError{Message: fmt.Sprintf("this app has started its limit of %d flow runs in the last hour", max), Rate: true}
 	}
 	return nil

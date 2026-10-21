@@ -1,4 +1,4 @@
-// Package store wraps the SQL databases Bubibase uses and hides the
+// Package store wraps the SQL databases Pimpbase uses and hides the
 // differences between SQLite and Postgres behind a small Dialect.
 package store
 
@@ -215,7 +215,7 @@ type Store struct {
 }
 
 // Open opens the store. With an empty postgresDSN it uses SQLite files under
-// dataDir: bubibase.db for metadata and apps/<id>.db per app. With a DSN, all
+// dataDir: pimpbase.db for metadata and apps/<id>.db per app. With a DSN, all
 // data goes to that Postgres database, one schema per app.
 func Open(ctx context.Context, dataDir, postgresDSN string) (*Store, error) {
 	s := &Store{dataDir: dataDir, dsn: postgresDSN, apps: map[string]*DB{}}
@@ -234,7 +234,7 @@ func Open(ctx context.Context, dataDir, postgresDSN string) (*Store, error) {
 		if err := os.MkdirAll(filepath.Join(dataDir, "apps"), 0o755); err != nil {
 			return nil, err
 		}
-		db, err := openSQLite(filepath.Join(dataDir, "bubibase.db"))
+		db, err := openSQLite(filepath.Join(dataDir, "pimpbase.db"))
 		if err != nil {
 			return nil, err
 		}

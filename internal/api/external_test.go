@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bubibase/bubibase/internal/store"
-	"github.com/bubibase/bubibase/internal/store/storetest"
+	"github.com/pimpbase/pimpbase/internal/store"
+	"github.com/pimpbase/pimpbase/internal/store/storetest"
 )
 
 // externalDBs are the databases the external connector tests use, named
@@ -19,19 +19,19 @@ var externalDBs = []struct {
 	kind, env string
 	setup     []string
 }{
-	{"postgres", "BUBIBASE_TEST_EXT_POSTGRES", []string{
+	{"postgres", "PIMPBASE_TEST_EXT_POSTGRES", []string{
 		`DROP TABLE IF EXISTS bb_deals`,
 		`CREATE TABLE bb_deals (id SERIAL PRIMARY KEY, title VARCHAR(80) NOT NULL, owner VARCHAR(80), amount NUMERIC(12,2), won BOOLEAN, closed DATE, secret_note BYTEA)`,
 	}},
-	{"mysql", "BUBIBASE_TEST_EXT_MYSQL", []string{
+	{"mysql", "PIMPBASE_TEST_EXT_MYSQL", []string{
 		`DROP TABLE IF EXISTS bb_deals`,
 		`CREATE TABLE bb_deals (id INT AUTO_INCREMENT PRIMARY KEY, title VARCHAR(80) NOT NULL, owner VARCHAR(80), amount DECIMAL(12,2), won TINYINT(1), closed DATE, secret_note BLOB)`,
 	}},
-	{"mssql", "BUBIBASE_TEST_EXT_MSSQL", []string{
+	{"mssql", "PIMPBASE_TEST_EXT_MSSQL", []string{
 		`IF OBJECT_ID('dbo.bb_deals') IS NOT NULL DROP TABLE dbo.bb_deals`,
 		`CREATE TABLE dbo.bb_deals (id INT IDENTITY(1,1) PRIMARY KEY, title NVARCHAR(80) NOT NULL, owner NVARCHAR(80), amount DECIMAL(12,2), won BIT, closed DATE, secret_note VARBINARY(100))`,
 	}},
-	{"mongodb", "BUBIBASE_TEST_EXT_MONGO", nil},
+	{"mongodb", "PIMPBASE_TEST_EXT_MONGO", nil},
 }
 
 func TestExternalTables(t *testing.T) {
@@ -281,7 +281,7 @@ func testExternal(t *testing.T, s *store.Store, kind, uri string, setup []string
 	}
 
 	// CSV out and back in, and a flow started by a row added through
-	// Bubibase that writes to the table.
+	// Pimpbase that writes to the table.
 	csv := string(owner.raw("GET", tb+"/export?filter="+url.QueryEscape(`[title] = "Initech"`), nil, 200))
 	if !strings.Contains(csv, "title") || !strings.Contains(csv, "Initech") || strings.Contains(csv, "Acme") {
 		t.Errorf("csv = %s", csv)

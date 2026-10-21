@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bubibase/bubibase/internal/ids"
+	"github.com/pimpbase/pimpbase/internal/ids"
 )
 
 // Mail is an email a flow sends.
@@ -77,7 +77,7 @@ func NewMailer(setting, from string) (Mailer, error) {
 		m.From = u.Query().Get("from")
 	}
 	if m.From == "" {
-		return nil, fmt.Errorf("set the sender address with --mail-from (BUBIBASE_MAIL_FROM)")
+		return nil, fmt.Errorf("set the sender address with --mail-from (PIMPBASE_MAIL_FROM)")
 	}
 	return m, nil
 }

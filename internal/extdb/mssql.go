@@ -48,7 +48,7 @@ var mssql = &dialect{
 			q.Set("encrypt", "false")
 			q.Set("TrustServerCertificate", "true")
 		}
-		q.Set("app name", "bubibase")
+		q.Set("app name", "pimpbase")
 		q.Set("dial timeout", "10")
 		for _, o := range s.Options {
 			if o.Key != "" {

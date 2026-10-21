@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bubibase/bubibase/internal/store"
-	"github.com/bubibase/bubibase/internal/store/storetest"
+	"github.com/pimpbase/pimpbase/internal/store"
+	"github.com/pimpbase/pimpbase/internal/store/storetest"
 )
 
 // TestScaleAPI covers what phase 7 adds over HTTP: aggregates under row
@@ -58,7 +58,7 @@ func TestScaleAPI(t *testing.T) {
 		}
 		anon.do("GET", "/readyz", nil, 200)
 		metricsText := string(anon.raw("GET", "/metrics", nil, 200))
-		for _, want := range []string{`bubibase_http_requests_total{route="GET /api/apps/{app}/tables/{table}/aggregate",code="2xx"}`, "bubibase_http_request_duration_seconds_bucket", `bubibase_build_info{version="test",storage=`} {
+		for _, want := range []string{`pimpbase_http_requests_total{route="GET /api/apps/{app}/tables/{table}/aggregate",code="2xx"}`, "pimpbase_http_request_duration_seconds_bucket", `pimpbase_build_info{version="test",storage=`} {
 			if !strings.Contains(metricsText, want) {
 				t.Errorf("metrics lack %s", want)
 			}

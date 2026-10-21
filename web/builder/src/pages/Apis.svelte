@@ -33,7 +33,7 @@
   let datasources = $state<Datasource[]>([])
   let queries = $state<Query[]>([])
   let variables = $state<Variable[]>([])
-  // connectors are the database kinds this Bubibase was built with.
+  // connectors are the database kinds this Pimpbase was built with.
   let connectors = $state<Connector[]>([])
   let error = $state('')
   let ready = $state(false)

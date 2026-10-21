@@ -3,7 +3,7 @@ package tables
 import (
 	"context"
 
-	"github.com/bubibase/bubibase/internal/rbac"
+	"github.com/pimpbase/pimpbase/internal/rbac"
 )
 
 // Labels gives the labels of rows of a table that something outside it

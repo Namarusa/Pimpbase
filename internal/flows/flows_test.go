@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bubibase/bubibase/internal/interp"
+	"github.com/pimpbase/pimpbase/internal/interp"
 )
 
 func TestCron(t *testing.T) {
@@ -175,13 +175,13 @@ func TestPDF(t *testing.T) {
 }
 
 func TestMailBytes(t *testing.T) {
-	m := &Mail{From: "Bubibase <flows@example.com>", To: []string{"bob@example.com"}, Subject: "Votre facture n°7", Text: "Bonjour", Attachments: []Attachment{{Name: "facture 7.pdf", Type: "application/pdf", Data: []byte("%PDF-1.4")}}}
+	m := &Mail{From: "Pimpbase <flows@example.com>", To: []string{"bob@example.com"}, Subject: "Votre facture n°7", Text: "Bonjour", Attachments: []Attachment{{Name: "facture 7.pdf", Type: "application/pdf", Data: []byte("%PDF-1.4")}}}
 	raw, err := m.Bytes("example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := string(raw)
-	for _, want := range []string{"From: \"Bubibase\" <flows@example.com>", "To: <bob@example.com>", "Subject: =?utf-8?q?Votre_facture_n=C2=B07?=", "multipart/mixed", `filename="facture 7.pdf"`, "JVBERi0xLjQ="} {
+	for _, want := range []string{"From: \"Pimpbase\" <flows@example.com>", "To: <bob@example.com>", "Subject: =?utf-8?q?Votre_facture_n=C2=B07?=", "multipart/mixed", `filename="facture 7.pdf"`, "JVBERi0xLjQ="} {
 		if !strings.Contains(s, want) {
 			t.Errorf("mail lacks %q:\n%s", want, s)
 		}

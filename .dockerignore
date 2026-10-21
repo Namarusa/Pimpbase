@@ -1,6 +1,6 @@
 .git
 data
-bubibase
+pimpbase
 web/*/node_modules
 *.db
 *.db-wal

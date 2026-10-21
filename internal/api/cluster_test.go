@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bubibase/bubibase/internal/cluster"
-	"github.com/bubibase/bubibase/internal/store"
-	"github.com/bubibase/bubibase/internal/store/storetest"
+	"github.com/pimpbase/pimpbase/internal/cluster"
+	"github.com/pimpbase/pimpbase/internal/store"
+	"github.com/pimpbase/pimpbase/internal/store/storetest"
 )
 
 // TestTwoServers runs two servers on one database: a scheduled flow runs

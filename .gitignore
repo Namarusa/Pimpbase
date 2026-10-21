@@ -1,4 +1,4 @@
-/bubibase
+/pimpbase
 /data/
 /web/*/node_modules/
 *.db

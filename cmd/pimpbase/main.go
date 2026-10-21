@@ -1,4 +1,4 @@
-// Command bubibase runs the Bubibase platform: the builder, every app and
+// Command pimpbase runs the Pimpbase platform: the builder, every app and
 // their APIs, from one binary.
 package main
 
@@ -16,15 +16,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/bubibase/bubibase/internal/ai"
-	"github.com/bubibase/bubibase/internal/api"
-	"github.com/bubibase/bubibase/internal/backup"
-	"github.com/bubibase/bubibase/internal/cluster"
-	"github.com/bubibase/bubibase/internal/files"
-	"github.com/bubibase/bubibase/internal/flows"
-	"github.com/bubibase/bubibase/internal/sso/ssotest"
-	"github.com/bubibase/bubibase/internal/store"
-	"github.com/bubibase/bubibase/web"
+	"github.com/pimpbase/pimpbase/internal/ai"
+	"github.com/pimpbase/pimpbase/internal/api"
+	"github.com/pimpbase/pimpbase/internal/backup"
+	"github.com/pimpbase/pimpbase/internal/cluster"
+	"github.com/pimpbase/pimpbase/internal/files"
+	"github.com/pimpbase/pimpbase/internal/flows"
+	"github.com/pimpbase/pimpbase/internal/sso/ssotest"
+	"github.com/pimpbase/pimpbase/internal/store"
+	"github.com/pimpbase/pimpbase/web"
 )
 
 var version = "dev"
@@ -37,50 +37,50 @@ func main() {
 	switch os.Args[1] {
 	case "serve":
 		if err := serve(os.Args[2:]); err != nil {
-			fmt.Fprintln(os.Stderr, "bubibase:", err)
+			fmt.Fprintln(os.Stderr, "pimpbase:", err)
 			os.Exit(1)
 		}
 	case "backup":
 		if err := backupCmd(os.Args[2:]); err != nil {
-			fmt.Fprintln(os.Stderr, "bubibase:", err)
+			fmt.Fprintln(os.Stderr, "pimpbase:", err)
 			os.Exit(1)
 		}
 	case "restore":
 		if err := restoreCmd(os.Args[2:]); err != nil {
-			fmt.Fprintln(os.Stderr, "bubibase:", err)
+			fmt.Fprintln(os.Stderr, "pimpbase:", err)
 			os.Exit(1)
 		}
 	case "dev-idp":
 		if err := devIdP(os.Args[2:]); err != nil {
-			fmt.Fprintln(os.Stderr, "bubibase:", err)
+			fmt.Fprintln(os.Stderr, "pimpbase:", err)
 			os.Exit(1)
 		}
 	case "healthcheck":
 		if err := healthcheck(os.Args[2:]); err != nil {
-			fmt.Fprintln(os.Stderr, "bubibase:", err)
+			fmt.Fprintln(os.Stderr, "pimpbase:", err)
 			os.Exit(1)
 		}
 	case "version":
-		fmt.Println("bubibase", version)
+		fmt.Println("pimpbase", version)
 	default:
-		fmt.Fprintf(os.Stderr, "bubibase: unknown command %q\n\n", os.Args[1])
+		fmt.Fprintf(os.Stderr, "pimpbase: unknown command %q\n\n", os.Args[1])
 		usage()
 		os.Exit(2)
 	}
 }
 
 func usage() {
-	fmt.Fprint(os.Stderr, `Bubibase hosts low-code apps from one binary.
+	fmt.Fprint(os.Stderr, `Pimpbase hosts low-code apps from one binary.
 
 Usage:
-  bubibase serve [flags]          start the server
-  bubibase backup [flags]         copy a SQLite data folder into one zip, even while serving
-  bubibase restore [flags] <zip>  put a backup into a data folder
-  bubibase dev-idp [flags]        run a test single sign-on provider, never for real accounts
-  bubibase healthcheck [url]      exit 0 when the local server is ready, for containers
-  bubibase version                print the version
+  pimpbase serve [flags]          start the server
+  pimpbase backup [flags]         copy a SQLite data folder into one zip, even while serving
+  pimpbase restore [flags] <zip>  put a backup into a data folder
+  pimpbase dev-idp [flags]        run a test single sign-on provider, never for real accounts
+  pimpbase healthcheck [url]      exit 0 when the local server is ready, for containers
+  pimpbase version                print the version
 
-Run "bubibase serve -h" for the server flags.
+Run "pimpbase serve -h" for the server flags.
 `)
 }
 
@@ -106,8 +106,8 @@ type aiOptions struct {
 // variable, and keys also the provider's usual one.
 func aiFlags(fs *flag.FlagSet) *aiOptions {
 	o := &aiOptions{
-		provider: fs.String("ai-provider", env("BUBIBASE_AI_PROVIDER", ""), "provider of the builder's AI assistant: anthropic, openai, gemini, azure, mistral or openai_compatible; empty lets admins pick (BUBIBASE_AI_PROVIDER)"),
-		model:    fs.String("ai-model", env("BUBIBASE_AI_MODEL", ""), "model of --ai-provider (for Azure, the deployment) (BUBIBASE_AI_MODEL)"),
+		provider: fs.String("ai-provider", env("PIMPBASE_AI_PROVIDER", ""), "provider of the builder's AI assistant: anthropic, openai, gemini, azure, mistral or openai_compatible; empty lets admins pick (PIMPBASE_AI_PROVIDER)"),
+		model:    fs.String("ai-model", env("PIMPBASE_AI_MODEL", ""), "model of --ai-provider (for Azure, the deployment) (PIMPBASE_AI_MODEL)"),
 	}
 	add := func(provider, field, name, usage string, envs ...string) {
 		def := ""
@@ -116,17 +116,17 @@ func aiFlags(fs *flag.FlagSet) *aiOptions {
 		}
 		o.settings = append(o.settings, aiSetting{provider, field, fs.String(name, def, usage+" ("+strings.Join(envs, " or ")+")")})
 	}
-	add(ai.Anthropic, "key", "anthropic-key", "Anthropic API key for the builder's AI assistant; kept on the server. Admins can also save keys in the builder", "BUBIBASE_ANTHROPIC_KEY", "ANTHROPIC_API_KEY")
-	add(ai.OpenAI, "key", "openai-key", "OpenAI API key for the AI assistant", "BUBIBASE_OPENAI_KEY", "OPENAI_API_KEY")
-	add(ai.Gemini, "key", "gemini-key", "Google Gemini API key for the AI assistant", "BUBIBASE_GEMINI_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY")
-	add(ai.Mistral, "key", "mistral-key", "Mistral API key for the AI assistant", "BUBIBASE_MISTRAL_KEY", "MISTRAL_API_KEY")
-	add(ai.Azure, "key", "azure-openai-key", "Azure OpenAI key for the AI assistant", "BUBIBASE_AZURE_OPENAI_KEY", "AZURE_OPENAI_API_KEY")
-	add(ai.Azure, "url", "azure-openai-endpoint", "Azure OpenAI resource endpoint, e.g. https://name.openai.azure.com", "BUBIBASE_AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_ENDPOINT")
-	add(ai.Azure, "model", "azure-openai-deployment", "Azure OpenAI deployment name", "BUBIBASE_AZURE_OPENAI_DEPLOYMENT")
-	add(ai.Azure, "version", "azure-openai-api-version", "Azure OpenAI API version, or v1 for the v1 API (default "+ai.DefaultAzureAPIVersion+")", "BUBIBASE_AZURE_OPENAI_API_VERSION", "OPENAI_API_VERSION")
-	add(ai.Compatible, "url", "openai-compatible-url", "address of an OpenAI-compatible server for the AI assistant, e.g. http://localhost:11434/v1 for Ollama", "BUBIBASE_OPENAI_COMPATIBLE_URL")
-	add(ai.Compatible, "key", "openai-compatible-key", "API key of the OpenAI-compatible server, if it needs one", "BUBIBASE_OPENAI_COMPATIBLE_KEY")
-	add(ai.Compatible, "model", "openai-compatible-model", "model on the OpenAI-compatible server", "BUBIBASE_OPENAI_COMPATIBLE_MODEL")
+	add(ai.Anthropic, "key", "anthropic-key", "Anthropic API key for the builder's AI assistant; kept on the server. Admins can also save keys in the builder", "PIMPBASE_ANTHROPIC_KEY", "ANTHROPIC_API_KEY")
+	add(ai.OpenAI, "key", "openai-key", "OpenAI API key for the AI assistant", "PIMPBASE_OPENAI_KEY", "OPENAI_API_KEY")
+	add(ai.Gemini, "key", "gemini-key", "Google Gemini API key for the AI assistant", "PIMPBASE_GEMINI_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY")
+	add(ai.Mistral, "key", "mistral-key", "Mistral API key for the AI assistant", "PIMPBASE_MISTRAL_KEY", "MISTRAL_API_KEY")
+	add(ai.Azure, "key", "azure-openai-key", "Azure OpenAI key for the AI assistant", "PIMPBASE_AZURE_OPENAI_KEY", "AZURE_OPENAI_API_KEY")
+	add(ai.Azure, "url", "azure-openai-endpoint", "Azure OpenAI resource endpoint, e.g. https://name.openai.azure.com", "PIMPBASE_AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_ENDPOINT")
+	add(ai.Azure, "model", "azure-openai-deployment", "Azure OpenAI deployment name", "PIMPBASE_AZURE_OPENAI_DEPLOYMENT")
+	add(ai.Azure, "version", "azure-openai-api-version", "Azure OpenAI API version, or v1 for the v1 API (default "+ai.DefaultAzureAPIVersion+")", "PIMPBASE_AZURE_OPENAI_API_VERSION", "OPENAI_API_VERSION")
+	add(ai.Compatible, "url", "openai-compatible-url", "address of an OpenAI-compatible server for the AI assistant, e.g. http://localhost:11434/v1 for Ollama", "PIMPBASE_OPENAI_COMPATIBLE_URL")
+	add(ai.Compatible, "key", "openai-compatible-key", "API key of the OpenAI-compatible server, if it needs one", "PIMPBASE_OPENAI_COMPATIBLE_KEY")
+	add(ai.Compatible, "model", "openai-compatible-model", "model on the OpenAI-compatible server", "PIMPBASE_OPENAI_COMPATIBLE_MODEL")
 	return o
 }
 
@@ -174,22 +174,22 @@ func (o *aiOptions) apply(svc *ai.Service) error {
 
 func serve(args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
-	addr := fs.String("addr", env("BUBIBASE_ADDR", ":8080"), "address to listen on (BUBIBASE_ADDR)")
-	dataDir := fs.String("data", env("BUBIBASE_DATA", "./data"), "folder for SQLite databases and files (BUBIBASE_DATA)")
-	pg := fs.String("postgres", env("BUBIBASE_POSTGRES", ""), "Postgres connection string; SQLite is used when empty (BUBIBASE_POSTGRES)")
-	smtp := fs.String("smtp", env("BUBIBASE_SMTP", ""), "mail server for flow emails: smtp://user:pass@host:587, smtps://…, or log (BUBIBASE_SMTP)")
-	mailFrom := fs.String("mail-from", env("BUBIBASE_MAIL_FROM", ""), "sender address of flow emails (BUBIBASE_MAIL_FROM)")
-	secure := fs.Bool("secure-cookies", env("BUBIBASE_SECURE_COOKIES", "") == "true", "mark session cookies HTTPS-only (BUBIBASE_SECURE_COOKIES)")
-	publicURL := fs.String("public-url", env("BUBIBASE_PUBLIC_URL", ""), "address people reach Bubibase at, e.g. https://apps.example.com; single sign-on sends people back there (BUBIBASE_PUBLIC_URL)")
-	filesSpec := fs.String("files", env("BUBIBASE_FILES", "db"), "where uploaded files go: db (inside the app's database), dir:/path (a folder, which servers may share), or s3://bucket/prefix?region=…&endpoint=… with AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY (BUBIBASE_FILES)")
-	rateLimit := fs.Float64("rate-limit", envFloat("BUBIBASE_RATE_LIMIT", 100), "API requests a second one client may make to this server; 0 turns the limit off (BUBIBASE_RATE_LIMIT)")
-	rateBurst := fs.Int("rate-burst", int(envFloat("BUBIBASE_RATE_BURST", 200)), "requests a client may make at once before the rate limit applies (BUBIBASE_RATE_BURST)")
-	behindProxy := fs.Bool("behind-proxy", env("BUBIBASE_BEHIND_PROXY", "") == "true", "trust the X-Forwarded-For address a load balancer or proxy adds (BUBIBASE_BEHIND_PROXY)")
-	metricsToken := fs.String("metrics-token", env("BUBIBASE_METRICS_TOKEN", ""), "require this Bearer token to read /metrics; empty leaves it open (BUBIBASE_METRICS_TOKEN)")
-	drain := fs.Duration("drain", envDuration("BUBIBASE_DRAIN", 0), "on shutdown, fail /readyz this long before closing, so a load balancer stops sending requests (BUBIBASE_DRAIN)")
-	backupDir := fs.String("backup-dir", env("BUBIBASE_BACKUP_DIR", ""), "with SQLite, write a backup zip into this folder every --backup-every (BUBIBASE_BACKUP_DIR)")
-	backupEvery := fs.Duration("backup-every", envDuration("BUBIBASE_BACKUP_EVERY", 24*time.Hour), "how often to back up into --backup-dir (BUBIBASE_BACKUP_EVERY)")
-	backupKeep := fs.Int("backup-keep", int(envFloat("BUBIBASE_BACKUP_KEEP", 7)), "backups to keep in --backup-dir (BUBIBASE_BACKUP_KEEP)")
+	addr := fs.String("addr", env("PIMPBASE_ADDR", ":8080"), "address to listen on (PIMPBASE_ADDR)")
+	dataDir := fs.String("data", env("PIMPBASE_DATA", "./data"), "folder for SQLite databases and files (PIMPBASE_DATA)")
+	pg := fs.String("postgres", env("PIMPBASE_POSTGRES", ""), "Postgres connection string; SQLite is used when empty (PIMPBASE_POSTGRES)")
+	smtp := fs.String("smtp", env("PIMPBASE_SMTP", ""), "mail server for flow emails: smtp://user:pass@host:587, smtps://…, or log (PIMPBASE_SMTP)")
+	mailFrom := fs.String("mail-from", env("PIMPBASE_MAIL_FROM", ""), "sender address of flow emails (PIMPBASE_MAIL_FROM)")
+	secure := fs.Bool("secure-cookies", env("PIMPBASE_SECURE_COOKIES", "") == "true", "mark session cookies HTTPS-only (PIMPBASE_SECURE_COOKIES)")
+	publicURL := fs.String("public-url", env("PIMPBASE_PUBLIC_URL", ""), "address people reach Pimpbase at, e.g. https://apps.example.com; single sign-on sends people back there (PIMPBASE_PUBLIC_URL)")
+	filesSpec := fs.String("files", env("PIMPBASE_FILES", "db"), "where uploaded files go: db (inside the app's database), dir:/path (a folder, which servers may share), or s3://bucket/prefix?region=…&endpoint=… with AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY (PIMPBASE_FILES)")
+	rateLimit := fs.Float64("rate-limit", envFloat("PIMPBASE_RATE_LIMIT", 100), "API requests a second one client may make to this server; 0 turns the limit off (PIMPBASE_RATE_LIMIT)")
+	rateBurst := fs.Int("rate-burst", int(envFloat("PIMPBASE_RATE_BURST", 200)), "requests a client may make at once before the rate limit applies (PIMPBASE_RATE_BURST)")
+	behindProxy := fs.Bool("behind-proxy", env("PIMPBASE_BEHIND_PROXY", "") == "true", "trust the X-Forwarded-For address a load balancer or proxy adds (PIMPBASE_BEHIND_PROXY)")
+	metricsToken := fs.String("metrics-token", env("PIMPBASE_METRICS_TOKEN", ""), "require this Bearer token to read /metrics; empty leaves it open (PIMPBASE_METRICS_TOKEN)")
+	drain := fs.Duration("drain", envDuration("PIMPBASE_DRAIN", 0), "on shutdown, fail /readyz this long before closing, so a load balancer stops sending requests (PIMPBASE_DRAIN)")
+	backupDir := fs.String("backup-dir", env("PIMPBASE_BACKUP_DIR", ""), "with SQLite, write a backup zip into this folder every --backup-every (PIMPBASE_BACKUP_DIR)")
+	backupEvery := fs.Duration("backup-every", envDuration("PIMPBASE_BACKUP_EVERY", 24*time.Hour), "how often to back up into --backup-dir (PIMPBASE_BACKUP_EVERY)")
+	backupKeep := fs.Int("backup-keep", int(envFloat("PIMPBASE_BACKUP_KEEP", 7)), "backups to keep in --backup-dir (PIMPBASE_BACKUP_KEEP)")
 	aiFlags := aiFlags(fs)
 	fs.Parse(args)
 
@@ -253,7 +253,7 @@ func serve(args []string) error {
 	if *pg != "" {
 		where = "Postgres"
 	}
-	log.Info("bubibase is running", "version", version, "addr", *addr, "storage", where, "files", srv.Files.StorageName(), "server", srv.Node.ID)
+	log.Info("pimpbase is running", "version", version, "addr", *addr, "storage", where, "files", srv.Files.StorageName(), "server", srv.Node.ID)
 	errc := make(chan error, 1)
 	go func() { errc <- httpSrv.ListenAndServe() }()
 	select {
@@ -312,15 +312,15 @@ func backupLoop(ctx context.Context, log *slog.Logger, dataDir, dir string, ever
 
 func backupCmd(args []string) error {
 	fs := flag.NewFlagSet("backup", flag.ExitOnError)
-	dataDir := fs.String("data", env("BUBIBASE_DATA", "./data"), "the SQLite data folder to back up (BUBIBASE_DATA)")
-	out := fs.String("out", "", "zip file to write; default bubibase-<time>.zip in the current folder")
+	dataDir := fs.String("data", env("PIMPBASE_DATA", "./data"), "the SQLite data folder to back up (PIMPBASE_DATA)")
+	out := fs.String("out", "", "zip file to write; default pimpbase-<time>.zip in the current folder")
 	fs.Parse(args)
-	if os.Getenv("BUBIBASE_POSTGRES") != "" {
+	if os.Getenv("PIMPBASE_POSTGRES") != "" {
 		return errors.New("this server keeps its data in Postgres; back it up with pg_dump or your provider's snapshots")
 	}
 	name := *out
 	if name == "" {
-		name = "bubibase-" + time.Now().UTC().Format("20060102-150405") + ".zip"
+		name = "pimpbase-" + time.Now().UTC().Format("20060102-150405") + ".zip"
 	}
 	f, err := os.Create(name)
 	if err != nil {
@@ -340,11 +340,11 @@ func backupCmd(args []string) error {
 
 func restoreCmd(args []string) error {
 	fs := flag.NewFlagSet("restore", flag.ExitOnError)
-	dataDir := fs.String("data", env("BUBIBASE_DATA", "./data"), "the data folder to restore into; stop the server first (BUBIBASE_DATA)")
+	dataDir := fs.String("data", env("PIMPBASE_DATA", "./data"), "the data folder to restore into; stop the server first (PIMPBASE_DATA)")
 	force := fs.Bool("force", false, "replace the data already in the folder")
 	fs.Parse(args)
 	if fs.NArg() != 1 {
-		return errors.New("name the backup zip: bubibase restore --data ./data backup.zip")
+		return errors.New("name the backup zip: pimpbase restore --data ./data backup.zip")
 	}
 	n, err := backup.Restore(fs.Arg(0), *dataDir, *force)
 	if err != nil {
@@ -364,21 +364,21 @@ func devIdP(args []string) error {
 	if *issuer == "" {
 		*issuer = "http://" + *addr
 	}
-	p := ssotest.New(*issuer, "bubibase-dev", "dev-secret",
+	p := ssotest.New(*issuer, "pimpbase-dev", "dev-secret",
 		ssotest.User{Subject: "kim", Email: "kim.lee@acme.test", EmailVerified: true, Name: "Kim Lee", Groups: []string{"sales", "north"}},
 		ssotest.User{Subject: "sam", Email: "sam.ortiz@acme.test", EmailVerified: true, Name: "Sam Ortiz", Groups: []string{"sales-leads", "north", "south"}},
 		ssotest.User{Subject: "ida", Email: "ida.novak@acme.test", EmailVerified: true, Name: "Ida Novak", Groups: []string{"it"}},
 		ssotest.User{Subject: "eve", Email: "eve@elsewhere.test", EmailVerified: true, Name: "Eve Outsider", Groups: []string{}},
 	)
 	p.Title = "Acme sign-in"
-	fmt.Fprintf(os.Stderr, "Test identity provider at %s\n  issuer:        %s\n  client id:     bubibase-dev\n  client secret: dev-secret\nNever use it for real accounts.\n", *addr, *issuer)
+	fmt.Fprintf(os.Stderr, "Test identity provider at %s\n  issuer:        %s\n  client id:     pimpbase-dev\n  client secret: dev-secret\nNever use it for real accounts.\n", *addr, *issuer)
 	srv := &http.Server{Addr: *addr, Handler: p.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	return srv.ListenAndServe()
 }
 
 // healthcheck asks a server's /readyz, so container images need no curl.
 func healthcheck(args []string) error {
-	addr := env("BUBIBASE_ADDR", ":8080")
+	addr := env("PIMPBASE_ADDR", ":8080")
 	url := "http://127.0.0.1" + addr[strings.LastIndex(addr, ":"):] + "/readyz"
 	if len(args) > 0 {
 		url = args[0]

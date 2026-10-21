@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bubibase/bubibase/internal/ai"
-	"github.com/bubibase/bubibase/internal/store"
-	"github.com/bubibase/bubibase/internal/store/storetest"
+	"github.com/pimpbase/pimpbase/internal/ai"
+	"github.com/pimpbase/pimpbase/internal/store"
+	"github.com/pimpbase/pimpbase/internal/store/storetest"
 )
 
 // linkedDBs set up three related tables: orders of customers, and order
@@ -19,19 +19,19 @@ var linkedDBs = []struct {
 	kind, env string
 	setup     []string
 }{
-	{"postgres", "BUBIBASE_TEST_EXT_POSTGRES", []string{
+	{"postgres", "PIMPBASE_TEST_EXT_POSTGRES", []string{
 		`DROP TABLE IF EXISTS gx_lines, gx_orders, gx_customers`,
 		`CREATE TABLE gx_customers (id SERIAL PRIMARY KEY, name VARCHAR(80) NOT NULL)`,
 		`CREATE TABLE gx_orders (id SERIAL PRIMARY KEY, title VARCHAR(80) NOT NULL, owner VARCHAR(80), customer_id INTEGER REFERENCES gx_customers(id), region_id INTEGER, amount NUMERIC(10,2))`,
 		`CREATE TABLE gx_lines (order_id INTEGER NOT NULL REFERENCES gx_orders(id) ON DELETE CASCADE, line INTEGER NOT NULL, qty INTEGER, PRIMARY KEY (order_id, line))`,
 	}},
-	{"mysql", "BUBIBASE_TEST_EXT_MYSQL", []string{
+	{"mysql", "PIMPBASE_TEST_EXT_MYSQL", []string{
 		`DROP TABLE IF EXISTS gx_lines`, `DROP TABLE IF EXISTS gx_orders`, `DROP TABLE IF EXISTS gx_customers`,
 		`CREATE TABLE gx_customers (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(80) NOT NULL)`,
 		`CREATE TABLE gx_orders (id INT AUTO_INCREMENT PRIMARY KEY, title VARCHAR(80) NOT NULL, owner VARCHAR(80), customer_id INT, region_id INT, amount DECIMAL(10,2), FOREIGN KEY (customer_id) REFERENCES gx_customers(id))`,
 		`CREATE TABLE gx_lines (order_id INT NOT NULL, line INT NOT NULL, qty INT, PRIMARY KEY (order_id, line), FOREIGN KEY (order_id) REFERENCES gx_orders(id) ON DELETE CASCADE)`,
 	}},
-	{"mssql", "BUBIBASE_TEST_EXT_MSSQL", []string{
+	{"mssql", "PIMPBASE_TEST_EXT_MSSQL", []string{
 		`IF OBJECT_ID('dbo.gx_lines') IS NOT NULL DROP TABLE dbo.gx_lines`,
 		`IF OBJECT_ID('dbo.gx_orders') IS NOT NULL DROP TABLE dbo.gx_orders`,
 		`IF OBJECT_ID('dbo.gx_customers') IS NOT NULL DROP TABLE dbo.gx_customers`,
@@ -207,7 +207,7 @@ func testLinked(t *testing.T, s *store.Store, kind, uri string, setup []string) 
 	}
 	bo.do("POST", ob+"/rows", map[string]any{"title": "Not mine", "owner": "cy@example.com"}, 403)
 
-	// Flows start on changes made through Bubibase and write external rows.
+	// Flows start on changes made through Pimpbase and write external rows.
 	flow := owner.do("POST", base+"/flows", map[string]any{
 		"name":    "First line",
 		"trigger": map[string]any{"type": "row_created", "table": ordersID},

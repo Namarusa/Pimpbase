@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bubibase/bubibase/internal/flows"
-	"github.com/bubibase/bubibase/internal/store"
-	"github.com/bubibase/bubibase/internal/store/storetest"
+	"github.com/pimpbase/pimpbase/internal/flows"
+	"github.com/pimpbase/pimpbase/internal/store"
+	"github.com/pimpbase/pimpbase/internal/store/storetest"
 )
 
 // waitRuns polls a flow's runs until n of them have finished.

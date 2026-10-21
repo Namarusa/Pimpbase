@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/bubibase/bubibase/internal/apps"
-	"github.com/bubibase/bubibase/internal/store"
+	"github.com/pimpbase/pimpbase/internal/apps"
+	"github.com/pimpbase/pimpbase/internal/store"
 )
 
 // TestBackupRestore backs up a live data folder and opens the copy.
@@ -56,7 +56,7 @@ func TestBackupRestore(t *testing.T) {
 	if err := db2.QueryRow(ctx, `SELECT body FROM notes`).Scan(&body); err != nil || body != "written before the backup" {
 		t.Errorf("note = %q, %v", body, err)
 	}
-	if _, err := Restore(filepath.Join(target, "bubibase.db"), t.TempDir(), false); err == nil {
+	if _, err := Restore(filepath.Join(target, "pimpbase.db"), t.TempDir(), false); err == nil {
 		t.Error("restored a non-backup")
 	}
 	name, err := ToFile(ctx, target, filepath.Join(t.TempDir(), "backups"), 1)

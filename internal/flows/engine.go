@@ -16,16 +16,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bubibase/bubibase/internal/apps"
-	"github.com/bubibase/bubibase/internal/cluster"
-	"github.com/bubibase/bubibase/internal/exttables"
-	"github.com/bubibase/bubibase/internal/files"
-	"github.com/bubibase/bubibase/internal/ids"
-	"github.com/bubibase/bubibase/internal/interp"
-	"github.com/bubibase/bubibase/internal/metrics"
-	"github.com/bubibase/bubibase/internal/queries"
-	"github.com/bubibase/bubibase/internal/rbac"
-	"github.com/bubibase/bubibase/internal/tables"
+	"github.com/pimpbase/pimpbase/internal/apps"
+	"github.com/pimpbase/pimpbase/internal/cluster"
+	"github.com/pimpbase/pimpbase/internal/exttables"
+	"github.com/pimpbase/pimpbase/internal/files"
+	"github.com/pimpbase/pimpbase/internal/ids"
+	"github.com/pimpbase/pimpbase/internal/interp"
+	"github.com/pimpbase/pimpbase/internal/metrics"
+	"github.com/pimpbase/pimpbase/internal/queries"
+	"github.com/pimpbase/pimpbase/internal/rbac"
+	"github.com/pimpbase/pimpbase/internal/tables"
 )
 
 const (
@@ -106,7 +106,7 @@ func NewEngine(svc *Service, ts *tables.Service, qs *queries.Service, runner *qu
 }
 
 // UseExternal lets flows read and write external tables, and start on
-// changes made to their rows through Bubibase.
+// changes made to their rows through Pimpbase.
 func (e *Engine) UseExternal(ext *exttables.Service) {
 	e.Ext = ext
 	ext.OnRow = e.rowChanged
@@ -549,8 +549,8 @@ func (x *exec) execute() {
 		r.Steps = append(r.Steps, StepLog{Name: fmt.Sprintf("%d more steps ran but were not logged", x.dropped), Type: "note", Status: "ok", StartedAt: r.FinishedAt})
 	}
 	x.save(context.Background())
-	metrics.Default.Inc("bubibase_flow_runs_total", "status", r.Status)
-	metrics.Default.Since("bubibase_flow_run_duration_seconds", r.StartedAt)
+	metrics.Default.Inc("pimpbase_flow_runs_total", "status", r.Status)
+	metrics.Default.Since("pimpbase_flow_run_duration_seconds", r.StartedAt)
 	if err := x.e.Flows.prune(context.Background(), x.flow.ID); err != nil {
 		x.e.Log.Error("pruning flow runs failed", "err", err)
 	}
@@ -1371,7 +1371,7 @@ func (x *exec) httpRequest(in *inputs) (any, error) {
 	if contentType != "" && body != nil {
 		req.Header.Set("Content-Type", contentType)
 	}
-	req.Header.Set("User-Agent", "Bubibase")
+	req.Header.Set("User-Agent", "Pimpbase")
 	pairs, err := in.pairs("headers", "key")
 	if err != nil {
 		return nil, err

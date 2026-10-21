@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bubibase/bubibase/internal/formula"
+	"github.com/pimpbase/pimpbase/internal/formula"
 )
 
 // sqlCompiler turns a condition formula into SQL for a table whose columns

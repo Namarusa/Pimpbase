@@ -17,9 +17,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bubibase/bubibase/internal/extdb"
-	"github.com/bubibase/bubibase/internal/interp"
-	"github.com/bubibase/bubibase/internal/xmltree"
+	"github.com/pimpbase/pimpbase/internal/extdb"
+	"github.com/pimpbase/pimpbase/internal/interp"
+	"github.com/pimpbase/pimpbase/internal/xmltree"
 )
 
 const (
@@ -564,7 +564,7 @@ func build(ctx context.Context, ds *Datasource, q *Query, scope interp.Scope) (*
 		set("Accept", "application/json, application/xml;q=0.9, text/*;q=0.8, */*;q=0.5")
 	}
 	if header.Get("User-Agent") == "" {
-		set("User-Agent", "Bubibase")
+		set("User-Agent", "Pimpbase")
 	}
 
 	var rd io.Reader

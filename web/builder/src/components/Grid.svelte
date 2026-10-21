@@ -215,7 +215,7 @@
       <button class="small" disabled={offset === 0} onclick={() => (offset = Math.max(0, offset - limit))}>Previous</button>
       <button class="small" disabled={offset + limit >= page.total} onclick={() => (offset += limit)}>Next</button>
       {#if filter || sort}
-        <span class="badge" title="Where the filter and sort ran">{page.engine === 'sql' ? 'filtered in the database' : 'filtered in Bubibase'}</span>
+        <span class="badge" title="Where the filter and sort ran">{page.engine === 'sql' ? 'filtered in the database' : 'filtered in Pimpbase'}</span>
       {/if}
     {/if}
     <span class="grow"></span>
