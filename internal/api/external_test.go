@@ -280,6 +280,36 @@ func testExternal(t *testing.T, s *store.Store, kind, uri string, setup []string
 		}
 	}
 
+	// CSV out and back in, and a flow started by a row added through
+	// Bubibase that writes to the table.
+	csv := string(owner.raw("GET", tb+"/export?filter="+url.QueryEscape(`[title] = "Initech"`), nil, 200))
+	if !strings.Contains(csv, "title") || !strings.Contains(csv, "Initech") || strings.Contains(csv, "Acme") {
+		t.Errorf("csv = %s", csv)
+	}
+	res = owner.do("POST", tb+"/import", "title,owner,amount\nCsv one,bo@example.com,7\nCsv two,bo@example.com,not a number\n", 200)
+	if res["imported"] != 1.0 || res["skipped"] != 1.0 {
+		t.Errorf("import = %v", res)
+	}
+	flow := owner.do("POST", base+"/flows", map[string]any{
+		"name":    "Stamp",
+		"trigger": map[string]any{"type": "row_created", "table": id},
+		"steps": []any{
+			map[string]any{"name": "Stamp", "type": "update_row", "inputs": map[string]any{"table": id, "rowId": "{{ trigger.row._id }}", "values": []any{
+				map[string]any{"field": "won", "value": "true"},
+			}}},
+		},
+	}, 201)
+	owner.do("PATCH", base+"/flows/"+flow["id"].(string), map[string]any{"enabled": true}, 200)
+	stamped := bo.do("POST", tb+"/rows", map[string]any{"title": "Flowed", "owner": "bo@example.com", "won": false}, 201)
+	runs := waitRuns(t, owner, base+"/flows/"+flow["id"].(string), 1)
+	if runs[0]["status"] != "succeeded" {
+		t.Errorf("run = %v", owner.do("GET", base+"/runs/"+runs[0]["id"].(string), nil, 200))
+	}
+	if r := owner.do("GET", tb+"/rows/"+url.PathEscape(idText(stamped["_id"])), nil, 200); r["won"] != true {
+		t.Errorf("stamped = %v", r)
+	}
+	owner.do("DELETE", base+"/flows/"+flow["id"].(string), nil, 200)
+
 	// A read-only data source refuses writes.
 	owner.do("PATCH", base+"/datasources/"+dsID, map[string]any{"config": map[string]any{"db": map[string]any{"uri": "{{ env.DB_URI }}", "readOnly": true}}}, 200)
 	owner.do("POST", tb+"/rows", map[string]any{"title": "Nope"}, 400)

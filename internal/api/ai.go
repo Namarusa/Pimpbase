@@ -13,6 +13,7 @@ import (
 
 	"github.com/bubibase/bubibase/internal/ai"
 	"github.com/bubibase/bubibase/internal/apps"
+	"github.com/bubibase/bubibase/internal/exttables"
 	"github.com/bubibase/bubibase/internal/flows"
 	"github.com/bubibase/bubibase/internal/formula"
 	"github.com/bubibase/bubibase/internal/queries"
@@ -62,13 +63,17 @@ func (s *Server) aiApp(ctx context.Context, a *apps.App) (map[string]any, error)
 	if err != nil {
 		return nil, err
 	}
-	names := map[string]string{}
-	for _, t := range ts {
-		names[t.ID] = t.Name
+	xs, err := s.allExtViews(ctx, a.ID)
+	if err != nil {
+		return nil, err
 	}
+	names := tableNames(ts, xs)
 	var tlist []map[string]any
 	for _, t := range ts {
 		tlist = append(tlist, aiTable(t, names))
+	}
+	for _, v := range xs {
+		tlist = append(tlist, aiExtTable(v, names))
 	}
 	ds, err := s.Queries.Datasources(ctx, a.ID)
 	if err != nil {
@@ -159,6 +164,56 @@ func aiTable(t *tables.Table, names map[string]string) map[string]any {
 		fields = append(fields, m)
 	}
 	return map[string]any{"id": t.ID, "name": t.Name, "fields": fields}
+}
+
+// allExtViews lists an app's external tables as the API shows them.
+func (s *Server) allExtViews(ctx context.Context, appID string) ([]*exttables.View, error) {
+	ts, err := s.Ext.List(ctx, appID)
+	if err != nil {
+		return nil, err
+	}
+	return s.Ext.Views(ctx, appID, ts)
+}
+
+func tableNames(ts []*tables.Table, xs []*exttables.View) map[string]string {
+	names := map[string]string{}
+	for _, t := range ts {
+		names[t.ID] = t.Name
+	}
+	for _, v := range xs {
+		names[v.ID] = v.Name
+	}
+	return names
+}
+
+// aiExtTable describes an external table like aiTable, saying where its
+// rows live: its columns come from the database and cannot be drafted.
+func aiExtTable(v *exttables.View, names map[string]string) map[string]any {
+	var fields []map[string]any
+	for _, f := range v.Fields {
+		m := map[string]any{"name": f.Name, "type": f.Type}
+		if len(f.Options) > 0 {
+			m["options"] = f.Options
+		}
+		if f.Type == tables.TypeLink {
+			m["linkTable"] = names[f.LinkTable]
+			m["linkMany"] = f.LinkMany
+		}
+		if f.Required {
+			m["required"] = true
+		}
+		if f.ReadOnly {
+			m["readOnly"] = true
+		}
+		if f.Name == v.PrimaryField {
+			m["rowLabel"] = true
+		}
+		fields = append(fields, m)
+	}
+	return map[string]any{"id": v.ID, "name": v.Name, "fields": fields, "external": map[string]any{
+		"database": v.External.Kind, "source": strings.TrimPrefix(v.External.Schema+"."+v.External.Source, "."),
+		"readOnly": v.External.ReadOnly, "note": "rows live in an external database; its fields come from there and cannot be added or changed",
+	}}
 }
 
 func (s *Server) aiDraft(w http.ResponseWriter, r *http.Request) error {
@@ -263,8 +318,20 @@ func (s *Server) checkTableDraft(ctx context.Context, appID string, raw json.Raw
 	for _, t := range ts {
 		byName[strings.ToLower(t.Name)] = t
 	}
+	xs, err := s.allExtViews(ctx, appID)
+	if err != nil {
+		return nil, err
+	}
+	extByName := map[string]*exttables.View{}
+	for _, v := range xs {
+		extByName[strings.ToLower(v.Name)] = v
+		extByName[strings.ToLower(v.ID)] = v
+	}
 	drafted := map[string]bool{}
 	for _, t := range d.Tables {
+		if v := extByName[strings.ToLower(t.Name)]; v != nil {
+			return nil, fmt.Errorf("%s is a table of an external database; its fields come from the database and cannot be drafted", v.Name)
+		}
 		if !t.Existing {
 			if byName[strings.ToLower(t.Name)] != nil {
 				return nil, fmt.Errorf("a table named %s already exists; mark it existing to add fields to it", t.Name)
@@ -288,6 +355,9 @@ func (s *Server) checkTableDraft(ctx context.Context, appID string, raw json.Raw
 		for j, f := range t.Fields {
 			if f.Type == tables.TypeLink {
 				target := strings.ToLower(strings.TrimSpace(f.LinkTable))
+				if v := extByName[target]; v != nil {
+					return nil, fmt.Errorf("field %q links to %s, a table of an external database; built-in tables cannot link to those yet, but %s can link to a built-in table from its settings", f.Name, v.Name, v.Name)
+				}
 				if ex := byName[target]; ex != nil {
 					f.LinkTable = ex.ID
 				} else if ex := findByID(ts, f.LinkTable); ex != nil {
@@ -375,6 +445,10 @@ func (s *Server) checkScreenDraft(ctx context.Context, appID string, catalog, ra
 	if err != nil {
 		return nil, err
 	}
+	xs, err := s.Ext.List(ctx, appID)
+	if err != nil {
+		return nil, err
+	}
 	qs, err := s.Queries.Queries(ctx, appID)
 	if err != nil {
 		return nil, err
@@ -409,7 +483,7 @@ func (s *Server) checkScreenDraft(ctx context.Context, appID string, catalog, ra
 				if !slicesContainsFunc(qs, func(x *queries.Query) bool { return x.ID == q }) {
 					return fmt.Errorf("component %s uses the query %s, which does not exist", n.ID, q)
 				}
-			} else if findByID(ts, t) == nil {
+			} else if findByID(ts, t) == nil && !hasExt(xs, t) {
 				return fmt.Errorf("component %s uses the table %s, which does not exist; use a table id", n.ID, t)
 			}
 		}
@@ -438,6 +512,15 @@ func (s *Server) checkScreenDraft(ctx context.Context, appID string, catalog, ra
 	}
 	d.Definition = def
 	return json.Marshal(d)
+}
+
+func hasExt(xs []*exttables.Table, id string) bool {
+	for _, x := range xs {
+		if x.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 func contains(list []string, s string) bool {
@@ -503,7 +586,11 @@ func (s *Server) checkFlowDraft(ctx context.Context, appID, target string, raw j
 	if err != nil {
 		return nil, err
 	}
-	if f.Trigger.Table != "" && findByID(ts, f.Trigger.Table) == nil {
+	xs, err := s.Ext.List(ctx, appID)
+	if err != nil {
+		return nil, err
+	}
+	if f.Trigger.Table != "" && findByID(ts, f.Trigger.Table) == nil && !hasExt(xs, f.Trigger.Table) {
 		return nil, fmt.Errorf("the trigger's table %s does not exist; use a table id", f.Trigger.Table)
 	}
 	qs, err := s.Queries.Queries(ctx, appID)
@@ -513,8 +600,11 @@ func (s *Server) checkFlowDraft(ctx context.Context, appID, target string, raw j
 	var walk func(list []*flows.Step) error
 	walk = func(list []*flows.Step) error {
 		for _, st := range list {
-			if t, _ := st.Inputs["table"].(string); t != "" && findByID(ts, t) == nil {
+			if t, _ := st.Inputs["table"].(string); t != "" && findByID(ts, t) == nil && !hasExt(xs, t) {
 				return fmt.Errorf("step %s uses the table %s, which does not exist; use a table id", st.Name, t)
+			}
+			if t, _ := st.Inputs["table"].(string); st.Type == "generate_pdf" && hasExt(xs, t) {
+				return fmt.Errorf("step %s stores a PDF with an external table; PDFs are stored with built-in tables", st.Name)
 			}
 			if q, _ := st.Inputs["query"].(string); q != "" && !slicesContainsFunc(qs, func(x *queries.Query) bool { return x.ID == q || x.Name == q }) {
 				return fmt.Errorf("step %s runs the query %s, which does not exist", st.Name, q)
@@ -561,23 +651,45 @@ func (s *Server) aiFormula(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	ctx := r.Context()
-	t, err := s.Tables.Get(ctx, a.ID, in.Table)
-	if err != nil {
-		return err
-	}
 	ts, err := s.Tables.List(ctx, a.ID)
 	if err != nil {
 		return err
 	}
-	names := map[string]string{}
-	for _, x := range ts {
-		names[x.ID] = x.Name
+	xs, err := s.allExtViews(ctx, a.ID)
+	if err != nil {
+		return err
+	}
+	names := tableNames(ts, xs)
+	var desc map[string]any
+	var check func(ctx context.Context, src string) (formula.Type, []*formula.Error, error)
+	if exttables.Is(in.Table) {
+		t, err := s.Ext.Get(ctx, a.ID, in.Table)
+		if err != nil {
+			return err
+		}
+		for _, v := range xs {
+			if v.ID == t.ID {
+				desc = aiExtTable(v, names)
+			}
+		}
+		check = func(ctx context.Context, src string) (formula.Type, []*formula.Error, error) {
+			return s.Ext.CheckFormula(ctx, a.ID, t.ID, src)
+		}
+	} else {
+		t, err := s.Tables.Get(ctx, a.ID, in.Table)
+		if err != nil {
+			return err
+		}
+		desc = aiTable(t, names)
+		check = func(ctx context.Context, src string) (formula.Type, []*formula.Error, error) {
+			return s.Tables.CheckFormula(ctx, a.ID, t.ID, src, false)
+		}
 	}
 	f, err := s.AI.MakeFormula(ctx, ai.FormulaRequest{
 		Prompt: in.Prompt, Purpose: in.Purpose, Current: in.Current,
-		Table: aiTable(t, names), Functions: formula.Functions(),
+		Table: desc, Functions: formula.Functions(),
 		Check: func(ctx context.Context, src string) (string, error) {
-			typ, errs, err := s.Tables.CheckFormula(ctx, a.ID, t.ID, src, false)
+			typ, errs, err := check(ctx, src)
 			if err != nil {
 				return "", err
 			}
@@ -613,6 +725,7 @@ func (s *Server) aiAsk(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	env := s.dataEnv(r, act)
 	who := "a builder of the app, who sees all data"
 	if in.As != "" {
 		set, err := s.Apps.Roles(ctx, a.ID)
@@ -654,22 +767,40 @@ func (s *Server) aiAsk(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	names := map[string]string{}
-	var readable []*tables.Table
+	xs, err := s.allExtViews(ctx, a.ID)
+	if err != nil {
+		return err
+	}
+	names := tableNames(ts, xs)
+	var readable []*dataTable
+	described := []map[string]any{}
 	for _, t := range ts {
-		names[t.ID] = t.Name
 		if act.Has(t.Permissions.Read) {
-			readable = append(readable, t)
+			t := t
+			dt := &dataTable{id: t.ID, name: t.Name, list: func(ctx context.Context, q tables.Query) (*tables.Page, error) {
+				return s.Tables.ListRows(ctx, act, a.ID, t.ID, q)
+			}}
+			for _, f := range t.Fields {
+				dt.fields = append(dt.fields, f.Name)
+			}
+			readable = append(readable, dt)
+			described = append(described, aiTable(t, names))
 		}
 	}
-	var described []map[string]any
-	for _, t := range readable {
-		described = append(described, aiTable(t, names))
+	for _, v := range xs {
+		if act.Has(v.Permissions.Read) {
+			v := v
+			dt := &dataTable{id: v.ID, name: v.Name, list: func(ctx context.Context, q tables.Query) (*tables.Page, error) {
+				return s.Ext.ListRows(ctx, act, env, a.ID, v.ID, q)
+			}}
+			for _, f := range v.Fields {
+				dt.fields = append(dt.fields, f.Name)
+			}
+			readable = append(readable, dt)
+			described = append(described, aiExtTable(v, names))
+		}
 	}
-	if described == nil {
-		described = []map[string]any{}
-	}
-	tools := s.dataTools(a.ID, act, readable)
+	tools := s.dataTools(act, readable)
 	ans, err := s.AI.Ask(ctx, ai.AskRequest{Question: in.Question, Tables: described, Who: who, Tools: tools})
 	if err != nil {
 		return err
@@ -677,23 +808,41 @@ func (s *Server) aiAsk(w http.ResponseWriter, r *http.Request) error {
 	return writeJSON(w, 200, ans)
 }
 
+// dataTable is a table, built-in or external, that data questions read
+// with the asker's access.
+type dataTable struct {
+	id, name string
+	fields   []string
+	list     func(ctx context.Context, q tables.Query) (*tables.Page, error)
+}
+
+// field gives a field's name as the table spells it, or "".
+func (t *dataTable) field(name string) string {
+	for _, f := range t.fields {
+		if strings.EqualFold(f, name) {
+			return f
+		}
+	}
+	return ""
+}
+
 // dataTools read rows with the actor's access, for data questions.
-func (s *Server) dataTools(appID string, act rbac.Actor, readable []*tables.Table) []ai.Tool {
-	find := func(name string) (*tables.Table, error) {
+func (s *Server) dataTools(act rbac.Actor, readable []*dataTable) []ai.Tool {
+	find := func(name string) (*dataTable, error) {
 		for _, t := range readable {
-			if strings.EqualFold(t.Name, name) || t.ID == name {
+			if strings.EqualFold(t.name, name) || t.id == name {
 				return t, nil
 			}
 		}
 		return nil, fmt.Errorf("there is no table %q you may read", name)
 	}
-	shown := func(t *tables.Table, row map[string]any, only []string) map[string]any {
+	shown := func(t *dataTable, row map[string]any, only []string) map[string]any {
 		out := map[string]any{"_id": row["_id"]}
-		for _, f := range t.Fields {
-			if len(only) > 0 && !containsFold(only, f.Name) {
+		for _, f := range t.fields {
+			if len(only) > 0 && !containsFold(only, f) {
 				continue
 			}
-			out[f.Name] = plainValue(row[f.Name])
+			out[f] = plainValue(row[f])
 		}
 		return out
 	}
@@ -726,7 +875,7 @@ func (s *Server) dataTools(appID string, act rbac.Actor, readable []*tables.Tabl
 			if in.Limit <= 0 || in.Limit > 50 {
 				in.Limit = 50
 			}
-			page, err := s.Tables.ListRows(ctx, act, appID, t.ID, tables.Query{Filter: in.Filter, Sort: in.Sort, Desc: in.Desc, Limit: in.Limit})
+			page, err := t.list(ctx, tables.Query{Filter: in.Filter, Sort: in.Sort, Desc: in.Desc, Limit: in.Limit})
 			if err != nil {
 				return "", false, err
 			}
@@ -758,11 +907,12 @@ func (s *Server) dataTools(appID string, act rbac.Actor, readable []*tables.Tabl
 			if err != nil {
 				return "", false, err
 			}
-			if in.Op != "count" && t.FieldByName(in.Field) == nil {
-				return "", false, fmt.Errorf("the table %s has no field %q", t.Name, in.Field)
+			field, group := t.field(in.Field), t.field(in.GroupBy)
+			if in.Op != "count" && field == "" {
+				return "", false, fmt.Errorf("the table %s has no field %q", t.name, in.Field)
 			}
-			if in.GroupBy != "" && t.FieldByName(in.GroupBy) == nil {
-				return "", false, fmt.Errorf("the table %s has no field %q", t.Name, in.GroupBy)
+			if in.GroupBy != "" && group == "" {
+				return "", false, fmt.Errorf("the table %s has no field %q", t.name, in.GroupBy)
 			}
 			type acc struct {
 				n, count   int
@@ -774,7 +924,7 @@ func (s *Server) dataTools(appID string, act rbac.Actor, readable []*tables.Tabl
 			var order []string
 			scanned := 0
 			for offset := 0; offset < 20000; offset += 1000 {
-				page, err := s.Tables.ListRows(ctx, act, appID, t.ID, tables.Query{Filter: in.Filter, Limit: 1000, Offset: offset})
+				page, err := t.list(ctx, tables.Query{Filter: in.Filter, Limit: 1000, Offset: offset})
 				if err != nil {
 					return "", false, err
 				}
@@ -782,7 +932,7 @@ func (s *Server) dataTools(appID string, act rbac.Actor, readable []*tables.Tabl
 					scanned++
 					key := ""
 					if in.GroupBy != "" {
-						key = fmt.Sprint(plainValue(row[t.FieldByName(in.GroupBy).Name]))
+						key = fmt.Sprint(plainValue(row[group]))
 					}
 					g := groups[key]
 					if g == nil {
@@ -794,7 +944,7 @@ func (s *Server) dataTools(appID string, act rbac.Actor, readable []*tables.Tabl
 					if in.Op == "count" {
 						continue
 					}
-					switch v := row[t.FieldByName(in.Field).Name].(type) {
+					switch v := row[field].(type) {
 					case float64:
 						g.n++
 						g.sum += v
@@ -872,6 +1022,17 @@ func plainValue(v any) any {
 		}
 		return x.Label
 	case []tables.LinkRef:
+		out := make([]any, len(x))
+		for i, l := range x {
+			out[i] = plainValue(l)
+		}
+		return out
+	case exttables.LinkRef:
+		if x.Hidden {
+			return "(hidden row)"
+		}
+		return x.Label
+	case []exttables.LinkRef:
 		out := make([]any, len(x))
 		for i, l := range x {
 			out[i] = plainValue(l)

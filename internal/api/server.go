@@ -106,6 +106,7 @@ func New(s *store.Store, ui fs.FS, log *slog.Logger) *Server {
 	srv.Files.BeforeSave = srv.checkFiles
 	srv.Engine.BeforeRun = srv.checkRuns
 	srv.describeMetrics(s)
+	srv.Engine.UseExternal(srv.Ext)
 	return srv
 }
 

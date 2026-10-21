@@ -18,6 +18,7 @@ import (
 
 	"github.com/bubibase/bubibase/internal/apps"
 	"github.com/bubibase/bubibase/internal/cluster"
+	"github.com/bubibase/bubibase/internal/exttables"
 	"github.com/bubibase/bubibase/internal/files"
 	"github.com/bubibase/bubibase/internal/ids"
 	"github.com/bubibase/bubibase/internal/interp"
@@ -43,8 +44,11 @@ const (
 // Engine runs flows: it hears row changes, keeps the schedule and starts
 // runs. It is safe for concurrent use.
 type Engine struct {
-	Flows   *Service
-	Tables  *tables.Service
+	Flows  *Service
+	Tables *tables.Service
+	// Ext serves tables imported from external databases; nil leaves
+	// them out.
+	Ext     *exttables.Service
 	Queries *queries.Service
 	Runner  *queries.Runner
 	Files   *files.Service
@@ -99,6 +103,13 @@ func NewEngine(svc *Service, ts *tables.Service, qs *queries.Service, runner *qu
 	svc.changed = e.forget
 	ts.OnRow = e.rowChanged
 	return e
+}
+
+// UseExternal lets flows read and write external tables, and start on
+// changes made to their rows through Bubibase.
+func (e *Engine) UseExternal(ext *exttables.Service) {
+	e.Ext = ext
+	ext.OnRow = e.rowChanged
 }
 
 // Start begins the schedule and marks runs left over from a previous
@@ -190,7 +201,7 @@ func (e *Engine) rowChanged(ctx context.Context, ev tables.RowEvent) {
 			return
 		}
 		kind := "row_" + ev.Kind
-		var table *tables.Table
+		var table *stepTable
 		for _, f := range list {
 			if f.Trigger.Type != kind || f.Trigger.Table != ev.TableID {
 				continue
@@ -204,11 +215,11 @@ func (e *Engine) rowChanged(ctx context.Context, ev tables.RowEvent) {
 				continue
 			}
 			if table == nil {
-				if table, err = e.Tables.Get(ctx, ev.AppID, ev.TableID); err != nil {
+				if table, err = e.lookup(ctx, ev.AppID, ev.TableID); err != nil {
 					return
 				}
 			}
-			data := map[string]any{"table": map[string]any{"id": table.ID, "name": table.Name}, "row": ev.Row}
+			data := map[string]any{"table": map[string]any{"id": table.id, "name": table.name}, "row": ev.Row}
 			if kind == RowUpdated {
 				data["old"], data["changed"] = ev.Old, changed
 			}
@@ -731,19 +742,35 @@ func (x *exec) step(s *Step, in *inputs, depth, item int) (any, error) {
 			return nil, err
 		}
 		if s.Type == "create_row" {
-			row, err := x.e.Tables.CreateRow(ctx, x.actor(), x.flow.AppID, t.ID, vals)
+			var row map[string]any
+			if t.ext != nil {
+				row, err = x.e.Ext.CreateRow(ctx, x.actor(), x.env, x.flow.AppID, t.id, vals)
+			} else {
+				row, err = x.e.Tables.CreateRow(ctx, x.actor(), x.flow.AppID, t.id, vals)
+			}
 			if err != nil {
 				return nil, rowErr(err)
 			}
 			return map[string]any{"row": row, "id": row["_id"]}, nil
 		}
-		id, err := x.rowID(in)
-		if err != nil {
-			return nil, err
-		}
-		row, err := x.e.Tables.UpdateRow(ctx, x.actor(), x.flow.AppID, t.ID, id, vals)
-		if err != nil {
-			return nil, rowErr(err)
+		var row map[string]any
+		if t.ext != nil {
+			key, err := x.rowKey(in)
+			if err != nil {
+				return nil, err
+			}
+			row, err = x.e.Ext.UpdateRow(ctx, x.actor(), x.env, x.flow.AppID, t.id, key, vals)
+			if err != nil {
+				return nil, rowErr(err)
+			}
+		} else {
+			id, err := x.rowID(in)
+			if err != nil {
+				return nil, err
+			}
+			if row, err = x.e.Tables.UpdateRow(ctx, x.actor(), x.flow.AppID, t.id, id, vals); err != nil {
+				return nil, rowErr(err)
+			}
 		}
 		return map[string]any{"row": row, "id": row["_id"]}, nil
 
@@ -752,16 +779,29 @@ func (x *exec) step(s *Step, in *inputs, depth, item int) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		id, err := x.rowID(in)
-		if err != nil {
-			return nil, err
-		}
-		n, err := x.e.Tables.DeleteRows(ctx, x.actor(), x.flow.AppID, t.ID, []int64{id})
-		if err != nil {
-			return nil, rowErr(err)
+		var n int
+		var id any
+		if t.ext != nil {
+			key, err := x.rowKey(in)
+			if err != nil {
+				return nil, err
+			}
+			if n, err = x.e.Ext.DeleteRows(ctx, x.actor(), x.env, x.flow.AppID, t.id, []string{key}); err != nil {
+				return nil, rowErr(err)
+			}
+			id = key
+		} else {
+			rid, err := x.rowID(in)
+			if err != nil {
+				return nil, err
+			}
+			if n, err = x.e.Tables.DeleteRows(ctx, x.actor(), x.flow.AppID, t.id, []int64{rid}); err != nil {
+				return nil, rowErr(err)
+			}
+			id = rid
 		}
 		if n == 0 && in.flag("mustExist", true) {
-			return nil, fmt.Errorf("row %d of %s does not exist", id, t.Name)
+			return nil, fmt.Errorf("row %v of %s does not exist", id, t.name)
 		}
 		return map[string]any{"deleted": n, "id": id}, nil
 
@@ -783,7 +823,13 @@ func (x *exec) step(s *Step, in *inputs, depth, item int) (any, error) {
 		} else if n, ok := number(v); ok && n > 0 {
 			limit = int(math.Min(n, 1000))
 		}
-		page, err := x.e.Tables.ListRows(ctx, x.actor(), x.flow.AppID, t.ID, tables.Query{Filter: filter, Sort: in.str("sort"), Desc: in.flag("desc", false), Limit: limit})
+		q := tables.Query{Filter: filter, Sort: in.str("sort"), Desc: in.flag("desc", false), Limit: limit}
+		var page *tables.Page
+		if t.ext != nil {
+			page, err = x.e.Ext.ListRows(ctx, x.actor(), x.env, x.flow.AppID, t.id, q)
+		} else {
+			page, err = x.e.Tables.ListRows(ctx, x.actor(), x.flow.AppID, t.id, q)
+		}
 		if err != nil {
 			return nil, rowErr(err)
 		}
@@ -979,13 +1025,63 @@ func rowErr(err error) error {
 	return err
 }
 
-func (x *exec) table(in *inputs) (*tables.Table, error) {
-	t, err := x.e.Tables.Get(x.ctx, x.flow.AppID, in.str("table"))
+// stepTable is the table a step works on: built-in or external.
+type stepTable struct {
+	id, name string
+	builtin  *tables.Table
+	ext      *exttables.Table
+}
+
+func (e *Engine) lookup(ctx context.Context, appID, id string) (*stepTable, error) {
+	if exttables.Is(id) && e.Ext != nil {
+		t, err := e.Ext.Get(ctx, appID, id)
+		if err != nil {
+			return nil, err
+		}
+		return &stepTable{id: t.ID, name: t.Name, ext: t}, nil
+	}
+	t, err := e.Tables.Get(ctx, appID, id)
+	if err != nil {
+		if e.Ext == nil {
+			return nil, err
+		}
+		// A table chosen by name may be an external one.
+		xt, xerr := e.Ext.Get(ctx, appID, id)
+		if xerr != nil {
+			return nil, err
+		}
+		return &stepTable{id: xt.ID, name: xt.Name, ext: xt}, nil
+	}
+	return &stepTable{id: t.ID, name: t.Name, builtin: t}, nil
+}
+
+func (x *exec) table(in *inputs) (*stepTable, error) {
+	t, err := x.e.lookup(x.ctx, x.flow.AppID, in.str("table"))
 	if err != nil {
 		return nil, errors.New("the table of this step does not exist any more")
 	}
-	in.values["table"] = t.Name
+	in.values["table"] = t.name
 	return t, nil
+}
+
+// rowKey reads the rowId input as an external row's key: a number, a
+// text, or a row with _id.
+func (x *exec) rowKey(in *inputs) (string, error) {
+	v, err := in.value("rowId")
+	if err != nil {
+		return "", err
+	}
+	if m, ok := v.(map[string]any); ok {
+		v = m["_id"]
+	}
+	if n, ok := v.(float64); ok && n == math.Trunc(n) && math.Abs(n) < 1<<53 {
+		return strconv.FormatInt(int64(n), 10), nil
+	}
+	key := strings.TrimSpace(interp.ToText(v))
+	if key == "" {
+		return "", errors.New("the row id is empty")
+	}
+	return key, nil
 }
 
 func (x *exec) rowID(in *inputs) (int64, error) {
@@ -1005,12 +1101,30 @@ func (x *exec) rowID(in *inputs) (int64, error) {
 
 // rowValues fills a step's {field, value} list, converting text to the
 // field's type as forms do.
-func (x *exec) rowValues(t *tables.Table, in *inputs) (map[string]any, error) {
+func (x *exec) rowValues(st *stepTable, in *inputs) (map[string]any, error) {
 	pairs, err := in.pairs("values", "field")
 	if err != nil {
 		return nil, err
 	}
 	out := map[string]any{}
+	if st.ext != nil {
+		// The table converts text to each column's type; a link given as
+		// JSON text, such as {{ row | json }}, is read as a row.
+		for _, p := range pairs {
+			name, v := p[0].(string), plain(p[1])
+			if s, ok := v.(string); ok {
+				if t := strings.TrimSpace(s); strings.HasPrefix(t, "{") {
+					var js any
+					if json.Unmarshal([]byte(t), &js) == nil {
+						v = js
+					}
+				}
+			}
+			out[name] = v
+		}
+		return out, nil
+	}
+	t := st.builtin
 	for _, p := range pairs {
 		name, v := p[0].(string), plain(p[1])
 		f := t.FieldByName(name)
@@ -1300,10 +1414,14 @@ func (x *exec) httpRequest(in *inputs) (any, error) {
 }
 
 func (x *exec) generatePDF(in *inputs) (any, error) {
-	t, err := x.table(in)
+	st, err := x.table(in)
 	if err != nil {
 		return nil, errors.New("choose the table the PDF is stored with")
 	}
+	if st.builtin == nil {
+		return nil, fmt.Errorf("PDFs are stored with built-in tables, and %s is in an external database; choose a built-in table", st.name)
+	}
+	t := st.builtin
 	d := &Document{PageSize: in.str("pageSize"), Landscape: in.str("orientation") == "landscape", Accent: x.accent, Author: x.flow.Name}
 	if d.Title, err = in.text("title", interp.Text); err != nil {
 		return nil, err
