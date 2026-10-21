@@ -329,11 +329,37 @@ SQL (or MongoDB) form, else in Bubibase over at most 50,000 rows.
 settings hide columns or remove the table from the app (the database table
 is never dropped).
 
-Limits: only tables with a single-column primary key (or MongoDB `_id`)
-can be written; others are read only. There are no link fields between
-external tables, no CSV import or export, and flows and the AI assistant do
-not use external tables yet. Text comparisons follow the database's
-collation, so they ignore case on most MySQL and SQL Server setups.
+**Keys**: a row's id is its primary-key value. Tables with a composite key
+can be edited too; their row id is the key values as a JSON list, such as
+`[12,2]`. Tables without a primary key are read only. For MongoDB the key is
+always `_id`.
+
+**Links**: single-column foreign keys are found on import and on refresh and
+become link fields that show the linked row's label. The table settings can
+turn any column into a link to another external table with a single-column
+key, or to a built-in table (the column then holds the built-in row's
+number). An optional field name adds a read-only list of the linking rows to
+the other table, when it is external. Writes take the key, the label, or
+`{"_id": …}`. Rows hidden from someone by permissions or row rules show as
+hidden links.
+
+**CSV**: **Import** adds rows one at a time with the same checks as the
+form, and skips and lists those the database or a row rule refuses (it is
+not all or nothing). **Export** writes the rows matching the filter, links
+as labels.
+
+**Flows** can trigger on rows created, changed or deleted through Bubibase
+and create, update, delete and find rows in external tables, with the same
+permissions and row rules. **The assistant** knows external tables' columns
+and links, can draft screens and flows on them, and answers questions over
+them under the access of the person or role chosen.
+
+Limits: changes made directly in the database don't trigger flows. Built-in
+tables cannot link to external tables, `[Link].[Field]` formulas don't
+reach into external tables, PDFs from flows are stored with built-in tables,
+and the assistant does not draft new external tables. Text comparisons
+follow the database's collation, so they ignore case on most MySQL and SQL
+Server setups.
 
 The drivers are pure Go and compiled in, so there is still one binary and
 no database servers ship with it. They add about 8 MB (MongoDB about 5 MB,
@@ -350,6 +376,7 @@ GET    /api/apps/{app}/datasources/{ds}/schema          tables, views and collec
 GET    /api/apps/{app}/datasources/{ds}/schema/table?schema=&name=
 POST   /api/apps/{app}/datasources/{ds}/tables          {"schema", "source", "name"}   import
 POST   /api/apps/{app}/tables/{table}/refresh           read the columns again
+PATCH  /api/apps/{app}/tables/{table}                   {"links": [{"column", "table", "reverse"}], "hidden": […]}
 ```
 
 ## Flows
