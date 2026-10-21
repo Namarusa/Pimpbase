@@ -30,8 +30,11 @@ type dialect struct {
 	charTypes []string
 	tables    func(ctx context.Context, db *sql.DB) ([]TableInfo, error)
 	describe  func(ctx context.Context, db *sql.DB, schema, name string) (*TableInfo, error)
+	// foreignKeys lists the foreign keys of a table as rows of constraint
+	// name, column, and the schema, table and column it references.
+	foreignKeys string
 	// insert adds a row and returns its key.
-	insert func(ctx context.Context, src *sqlSource, t *Target, cols []string, args []any) (any, error)
+	insert func(ctx context.Context, src *sqlSource, t *Target, cols []string, args []any) ([]any, error)
 	// defaultSchema is the schema of a table named without one.
 	defaultSchema func(s Settings) string
 }
@@ -96,7 +99,54 @@ func (s *sqlSource) Describe(ctx context.Context, schema, name string) (*TableIn
 	if len(t.Columns) == 0 {
 		return nil, errorf("there is no table %s.%s, or it has no columns you may read", schema, name)
 	}
+	if err := s.readForeignKeys(ctx, t); err != nil {
+		return nil, errorf("reading the foreign keys of %s failed: %s", name, Clean(err))
+	}
 	return t, nil
+}
+
+// readForeignKeys marks the columns that reference another table. Foreign
+// keys over several columns are left out: links follow one column.
+func (s *sqlSource) readForeignKeys(ctx context.Context, t *TableInfo) error {
+	if s.d.foreignKeys == "" {
+		return nil
+	}
+	rows, err := s.db.QueryContext(ctx, s.rebind(s.d.foreignKeys), t.Schema, t.Name)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	type fk struct {
+		col string
+		ref Reference
+	}
+	byName := map[string][]fk{}
+	var names []string
+	for rows.Next() {
+		var name string
+		var f fk
+		if err := rows.Scan(&name, &f.col, &f.ref.Schema, &f.ref.Table, &f.ref.Column); err != nil {
+			return err
+		}
+		if byName[name] == nil {
+			names = append(names, name)
+		}
+		byName[name] = append(byName[name], f)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, n := range names {
+		if fs := byName[n]; len(fs) == 1 {
+			for i := range t.Columns {
+				if t.Columns[i].Name == fs[0].col && t.Columns[i].References == nil {
+					ref := fs[0].ref
+					t.Columns[i].References = &ref
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // rebind numbers "?" placeholders for the dialect, skipping quoted text.
@@ -260,12 +310,19 @@ func (s *sqlSource) Select(ctx context.Context, t *Target, sel Select) ([]map[st
 	for _, o := range sel.Order {
 		order = append(order, s.d.nullsLast(s.d.quote(o.Column), o.Desc))
 	}
-	if t.Key != "" && (len(sel.Order) == 0 || sel.Order[len(sel.Order)-1].Column != t.Key) {
-		dir := ""
-		if len(sel.Order) > 0 && sel.Order[0].Desc {
-			dir = " DESC"
+	// The key breaks ties, so pages do not overlap.
+	dir := ""
+	if len(sel.Order) > 0 && sel.Order[0].Desc {
+		dir = " DESC"
+	}
+	for _, k := range t.Keys {
+		ordered := false
+		for _, o := range sel.Order {
+			ordered = ordered || o.Column == k
 		}
-		order = append(order, s.d.quote(t.Key)+dir)
+		if !ordered {
+			order = append(order, s.d.quote(k)+dir)
+		}
 	}
 	if len(order) == 0 && s.d.kind == "mssql" && sel.Limit > 0 {
 		order = append(order, "(SELECT NULL)")
@@ -288,7 +345,7 @@ func (s *sqlSource) Select(ctx context.Context, t *Target, sel Select) ([]map[st
 	return res.Rows, nil
 }
 
-func (s *sqlSource) Insert(ctx context.Context, t *Target, values map[string]any) (any, error) {
+func (s *sqlSource) Insert(ctx context.Context, t *Target, values map[string]any) ([]any, error) {
 	if s.set.ReadOnly {
 		return nil, ErrReadOnly
 	}
@@ -304,8 +361,42 @@ func (s *sqlSource) Insert(ctx context.Context, t *Target, values map[string]any
 	if err != nil {
 		return nil, errorf("%s", Clean(err))
 	}
-	if kc := t.Column(t.Key); kc != nil {
-		key = Read(key, kc)
+	for i := range key {
+		if kc := t.Column(t.Keys[i]); kc != nil {
+			key[i] = Read(key[i], kc)
+		}
+	}
+	return key, nil
+}
+
+// keyWhere is k1 = ? AND k2 = ? for the key columns.
+func (s *sqlSource) keyWhere(t *Target) string {
+	parts := make([]string, len(t.Keys))
+	for i, k := range t.Keys {
+		parts[i] = s.d.quote(k) + " = ?"
+	}
+	return strings.Join(parts, " AND ")
+}
+
+// returning lists the key columns for RETURNING or OUTPUT, with a prefix
+// before each.
+func (s *sqlSource) returning(t *Target, prefix string) string {
+	parts := make([]string, len(t.Keys))
+	for i, k := range t.Keys {
+		parts[i] = prefix + s.d.quote(k)
+	}
+	return strings.Join(parts, ", ")
+}
+
+// scanKey reads one row of key values.
+func scanKey(row interface{ Scan(...any) error }, n int) ([]any, error) {
+	key := make([]any, n)
+	ptrs := make([]any, n)
+	for i := range key {
+		ptrs[i] = &key[i]
+	}
+	if err := row.Scan(ptrs...); err != nil {
+		return nil, err
 	}
 	return key, nil
 }
@@ -329,14 +420,14 @@ func (s *sqlSource) insertSQL(t *Target, cols []string, mid, tail string) string
 	return s.rebind(q + " (" + strings.Join(quoted, ", ") + ")" + mid + " VALUES (" + strings.Join(marks, ", ") + ")" + tail)
 }
 
-func (s *sqlSource) Update(ctx context.Context, t *Target, key any, values map[string]any) error {
+func (s *sqlSource) Update(ctx context.Context, t *Target, key []any, values map[string]any) error {
 	if s.set.ReadOnly {
 		return ErrReadOnly
 	}
 	var sets []string
 	var args []any
 	for _, c := range t.Columns {
-		if v, ok := values[c.Name]; ok && !c.Generated && c.Name != t.Key {
+		if v, ok := values[c.Name]; ok && !c.Generated && !t.IsKey(c.Name) {
 			sets = append(sets, s.d.quote(c.Name)+" = ?")
 			args = append(args, v)
 		}
@@ -344,8 +435,11 @@ func (s *sqlSource) Update(ctx context.Context, t *Target, key any, values map[s
 	if len(sets) == 0 {
 		return nil
 	}
-	args = append(args, key)
-	res, err := s.db.ExecContext(ctx, s.rebind("UPDATE "+s.table(t)+" SET "+strings.Join(sets, ", ")+" WHERE "+s.d.quote(t.Key)+" = ?"), args...)
+	if len(key) != len(t.Keys) || len(key) == 0 {
+		return ErrNoRow
+	}
+	args = append(args, key...)
+	res, err := s.db.ExecContext(ctx, s.rebind("UPDATE "+s.table(t)+" SET "+strings.Join(sets, ", ")+" WHERE "+s.keyWhere(t)), args...)
 	if err != nil {
 		return errorf("%s", Clean(err))
 	}
@@ -358,15 +452,42 @@ func (s *sqlSource) Update(ctx context.Context, t *Target, key any, values map[s
 // ErrNoRow is a key that matches no row.
 var ErrNoRow = fmt.Errorf("row not found")
 
-func (s *sqlSource) Delete(ctx context.Context, t *Target, keys []any) (int, error) {
+func (s *sqlSource) Delete(ctx context.Context, t *Target, keys [][]any) (int, error) {
 	if s.set.ReadOnly {
 		return 0, ErrReadOnly
 	}
+	if len(t.Keys) == 0 {
+		return 0, nil
+	}
+	// A single key is matched with IN; several with (a = ? AND b = ?) OR …,
+	// in chunks that stay under every driver's parameter limit.
+	chunk := 500 / len(t.Keys)
 	total := 0
-	for start := 0; start < len(keys); start += 500 {
-		end := min(start+500, len(keys))
-		marks := strings.TrimSuffix(strings.Repeat("?, ", end-start), ", ")
-		res, err := s.db.ExecContext(ctx, s.rebind("DELETE FROM "+s.table(t)+" WHERE "+s.d.quote(t.Key)+" IN ("+marks+")"), keys[start:end]...)
+	for start := 0; start < len(keys); start += chunk {
+		end := min(start+chunk, len(keys))
+		var where string
+		var args []any
+		if len(t.Keys) == 1 {
+			where = s.d.quote(t.Keys[0]) + " IN (" + strings.TrimSuffix(strings.Repeat("?, ", end-start), ", ") + ")"
+			for _, k := range keys[start:end] {
+				args = append(args, k[0])
+			}
+		} else {
+			one := "(" + s.keyWhere(t) + ")"
+			parts := make([]string, 0, end-start)
+			for _, k := range keys[start:end] {
+				if len(k) != len(t.Keys) {
+					continue
+				}
+				parts = append(parts, one)
+				args = append(args, k...)
+			}
+			if len(parts) == 0 {
+				continue
+			}
+			where = strings.Join(parts, " OR ")
+		}
+		res, err := s.db.ExecContext(ctx, s.rebind("DELETE FROM "+s.table(t)+" WHERE "+where), args...)
 		if err != nil {
 			return total, errorf("%s", Clean(err))
 		}
@@ -374,6 +495,26 @@ func (s *sqlSource) Delete(ctx context.Context, t *Target, keys []any) (int, err
 		total += int(n)
 	}
 	return total, nil
+}
+
+func (s *sqlSource) In(t *Target, column string, values []any) *Cond {
+	if len(values) == 0 {
+		return &Cond{SQL: "1 = 0"}
+	}
+	args := make([]any, 0, len(values))
+	if c := t.Column(column); c != nil {
+		for _, v := range values {
+			if x, err := Write(v, c); err == nil {
+				args = append(args, x)
+			}
+		}
+	} else {
+		args = append(args, values...)
+	}
+	if len(args) == 0 {
+		return &Cond{SQL: "1 = 0"}
+	}
+	return &Cond{SQL: s.d.quote(column) + " IN (" + strings.TrimSuffix(strings.Repeat("?, ", len(args)), ", ") + ")", Args: args}
 }
 
 func (s *sqlSource) Compile(t *Target, c *formula.Checked, env formula.Env) (*Cond, bool) {

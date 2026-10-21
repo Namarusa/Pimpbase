@@ -135,19 +135,23 @@ var postgres = &dialect{
 		t.PrimaryKey = pk
 		return t, nil
 	},
-	insert: func(ctx context.Context, src *sqlSource, t *Target, cols []string, args []any) (any, error) {
+	foreignKeys: `SELECT tc.constraint_name, kcu.column_name, ccu.table_schema, ccu.table_name, ccu.column_name
+		FROM information_schema.table_constraints tc
+		JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema AND tc.table_name = kcu.table_name
+		JOIN information_schema.constraint_column_usage ccu ON ccu.constraint_name = tc.constraint_name AND ccu.constraint_schema = tc.constraint_schema
+		WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = ? AND tc.table_name = ?
+		ORDER BY tc.constraint_name, kcu.ordinal_position`,
+	insert: func(ctx context.Context, src *sqlSource, t *Target, cols []string, args []any) ([]any, error) {
 		tail := ""
-		if t.Key != "" {
-			tail = " RETURNING " + src.d.quote(t.Key)
+		if len(t.Keys) > 0 {
+			tail = " RETURNING " + src.returning(t, "")
 		}
 		q := src.insertSQL(t, cols, "", tail)
-		if t.Key == "" {
+		if len(t.Keys) == 0 {
 			_, err := src.db.ExecContext(ctx, q, args...)
 			return nil, err
 		}
-		var key any
-		err := src.db.QueryRowContext(ctx, q, args...).Scan(&key)
-		return key, err
+		return scanKey(src.db.QueryRowContext(ctx, q, args...), len(t.Keys))
 	},
 	defaultSchema: func(s Settings) string {
 		if s.Schema != "" {

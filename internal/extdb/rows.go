@@ -20,8 +20,19 @@ type Target struct {
 	Name   string
 	// Columns are the columns read and written.
 	Columns []Column
-	// Key is the primary key column; empty when the table has none.
-	Key string
+	// Keys are the primary key columns, in order; none when the table has
+	// no primary key.
+	Keys []string
+}
+
+// IsKey reports whether a column is part of the primary key.
+func (t *Target) IsKey(name string) bool {
+	for _, k := range t.Keys {
+		if k == name {
+			return true
+		}
+	}
+	return false
 }
 
 // Column finds a column by name, ignoring case.
@@ -63,12 +74,17 @@ type Rows interface {
 	// filter the database runs, or gives ok false when some part of it
 	// has no database form.
 	Compile(t *Target, c *formula.Checked, env formula.Env) (cond *Cond, ok bool)
+	// In is a filter true when a column holds one of the values, which are
+	// converted to the column's type first.
+	In(t *Target, column string, values []any) *Cond
 	Count(ctx context.Context, t *Target, where *Cond) (int, error)
 	Select(ctx context.Context, t *Target, s Select) ([]map[string]any, error)
-	// Insert adds a row and returns its key.
-	Insert(ctx context.Context, t *Target, values map[string]any) (any, error)
-	Update(ctx context.Context, t *Target, key any, values map[string]any) error
-	Delete(ctx context.Context, t *Target, keys []any) (int, error)
+	// Insert adds a row and returns its key values, in the order of Keys,
+	// or nil when the table has no key.
+	Insert(ctx context.Context, t *Target, values map[string]any) ([]any, error)
+	// Update and Delete find rows by their key values, one per key column.
+	Update(ctx context.Context, t *Target, key []any, values map[string]any) error
+	Delete(ctx context.Context, t *Target, keys [][]any) (int, error)
 }
 
 // Read converts a value a driver read into the form of a column type.
@@ -209,6 +225,15 @@ func Write(v any, c *Column) (any, error) {
 		switch x := v.(type) {
 		case float64:
 			f = x
+		case int64:
+			if integer(c.DBType) {
+				return x, nil
+			}
+			f = float64(x)
+		case int:
+			f = float64(x)
+		case int32:
+			f = float64(x)
 		case json.Number:
 			if integer(c.DBType) {
 				if n, err := x.Int64(); err == nil {

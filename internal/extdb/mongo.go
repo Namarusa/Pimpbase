@@ -456,12 +456,23 @@ func (m *mongoSource) key(t *Target, k any) any {
 	if !ok {
 		return k
 	}
-	if c := t.Column(t.Key); c != nil && (c.DBType == "objectid" || c.DBType == "mixed") {
+	if c := t.Column("_id"); c != nil && (c.DBType == "objectid" || c.DBType == "mixed") {
 		if id, err := bson.ObjectIDFromHex(s); err == nil {
 			return id
 		}
 	}
 	return s
+}
+
+func (m *mongoSource) In(t *Target, column string, values []any) *Cond {
+	list := bson.A{}
+	for _, v := range values {
+		if column == "_id" {
+			v = m.key(t, v)
+		}
+		list = append(list, v)
+	}
+	return &Cond{Mongo: bson.D{{Key: column, Value: bson.D{{Key: "$in", Value: list}}}}}
 }
 
 func (m *mongoSource) Count(ctx context.Context, t *Target, where *Cond) (int, error) {
@@ -490,8 +501,8 @@ func (m *mongoSource) Select(ctx context.Context, t *Target, s Select) ([]map[st
 		}
 		sortDoc = append(sortDoc, bson.E{Key: o.Column, Value: dir})
 	}
-	if t.Key != "" && (len(s.Order) == 0 || s.Order[len(s.Order)-1].Column != t.Key) {
-		sortDoc = append(sortDoc, bson.E{Key: t.Key, Value: 1})
+	if t.IsKey("_id") && (len(s.Order) == 0 || s.Order[len(s.Order)-1].Column != "_id") {
+		sortDoc = append(sortDoc, bson.E{Key: "_id", Value: 1})
 	}
 	fo.SetSort(sortDoc)
 	if s.Limit > 0 {
@@ -526,14 +537,14 @@ func (m *mongoSource) Select(ctx context.Context, t *Target, s Select) ([]map[st
 	return out, cur.Err()
 }
 
-func (m *mongoSource) Insert(ctx context.Context, t *Target, values map[string]any) (any, error) {
+func (m *mongoSource) Insert(ctx context.Context, t *Target, values map[string]any) ([]any, error) {
 	if m.set.ReadOnly {
 		return nil, ErrReadOnly
 	}
 	doc := bson.D{}
 	for _, c := range t.Columns {
 		if v, ok := values[c.Name]; ok && !c.Generated {
-			if c.Name == t.Key && v == nil {
+			if c.Name == "_id" && v == nil {
 				continue
 			}
 			doc = append(doc, bson.E{Key: c.Name, Value: mongoValue(v)})
@@ -543,7 +554,7 @@ func (m *mongoSource) Insert(ctx context.Context, t *Target, values map[string]a
 	if err != nil {
 		return nil, errorf("%s", Clean(err))
 	}
-	return plain(r.InsertedID), nil
+	return []any{plain(r.InsertedID)}, nil
 }
 
 func mongoValue(v any) any {
@@ -555,13 +566,13 @@ func mongoValue(v any) any {
 	return v
 }
 
-func (m *mongoSource) Update(ctx context.Context, t *Target, key any, values map[string]any) error {
+func (m *mongoSource) Update(ctx context.Context, t *Target, key []any, values map[string]any) error {
 	if m.set.ReadOnly {
 		return ErrReadOnly
 	}
 	set, unset := bson.D{}, bson.D{}
 	for _, c := range t.Columns {
-		if v, ok := values[c.Name]; ok && !c.Generated && c.Name != t.Key {
+		if v, ok := values[c.Name]; ok && !c.Generated && c.Name != "_id" {
 			if v == nil {
 				unset = append(unset, bson.E{Key: c.Name, Value: ""})
 			} else {
@@ -579,7 +590,10 @@ func (m *mongoSource) Update(ctx context.Context, t *Target, key any, values map
 	if len(upd) == 0 {
 		return nil
 	}
-	r, err := m.db.Collection(t.Name).UpdateOne(ctx, bson.D{{Key: t.Key, Value: m.key(t, key)}}, upd)
+	if len(key) != 1 {
+		return ErrNoRow
+	}
+	r, err := m.db.Collection(t.Name).UpdateOne(ctx, bson.D{{Key: "_id", Value: m.key(t, key[0])}}, upd)
 	if err != nil {
 		return errorf("%s", Clean(err))
 	}
@@ -589,15 +603,17 @@ func (m *mongoSource) Update(ctx context.Context, t *Target, key any, values map
 	return nil
 }
 
-func (m *mongoSource) Delete(ctx context.Context, t *Target, keys []any) (int, error) {
+func (m *mongoSource) Delete(ctx context.Context, t *Target, keys [][]any) (int, error) {
 	if m.set.ReadOnly {
 		return 0, ErrReadOnly
 	}
 	ks := bson.A{}
 	for _, k := range keys {
-		ks = append(ks, m.key(t, k))
+		if len(k) == 1 {
+			ks = append(ks, m.key(t, k[0]))
+		}
 	}
-	r, err := m.db.Collection(t.Name).DeleteMany(ctx, bson.D{{Key: t.Key, Value: bson.D{{Key: "$in", Value: ks}}}})
+	r, err := m.db.Collection(t.Name).DeleteMany(ctx, bson.D{{Key: "_id", Value: bson.D{{Key: "$in", Value: ks}}}})
 	if err != nil {
 		return 0, errorf("%s", Clean(err))
 	}
@@ -650,7 +666,7 @@ func (mc *mongoCompiler) value(c *Column, v any) any {
 	if t, ok := v.(time.Time); ok {
 		return bson.NewDateTimeFromTime(t)
 	}
-	if c.Name == mc.t.Key {
+	if c.Name == "_id" {
 		return mc.m.key(mc.t, v)
 	}
 	return v

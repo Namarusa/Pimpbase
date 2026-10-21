@@ -563,7 +563,14 @@ func (s *Server) deleteTable(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if err := s.Tables.DeleteTable(r.Context(), a.ID, r.PathValue("table")); err != nil {
+	t, err := s.Tables.Get(r.Context(), a.ID, r.PathValue("table"))
+	if err != nil {
+		return err
+	}
+	if err := s.Tables.DeleteTable(r.Context(), a.ID, t.ID); err != nil {
+		return err
+	}
+	if err := s.Ext.Unlink(r.Context(), a.ID, t.ID); err != nil {
 		return err
 	}
 	return writeJSON(w, 200, map[string]any{"ok": true})

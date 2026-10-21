@@ -134,19 +134,26 @@ var mssql = &dialect{
 		t.PrimaryKey = pk
 		return t, nil
 	},
-	insert: func(ctx context.Context, src *sqlSource, t *Target, cols []string, args []any) (any, error) {
+	foreignKeys: `SELECT fk.name, pc.name, SCHEMA_NAME(rt.schema_id), rt.name, rc.name
+		FROM sys.foreign_keys fk
+		JOIN sys.foreign_key_columns fkc ON fkc.constraint_object_id = fk.object_id
+		JOIN sys.tables pt ON pt.object_id = fkc.parent_object_id
+		JOIN sys.columns pc ON pc.object_id = fkc.parent_object_id AND pc.column_id = fkc.parent_column_id
+		JOIN sys.tables rt ON rt.object_id = fkc.referenced_object_id
+		JOIN sys.columns rc ON rc.object_id = fkc.referenced_object_id AND rc.column_id = fkc.referenced_column_id
+		WHERE SCHEMA_NAME(pt.schema_id) = ? AND pt.name = ?
+		ORDER BY fk.name, fkc.constraint_column_id`,
+	insert: func(ctx context.Context, src *sqlSource, t *Target, cols []string, args []any) ([]any, error) {
 		mid := ""
-		if t.Key != "" {
-			mid = " OUTPUT INSERTED." + src.d.quote(t.Key)
+		if len(t.Keys) > 0 {
+			mid = " OUTPUT " + src.returning(t, "INSERTED.")
 		}
 		q := src.insertSQL(t, cols, mid, "")
-		if t.Key == "" {
+		if len(t.Keys) == 0 {
 			_, err := src.db.ExecContext(ctx, q, args...)
 			return nil, err
 		}
-		var key any
-		err := src.db.QueryRowContext(ctx, q, args...).Scan(&key)
-		return key, err
+		return scanKey(src.db.QueryRowContext(ctx, q, args...), len(t.Keys))
 	},
 	defaultSchema: func(s Settings) string {
 		if s.Schema != "" {

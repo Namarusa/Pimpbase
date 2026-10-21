@@ -97,7 +97,7 @@ func New(s *store.Store, ui fs.FS, log *slog.Logger) *Server {
 		store:   s,
 		limiter: &limiter{hits: map[string][]time.Time{}},
 	}
-	srv.Ext = exttables.NewService(s, qs, srv.Runner)
+	srv.Ext = exttables.NewService(s, qs, srv.Runner, srv.Tables)
 	srv.SSO = sso.NewService(s, srv.Auth, srv.Apps)
 	srv.AI = ai.NewService(s)
 	srv.Bundles = bundle.NewService(s, srv.Apps, srv.Tables, srv.Files, srv.Flows)
@@ -202,8 +202,8 @@ func (s *Server) Handler() http.Handler {
 	h("PATCH /api/apps/{app}/tables/{table}/rows/{id}", s.ext("updateRow", s.updateRow))
 	h("DELETE /api/apps/{app}/tables/{table}/rows/{id}", s.ext("deleteRow", s.deleteRow))
 	h("POST /api/apps/{app}/tables/{table}/rows/delete", s.ext("deleteRows", s.deleteRows))
-	h("POST /api/apps/{app}/tables/{table}/import", s.ext("csv", s.importCSV))
-	h("GET /api/apps/{app}/tables/{table}/export", s.ext("csv", s.exportCSV))
+	h("POST /api/apps/{app}/tables/{table}/import", s.ext("import", s.importCSV))
+	h("GET /api/apps/{app}/tables/{table}/export", s.ext("export", s.exportCSV))
 	h("POST /api/apps/{app}/tables/{table}/files", s.ext("files", s.uploadFile))
 	h("GET /api/apps/{app}/files/{file}", s.getFile)
 

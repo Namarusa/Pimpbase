@@ -150,6 +150,15 @@ type Column struct {
 	Generated bool `json:"generated,omitempty"`
 	// Binary columns hold bytes and are not shown.
 	Binary bool `json:"binary,omitempty"`
+	// References is the column a single-column foreign key points at.
+	References *Reference `json:"references,omitempty"`
+}
+
+// Reference names a column of another table.
+type Reference struct {
+	Schema string `json:"schema"`
+	Table  string `json:"table"`
+	Column string `json:"column"`
 }
 
 // Statement is a query with its parameters.

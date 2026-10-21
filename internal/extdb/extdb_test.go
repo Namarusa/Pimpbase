@@ -47,16 +47,19 @@ func exec(t *testing.T, src Source, sql string) {
 
 var sqlSetup = map[string][]string{
 	"postgres": {
+		`DROP TABLE IF EXISTS bb_lines`,
 		`DROP TABLE IF EXISTS bb_items`,
 		`DROP TYPE IF EXISTS bb_status`,
 		`CREATE TYPE bb_status AS ENUM ('open', 'won', 'lost')`,
 		`CREATE TABLE bb_items (id SERIAL PRIMARY KEY, name VARCHAR(80) NOT NULL, notes TEXT, price NUMERIC(10,2), qty INTEGER, active BOOLEAN, due DATE, status bb_status, ref UUID)`,
 	},
 	"mysql": {
+		`DROP TABLE IF EXISTS bb_lines`,
 		`DROP TABLE IF EXISTS bb_items`,
 		"CREATE TABLE bb_items (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(80) NOT NULL, notes TEXT, price DECIMAL(10,2), qty INT, active TINYINT(1), due DATE, status ENUM('open','won','lost'), ref CHAR(36))",
 	},
 	"mssql": {
+		`IF OBJECT_ID('dbo.bb_lines') IS NOT NULL DROP TABLE dbo.bb_lines`,
 		`IF OBJECT_ID('dbo.bb_items') IS NOT NULL DROP TABLE dbo.bb_items`,
 		`CREATE TABLE dbo.bb_items (id INT IDENTITY(1,1) PRIMARY KEY, name NVARCHAR(80) NOT NULL, notes NVARCHAR(MAX), price DECIMAL(10,2), qty INT, active BIT, due DATE, status NVARCHAR(10), ref UNIQUEIDENTIFIER)`,
 	},
@@ -103,10 +106,10 @@ func TestSQLSources(t *testing.T) {
 			if strings.Join(info.PrimaryKey, ",") != "id" {
 				t.Errorf("primary key %v", info.PrimaryKey)
 			}
-			tg := &Target{Schema: found, Name: "bb_items", Columns: info.Columns, Key: "id"}
+			tg := &Target{Schema: found, Name: "bb_items", Columns: info.Columns, Keys: []string{"id"}}
 			rows := src.Rows()
 			due, _ := formula.ParseDate("2026-11-01")
-			var keys []any
+			var keys [][]any
 			for i, r := range []map[string]any{
 				{"name": "Apple", "price": 1.5, "qty": int64(10), "active": true, "due": due, "status": "open"},
 				{"name": "Banana", "price": 0.25, "qty": int64(0), "active": false, "status": "won"},
@@ -118,7 +121,7 @@ func TestSQLSources(t *testing.T) {
 				}
 				keys = append(keys, k)
 			}
-			if keys[0] != 1.0 || keys[2] != 3.0 {
+			if keys[0][0] != 1.0 || keys[2][0] != 3.0 {
 				t.Fatalf("keys %v", keys)
 			}
 			check := func(src2, want string) {
@@ -181,10 +184,10 @@ func TestSQLSources(t *testing.T) {
 				t.Fatal(err)
 			}
 			check(`[qty] > 5`, "Apple,Banana")
-			if n, err := rows.Delete(ctx, tg, []any{keys[0], keys[2]}); err != nil || n != 2 {
+			if n, err := rows.Delete(ctx, tg, [][]any{keys[0], keys[2]}); err != nil || n != 2 {
 				t.Fatalf("delete %d %v", n, err)
 			}
-			if err := rows.Update(ctx, tg, int64(99), map[string]any{"qty": int64(1)}); kind != "mysql" && err != ErrNoRow {
+			if err := rows.Update(ctx, tg, []any{int64(99)}, map[string]any{"qty": int64(1)}); kind != "mysql" && err != ErrNoRow {
 				t.Errorf("update of a missing row: %v", err)
 			}
 
@@ -209,8 +212,73 @@ func TestSQLSources(t *testing.T) {
 			if _, _, err := BindSQL(kind, `SELECT * FROM bb_items WHERE name = '{{ params.name }}'`, scope); err == nil {
 				t.Error("a binding inside quotes was accepted")
 			}
+			testCompositeKeys(t, src, kind, found)
 		})
 	}
+}
+
+var compositeSetup = map[string][]string{
+	"postgres": {
+		`DROP TABLE IF EXISTS bb_lines`,
+		`CREATE TABLE bb_lines (item_id INTEGER NOT NULL REFERENCES bb_items(id), line INTEGER NOT NULL, note VARCHAR(40), PRIMARY KEY (item_id, line))`,
+	},
+	"mysql": {
+		`DROP TABLE IF EXISTS bb_lines`,
+		`CREATE TABLE bb_lines (item_id INT NOT NULL, line INT NOT NULL, note VARCHAR(40), PRIMARY KEY (item_id, line), FOREIGN KEY (item_id) REFERENCES bb_items(id))`,
+	},
+	"mssql": {
+		`IF OBJECT_ID('dbo.bb_lines') IS NOT NULL DROP TABLE dbo.bb_lines`,
+		`CREATE TABLE dbo.bb_lines (item_id INT NOT NULL REFERENCES dbo.bb_items(id), line INT NOT NULL, note NVARCHAR(40), PRIMARY KEY (item_id, line))`,
+	},
+}
+
+// testCompositeKeys writes rows of a table keyed by two columns, one of
+// them a foreign key.
+func testCompositeKeys(t *testing.T, src Source, kind, schema string) {
+	ctx := context.Background()
+	for _, q := range compositeSetup[kind] {
+		exec(t, src, q)
+	}
+	info, err := src.Describe(ctx, schema, "bb_lines")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(info.PrimaryKey, ",") != "item_id,line" {
+		t.Fatalf("primary key %v", info.PrimaryKey)
+	}
+	if ref := info.Columns[0].References; ref == nil || ref.Table != "bb_items" || ref.Column != "id" {
+		t.Errorf("item_id references %+v", ref)
+	}
+	if info.Columns[1].References != nil {
+		t.Errorf("line references %+v", info.Columns[1].References)
+	}
+	tg := &Target{Schema: schema, Name: "bb_lines", Columns: info.Columns, Keys: info.PrimaryKey}
+	rows := src.Rows()
+	items, err := rows.Select(ctx, &Target{Schema: schema, Name: "bb_items", Columns: []Column{{Name: "id", Type: "autonumber", DBType: "int4"}}, Keys: []string{"id"}}, Select{Limit: 1})
+	if err != nil || len(items) == 0 {
+		t.Fatalf("items %v %v", items, err)
+	}
+	item := int64(items[0]["id"].(float64))
+	for line := int64(1); line <= 3; line++ {
+		key, err := rows.Insert(ctx, tg, map[string]any{"item_id": item, "line": line, "note": "n"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(key) != 2 || key[0] != float64(item) || key[1] != float64(line) {
+			t.Errorf("key %v", key)
+		}
+	}
+	if err := rows.Update(ctx, tg, []any{item, int64(2)}, map[string]any{"note": "second"}); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := rows.Delete(ctx, tg, [][]any{{item, int64(1)}, {item, int64(3)}}); err != nil || n != 2 {
+		t.Fatalf("delete %d %v", n, err)
+	}
+	got, err := rows.Select(ctx, tg, Select{})
+	if err != nil || len(got) != 1 || got[0]["note"] != "second" || got[0]["line"] != 2.0 {
+		t.Errorf("left %v %v", got, err)
+	}
+	exec(t, src, compositeSetup[kind][0])
 }
 
 func TestMongoSource(t *testing.T) {
@@ -237,7 +305,7 @@ func TestMongoSource(t *testing.T) {
 	if types["qty"] != "number" || types["active"] != "boolean" || types["due"] != "date" || types["name"] != "text" {
 		t.Fatalf("types %v", types)
 	}
-	tg := &Target{Name: "bb_items", Columns: info.Columns, Key: "_id"}
+	tg := &Target{Name: "bb_items", Columns: info.Columns, Keys: []string{"_id"}}
 	rows := src.Rows()
 	check := func(f, want string) {
 		t.Helper()
@@ -279,7 +347,7 @@ func TestMongoSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	check(`[qty] > 5`, "Apple,Date")
-	if n, err := rows.Delete(ctx, tg, []any{key}); err != nil || n != 1 {
+	if n, err := rows.Delete(ctx, tg, [][]any{key}); err != nil || n != 1 {
 		t.Fatalf("delete %d %v", n, err)
 	}
 	r := exec("find", `{"qty": {"$gte": 0}}`, "")

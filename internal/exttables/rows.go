@@ -2,10 +2,10 @@ package exttables
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
-	"strconv"
 	"strings"
 	"time"
 
@@ -19,13 +19,16 @@ import (
 // MaxScan is the most rows a filter without a database form may read.
 const MaxScan = 50_000
 
-// rows opens a table's rows for an actor in an environment.
+// rowsCtx is a table's rows opened in an environment.
 type rowsCtx struct {
+	s    *Service
 	t    *Table
 	ds   *queries.Datasource
 	src  extdb.Source
 	rows extdb.Rows
 	tg   *extdb.Target
+	env  string
+	g    *graph
 }
 
 func (s *Service) open(ctx context.Context, appID, id, env string) (*rowsCtx, error) {
@@ -33,11 +36,19 @@ func (s *Service) open(ctx context.Context, appID, id, env string) (*rowsCtx, er
 	if err != nil {
 		return nil, err
 	}
+	g, err := s.graph(ctx, appID)
+	if err != nil {
+		return nil, err
+	}
+	return s.openTable(ctx, t, env, g)
+}
+
+func (s *Service) openTable(ctx context.Context, t *Table, env string, g *graph) (*rowsCtx, error) {
 	ds, src, err := s.source(ctx, t, env)
 	if err != nil {
 		return nil, err
 	}
-	return &rowsCtx{t: t, ds: ds, src: src, rows: src.Rows(), tg: t.target()}, nil
+	return &rowsCtx{s: s, t: t, ds: ds, src: src, rows: src.Rows(), tg: t.target(), env: env, g: g}, nil
 }
 
 func (rc *rowsCtx) readOnly() bool {
@@ -62,10 +73,31 @@ func fail(err error) error {
 	return err
 }
 
+// rowID is a row's _id: the value of a one-column key, or the key values
+// as a JSON list, such as [3,"B"].
+func (rc *rowsCtx) rowID(r map[string]any) any {
+	switch len(rc.tg.Keys) {
+	case 0:
+		return nil
+	case 1:
+		return r[rc.tg.Keys[0]]
+	}
+	vals := make([]any, len(rc.tg.Keys))
+	for i, k := range rc.tg.Keys {
+		v := r[k]
+		if t, ok := v.(time.Time); ok {
+			v = t.UTC().Format(formula.DateLayout)
+		}
+		vals[i] = v
+	}
+	js, _ := json.Marshal(vals)
+	return string(js)
+}
+
 // json is a row as the API shows it, keyed by field name, with its key as
-// _id.
+// _id. Link fields are set by decorate.
 func (rc *rowsCtx) json(r map[string]any) map[string]any {
-	out := map[string]any{"_id": r[rc.tg.Key]}
+	out := map[string]any{"_id": rc.rowID(r)}
 	for _, c := range rc.t.visible() {
 		v := r[c.Name]
 		switch x := v.(type) {
@@ -164,8 +196,8 @@ func (s *Service) ListRows(ctx context.Context, actor rbac.Actor, env, appID, id
 	var order []extdb.Order
 	switch q.Sort {
 	case "", "_id", "_createdAt", "_updatedAt":
-		if rc.tg.Key != "" {
-			order = []extdb.Order{{Column: rc.tg.Key, Desc: q.Desc}}
+		for _, k := range rc.tg.Keys {
+			order = append(order, extdb.Order{Column: k, Desc: q.Desc})
 		}
 	default:
 		c := rc.t.column(q.Sort)
@@ -186,10 +218,7 @@ func (s *Service) ListRows(ctx context.Context, actor rbac.Actor, env, appID, id
 			return nil, fail(err)
 		}
 		page := &tables.Page{Rows: []map[string]any{}, Total: total, Engine: "sql"}
-		for _, r := range got {
-			page.Rows = append(page.Rows, rc.json(r))
-		}
-		return page, nil
+		return page, rc.page(ctx, actor, page, got)
 	}
 
 	// Go path: read the table, then filter and page.
@@ -211,43 +240,92 @@ func (s *Service) ListRows(ctx context.Context, actor rbac.Actor, env, appID, id
 		}
 	}
 	page := &tables.Page{Rows: []map[string]any{}, Total: len(kept), Engine: "go"}
+	var shown []map[string]any
 	for i := q.Offset; i < len(kept) && i < q.Offset+q.Limit; i++ {
-		page.Rows = append(page.Rows, rc.json(kept[i]))
+		shown = append(shown, kept[i])
 	}
-	return page, nil
+	return page, rc.page(ctx, actor, page, shown)
 }
 
-// key reads a row key from the API into the key column's type.
-func (rc *rowsCtx) key(raw string) (any, error) {
-	if rc.tg.Key == "" {
+// page fills a page with rows as the API shows them, links included.
+func (rc *rowsCtx) page(ctx context.Context, actor rbac.Actor, page *tables.Page, raws []map[string]any) error {
+	for _, r := range raws {
+		page.Rows = append(page.Rows, rc.json(r))
+	}
+	return rc.decorate(ctx, actor, raws, page.Rows)
+}
+
+// shown is one row as the API shows it, links included.
+func (rc *rowsCtx) shown(ctx context.Context, actor rbac.Actor, r map[string]any) (map[string]any, error) {
+	out := []map[string]any{rc.json(r)}
+	if err := rc.decorate(ctx, actor, []map[string]any{r}, out); err != nil {
+		return nil, err
+	}
+	return out[0], nil
+}
+
+// key reads a row's _id from the API into key values of the key columns'
+// types.
+func (rc *rowsCtx) key(raw string) ([]any, error) {
+	notFound := fmt.Errorf("row %w", tables.ErrNotFound)
+	keys := rc.tg.Keys
+	if len(keys) == 0 {
 		return nil, invalid("", "%s has no primary key, so its rows cannot be opened one by one", rc.t.Name)
 	}
-	c := rc.t.column(rc.tg.Key)
-	if c.Type == "number" || c.Type == "autonumber" {
-		f, err := strconv.ParseFloat(raw, 64)
-		if err != nil {
-			return nil, fmt.Errorf("row %w", tables.ErrNotFound)
+	parts := []any{raw}
+	if len(keys) > 1 {
+		parts = nil
+		if err := json.Unmarshal([]byte(raw), &parts); err != nil || len(parts) != len(keys) {
+			return nil, notFound
 		}
-		return extdb.Write(f, &c.Column)
 	}
-	return raw, nil
+	out := make([]any, len(keys))
+	for i, k := range keys {
+		c := rc.t.column(k)
+		v, err := extdb.Write(parts[i], &c.Column)
+		if err != nil || v == nil {
+			return nil, notFound
+		}
+		out[i] = v
+	}
+	return out, nil
+}
+
+// keyCond finds the row with the key values.
+func (rc *rowsCtx) keyCond(key []any) *extdb.Cond {
+	parts := make([]*extdb.Cond, len(key))
+	for i, k := range rc.tg.Keys {
+		parts[i] = rc.rows.In(rc.tg, k, []any{key[i]})
+	}
+	return and(parts)
+}
+
+// and joins conditions of one source.
+func and(parts []*extdb.Cond) *extdb.Cond {
+	if len(parts) == 1 {
+		return parts[0]
+	}
+	if parts[0].Mongo != nil {
+		list := make([]any, len(parts))
+		for i, p := range parts {
+			list[i] = p.Mongo
+		}
+		return &extdb.Cond{Mongo: map[string]any{"$and": list}}
+	}
+	out := &extdb.Cond{}
+	for i, p := range parts {
+		if i > 0 {
+			out.SQL += " AND "
+		}
+		out.SQL += "(" + p.SQL + ")"
+		out.Args = append(out.Args, p.Args...)
+	}
+	return out
 }
 
 // load reads one row by key, if the actor's row rule allows it.
-func (rc *rowsCtx) load(ctx context.Context, key any, actor rbac.Actor, now time.Time) (map[string]any, error) {
-	where := &extdb.Cond{}
-	if rc.ds.Kind == "mongodb" {
-		where = nil
-	}
-	var got []map[string]any
-	var err error
-	if where != nil {
-		where.SQL = keyEquals(rc.ds.Kind, rc.tg.Key)
-		where.Args = []any{key}
-		got, err = rc.rows.Select(ctx, rc.tg, extdb.Select{Where: where, Limit: 1})
-	} else {
-		got, err = rc.mongoGet(ctx, key)
-	}
+func (rc *rowsCtx) load(ctx context.Context, key []any, actor rbac.Actor, now time.Time) (map[string]any, error) {
+	got, err := rc.rows.Select(ctx, rc.tg, extdb.Select{Where: rc.keyCond(key), Limit: 1})
 	if err != nil {
 		return nil, fail(err)
 	}
@@ -262,37 +340,6 @@ func (rc *rowsCtx) load(ctx context.Context, key any, actor rbac.Actor, now time
 		return nil, fmt.Errorf("row %w", tables.ErrNotFound)
 	}
 	return got[0], nil
-}
-
-// mongoGet finds a document by key through a formula, so the driver turns
-// the key into an ObjectID where it is one.
-func (rc *rowsCtx) mongoGet(ctx context.Context, key any) ([]map[string]any, error) {
-	ch, errs := formula.Compile("["+rc.tg.Key+"] = Current.User.Id", scope{rc.t})
-	if errs != nil {
-		return nil, errs[0]
-	}
-	where, ok := rc.rows.Compile(rc.tg, ch, keyEnv{key})
-	if !ok {
-		return nil, errors.New("the key has no filter form")
-	}
-	return rc.rows.Select(ctx, rc.tg, extdb.Select{Where: where, Limit: 1})
-}
-
-// keyEnv gives a key as Current.User.Id, for mongoGet.
-type keyEnv struct{ key any }
-
-func (k keyEnv) Field(string) any  { return nil }
-func (k keyEnv) Name([]string) any { return fmt.Sprint(k.key) }
-func (k keyEnv) Now() time.Time    { return time.Now() }
-
-func keyEquals(kind, key string) string {
-	switch kind {
-	case "mysql":
-		return "`" + strings.ReplaceAll(key, "`", "``") + "` = ?"
-	case "mssql":
-		return "[" + strings.ReplaceAll(key, "]", "]]") + "] = ?"
-	}
-	return `"` + strings.ReplaceAll(key, `"`, `""`) + `" = ?`
 }
 
 // GetRow returns one row.
@@ -312,15 +359,20 @@ func (s *Service) GetRow(ctx context.Context, actor rbac.Actor, env, appID, id, 
 	if err != nil {
 		return nil, err
 	}
-	return rc.json(r), nil
+	return rc.shown(ctx, actor, r)
 }
 
 // values converts the values given for a write, by field name, into
-// column values.
-func (rc *rowsCtx) values(in map[string]any) (map[string]any, error) {
+// column values. Fields listing the rows that link here are read only and
+// left out.
+func (rc *rowsCtx) values(ctx context.Context, in map[string]any) (map[string]any, error) {
+	reverse := map[string]bool{}
+	for _, r := range rc.g.reverse(rc.t) {
+		reverse[strings.ToLower(r.name)] = true
+	}
 	out := map[string]any{}
 	for k, v := range in {
-		if strings.HasPrefix(k, "_") {
+		if strings.HasPrefix(k, "_") || reverse[strings.ToLower(k)] {
 			continue
 		}
 		c := rc.t.column(k)
@@ -330,6 +382,21 @@ func (rc *rowsCtx) values(in map[string]any) (map[string]any, error) {
 		if c.Generated {
 			return nil, invalid(c.Name, "the database fills %s", c.Name)
 		}
+		if l := rc.g.link(rc.t, c.Name); l != nil {
+			x, err := rc.linkValue(ctx, l, c, v)
+			if err != nil {
+				var ve *tables.ValidationError
+				if errors.As(err, &ve) {
+					return nil, err
+				}
+				if _, ok := err.(*queries.RunError); ok {
+					return nil, err
+				}
+				return nil, invalid(c.Name, "%s", err)
+			}
+			out[c.Name] = x
+			continue
+		}
 		x, err := extdb.Write(v, &c.Column)
 		if err != nil {
 			return nil, invalid(c.Name, "%s", err)
@@ -337,6 +404,13 @@ func (rc *rowsCtx) values(in map[string]any) (map[string]any, error) {
 		out[c.Name] = x
 	}
 	return out, nil
+}
+
+// emit tells OnRow about a change.
+func (s *Service) emit(ctx context.Context, ev tables.RowEvent) {
+	if s.OnRow != nil {
+		s.OnRow(ctx, ev)
+	}
 }
 
 // formulaRow is a written row as formulas read it.
@@ -367,13 +441,17 @@ func (s *Service) CreateRow(ctx context.Context, actor rbac.Actor, env, appID, i
 	if err != nil {
 		return nil, err
 	}
+	return s.createRow(ctx, rc, actor, in)
+}
+
+func (s *Service) createRow(ctx context.Context, rc *rowsCtx, actor rbac.Actor, in map[string]any) (map[string]any, error) {
 	if err := actor.Require(rc.t.Permissions.Write, "adding rows to "+rc.t.Name); err != nil {
 		return nil, err
 	}
 	if rc.readOnly() {
 		return nil, invalid("", "%s is read only", rc.t.Name)
 	}
-	vals, err := rc.values(in)
+	vals, err := rc.values(ctx, in)
 	if err != nil {
 		return nil, err
 	}
@@ -403,7 +481,12 @@ func (s *Service) CreateRow(ctx context.Context, actor rbac.Actor, env, appID, i
 	if err != nil {
 		return nil, err
 	}
-	return rc.json(r), nil
+	row, err := rc.shown(ctx, actor, r)
+	if err != nil {
+		return nil, err
+	}
+	s.emit(ctx, tables.RowEvent{AppID: rc.t.AppID, TableID: rc.t.ID, Kind: "created", Row: row, Actor: actor})
+	return row, nil
 }
 
 // UpdateRow changes the fields given.
@@ -427,11 +510,13 @@ func (s *Service) UpdateRow(ctx context.Context, actor rbac.Actor, env, appID, i
 	if err != nil {
 		return nil, err
 	}
-	vals, err := rc.values(in)
+	vals, err := rc.values(ctx, in)
 	if err != nil {
 		return nil, err
 	}
-	delete(vals, rc.tg.Key)
+	for _, k := range rc.tg.Keys {
+		delete(vals, k)
+	}
 	for _, c := range rc.t.Columns {
 		if v, ok := vals[c.Name]; ok && v == nil && required(&c.Column) {
 			return nil, invalid(c.Name, "%s is required", c.Name)
@@ -453,6 +538,12 @@ func (s *Service) UpdateRow(ctx context.Context, actor rbac.Actor, env, appID, i
 			return nil, errOutsideRule(rc.t)
 		}
 	}
+	var old map[string]any
+	if s.OnRow != nil {
+		if old, err = rc.shown(ctx, actor, cur); err != nil {
+			return nil, err
+		}
+	}
 	if err := rc.rows.Update(ctx, rc.tg, key, vals); err != nil {
 		return nil, fail(err)
 	}
@@ -460,7 +551,12 @@ func (s *Service) UpdateRow(ctx context.Context, actor rbac.Actor, env, appID, i
 	if err != nil {
 		return nil, err
 	}
-	return rc.json(r), nil
+	row, err := rc.shown(ctx, actor, r)
+	if err != nil {
+		return nil, err
+	}
+	s.emit(ctx, tables.RowEvent{AppID: rc.t.AppID, TableID: rc.t.ID, Kind: "updated", Row: row, Old: old, Actor: actor})
+	return row, nil
 }
 
 // DeleteRows deletes rows by key; rows the actor may not see are left.
@@ -480,15 +576,24 @@ func (s *Service) DeleteRows(ctx context.Context, actor rbac.Actor, env, appID, 
 	if err != nil {
 		return 0, err
 	}
-	var keys []any
+	var keys [][]any
+	var gone []map[string]any
 	for _, raw := range rowIDs {
 		key, err := rc.key(raw)
 		if err != nil {
 			continue
 		}
-		if rule != nil {
-			if _, err := rc.load(ctx, key, actor, now); err != nil {
+		if rule != nil || s.OnRow != nil {
+			r, err := rc.load(ctx, key, actor, now)
+			if err != nil {
 				continue
+			}
+			if s.OnRow != nil {
+				row, err := rc.shown(ctx, actor, r)
+				if err != nil {
+					return 0, err
+				}
+				gone = append(gone, row)
 			}
 		}
 		keys = append(keys, key)
@@ -497,7 +602,13 @@ func (s *Service) DeleteRows(ctx context.Context, actor rbac.Actor, env, appID, 
 		return 0, nil
 	}
 	n, err := rc.rows.Delete(ctx, rc.tg, keys)
-	return n, fail(err)
+	if err != nil {
+		return n, fail(err)
+	}
+	for _, row := range gone {
+		s.emit(ctx, tables.RowEvent{AppID: rc.t.AppID, TableID: rc.t.ID, Kind: "deleted", Row: row, Actor: actor})
+	}
+	return n, nil
 }
 
 // Schema lists the tables of a database data source.

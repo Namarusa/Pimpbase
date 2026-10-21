@@ -3,8 +3,11 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"mime"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/bubibase/bubibase/internal/extdb"
 	"github.com/bubibase/bubibase/internal/exttables"
@@ -247,6 +250,39 @@ func (s *Server) extTable(w http.ResponseWriter, r *http.Request, op string) err
 			return err
 		}
 		return writeJSON(w, 200, row)
+	case "import":
+		r.Body = http.MaxBytesReader(w, r.Body, 64<<20)
+		var body io.Reader = r.Body
+		if ct, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); ct == "multipart/form-data" {
+			f, _, err := r.FormFile("file")
+			if err != nil {
+				return errStatus(400, "attach the CSV as the form field named file")
+			}
+			defer f.Close()
+			body = f
+		}
+		res, err := s.Ext.ImportCSV(ctx, act, env, a.ID, id, body)
+		if err != nil {
+			return err
+		}
+		return writeJSON(w, 200, res)
+	case "export":
+		t, err := s.Ext.Get(ctx, a.ID, id)
+		if err != nil {
+			return err
+		}
+		filter := r.URL.Query().Get("filter")
+		// Check the filter and access before streaming, so errors still
+		// come back as JSON.
+		if _, err := s.Ext.ListRows(ctx, act, env, a.ID, id, tables.Query{Filter: filter, Limit: 1}); err != nil {
+			return err
+		}
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.csv"`, fileName(t.Name)))
+		if err := s.Ext.ExportCSV(ctx, act, env, a.ID, id, filter, w); err != nil {
+			s.Log.Error("export failed", "err", err)
+		}
+		return nil
 	case "deleteRow", "deleteRows":
 		var keys []string
 		if op == "deleteRow" {
@@ -286,4 +322,14 @@ func (s *Server) ext(op string, fn func(w http.ResponseWriter, r *http.Request) 
 		}
 		return fn(w, r)
 	}
+}
+
+// fileName makes a table name safe in a Content-Disposition header.
+func fileName(name string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '"' || r == '\\' || r < 32 {
+			return '_'
+		}
+		return r
+	}, name)
 }

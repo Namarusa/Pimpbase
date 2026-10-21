@@ -46,8 +46,10 @@ type Table struct {
 	// PrimaryField is the column shown as a row's label.
 	PrimaryField string             `json:"primaryField,omitempty"`
 	Permissions  tables.Permissions `json:"permissions"`
-	CreatedAt    time.Time          `json:"createdAt"`
-	UpdatedAt    time.Time          `json:"updatedAt"`
+	// Links make columns links to rows of other tables.
+	Links     []Link    `json:"links"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // Column is a database column and whether apps see it.
@@ -56,7 +58,8 @@ type Column struct {
 	Hidden bool `json:"hidden,omitempty"`
 }
 
-// Key is the single primary key column rows are found by, or "".
+// Key is the single primary key column, or "" when the key has none or
+// several columns.
 func (t *Table) Key() string {
 	if len(t.PrimaryKey) == 1 {
 		return t.PrimaryKey[0]
@@ -64,8 +67,18 @@ func (t *Table) Key() string {
 	return ""
 }
 
-// Writable reports whether rows can be added, changed and deleted.
-func (t *Table) Writable() bool { return t.Key() != "" }
+// Writable reports whether rows can be added, changed and deleted: they
+// need a primary key, of one column or several, to be found by.
+func (t *Table) Writable() bool { return len(t.PrimaryKey) > 0 }
+
+func (t *Table) isKey(name string) bool {
+	for _, k := range t.PrimaryKey {
+		if strings.EqualFold(k, name) {
+			return true
+		}
+	}
+	return false
+}
 
 func (t *Table) column(name string) *Column {
 	for i := range t.Columns {
@@ -89,9 +102,9 @@ func (t *Table) visible() []*Column {
 
 // target is what the driver reads: the visible columns and the key.
 func (t *Table) target() *extdb.Target {
-	tg := &extdb.Target{Schema: t.Schema, Name: t.Source, Key: t.Key()}
+	tg := &extdb.Target{Schema: t.Schema, Name: t.Source, Keys: t.PrimaryKey}
 	for _, c := range t.Columns {
-		if (!c.Hidden && !c.Binary) || c.Name == tg.Key {
+		if (!c.Hidden && !c.Binary) || t.isKey(c.Name) {
 			tg.Columns = append(tg.Columns, c.Column)
 		}
 	}
@@ -107,6 +120,13 @@ type Field struct {
 	Required bool             `json:"required,omitempty"`
 	Options  []string         `json:"options,omitempty"`
 	ReadOnly bool             `json:"readOnly,omitempty"`
+	// Link fields show rows of another table: a column holding one row's
+	// key, or (LinkMany) the rows of another table pointing at this one.
+	LinkTable string `json:"linkTable,omitempty"`
+	LinkMany  bool   `json:"linkMany,omitempty"`
+	// Column is the column a link field reads; for a LinkMany field, the
+	// column of LinkTable.
+	Column string `json:"column,omitempty"`
 }
 
 // View is an external table in the shape of a built-in table, with what
@@ -133,17 +153,26 @@ type External struct {
 	PrimaryKey   []string `json:"primaryKey"`
 	ReadOnly     bool     `json:"readOnly"`
 	Columns      []Column `json:"columns"`
+	Links        []Link   `json:"links"`
 }
 
 // View gives the table as the API shows it.
-func (t *Table) View(dsKind string, readOnly bool) *View {
+func (t *Table) View(dsKind string, readOnly bool, g *graph) *View {
+	ro := readOnly || !t.Writable()
 	v := &View{ID: t.ID, AppID: t.AppID, Name: t.Name, Fields: []Field{}, PrimaryField: t.PrimaryField, Permissions: t.Permissions,
 		External: External{DatasourceID: t.DatasourceID, Kind: dsKind, Schema: t.Schema, Source: t.Source, SourceKind: t.Kind,
-			PrimaryKey: t.PrimaryKey, ReadOnly: readOnly || !t.Writable(), Columns: t.Columns},
+			PrimaryKey: t.PrimaryKey, ReadOnly: ro, Columns: t.Columns, Links: t.Links},
 		CreatedAt: t.CreatedAt, UpdatedAt: t.UpdatedAt}
 	for _, c := range t.visible() {
-		v.Fields = append(v.Fields, Field{ID: c.Name, Name: c.Name, Type: tables.FieldType(c.Type), Options: c.Options,
-			Required: required(&c.Column), ReadOnly: c.Generated || readOnly || !t.Writable()})
+		f := Field{ID: c.Name, Name: c.Name, Type: tables.FieldType(c.Type), Options: c.Options,
+			Required: required(&c.Column), ReadOnly: c.Generated || ro}
+		if l := g.link(t, c.Name); l != nil {
+			f.Type, f.LinkTable, f.Column, f.Options = tables.TypeLink, l.Table, c.Name, nil
+		}
+		v.Fields = append(v.Fields, f)
+	}
+	for _, r := range g.reverse(t) {
+		v.Fields = append(v.Fields, Field{ID: r.name, Name: r.name, Type: tables.TypeLink, LinkTable: r.from.ID, LinkMany: true, Column: r.column, ReadOnly: true})
 	}
 	return v
 }
@@ -159,11 +188,15 @@ type Service struct {
 	store   *store.Store
 	queries *queries.Service
 	runner  *queries.Runner
+	tables  *tables.Service
 	now     func() time.Time
+	// OnRow, when set, hears every row created, changed or deleted through
+	// Bubibase; changes made in the database directly are not seen.
+	OnRow func(ctx context.Context, ev tables.RowEvent)
 }
 
-func NewService(s *store.Store, qs *queries.Service, r *queries.Runner) *Service {
-	return &Service{store: s, queries: qs, runner: r, now: time.Now}
+func NewService(s *store.Store, qs *queries.Service, r *queries.Runner, ts *tables.Service) *Service {
+	return &Service{store: s, queries: qs, runner: r, tables: ts, now: time.Now}
 }
 
 func invalid(field, format string, args ...any) error {
@@ -185,7 +218,10 @@ func scan(row interface{ Scan(...any) error }) (*Table, error) {
 	if err := json.Unmarshal([]byte(def), &d); err != nil {
 		return nil, err
 	}
-	t.Schema, t.Source, t.Kind, t.Columns, t.PrimaryKey, t.PrimaryField, t.Permissions = d.Schema, d.Source, d.Kind, d.Columns, d.PrimaryKey, d.PrimaryField, d.Permissions
+	t.Schema, t.Source, t.Kind, t.Columns, t.PrimaryKey, t.PrimaryField, t.Permissions, t.Links = d.Schema, d.Source, d.Kind, d.Columns, d.PrimaryKey, d.PrimaryField, d.Permissions, d.Links
+	if t.Links == nil {
+		t.Links = []Link{}
+	}
 	if t.Columns == nil {
 		t.Columns = []Column{}
 	}
@@ -212,10 +248,11 @@ type definition struct {
 	PrimaryKey   []string           `json:"primaryKey"`
 	PrimaryField string             `json:"primaryField,omitempty"`
 	Permissions  tables.Permissions `json:"permissions"`
+	Links        []Link             `json:"links,omitempty"`
 }
 
 func (t *Table) definition() string {
-	js, _ := json.Marshal(definition{t.Schema, t.Source, t.Kind, t.Columns, t.PrimaryKey, t.PrimaryField, t.Permissions})
+	js, _ := json.Marshal(definition{t.Schema, t.Source, t.Kind, t.Columns, t.PrimaryKey, t.PrimaryField, t.Permissions, t.Links})
 	return string(js)
 }
 
@@ -248,6 +285,10 @@ func (s *Service) Views(ctx context.Context, appID string, ts []*Table) ([]*View
 	if err != nil {
 		return nil, err
 	}
+	g, err := s.graph(ctx, appID)
+	if err != nil {
+		return nil, err
+	}
 	byID := map[string]*queries.Datasource{}
 	for _, d := range dss {
 		byID[d.ID] = d
@@ -258,7 +299,7 @@ func (s *Service) Views(ctx context.Context, appID string, ts []*Table) ([]*View
 		if d := byID[t.DatasourceID]; d != nil {
 			kind, ro = d.Kind, d.Config.DB != nil && d.Config.DB.ReadOnly
 		}
-		out = append(out, t.View(kind, ro))
+		out = append(out, t.View(kind, ro, g))
 	}
 	return out, nil
 }
@@ -346,7 +387,8 @@ func (s *Service) Import(ctx context.Context, appID, dsID, schema, source, name 
 	}
 	t := &Table{ID: ids.New("ext"), AppID: appID, DatasourceID: dsID, Name: n, Schema: info.Schema, Source: info.Name, Kind: info.Kind,
 		PrimaryKey:  info.PrimaryKey,
-		Permissions: tables.Permissions{Read: rbac.Basic, Write: rbac.Basic, Delete: rbac.Basic, Rows: []tables.RowRule{}}}
+		Permissions: tables.Permissions{Read: rbac.Basic, Write: rbac.Basic, Delete: rbac.Basic, Rows: []tables.RowRule{}},
+		Links:       []Link{}}
 	if t.PrimaryKey == nil {
 		t.PrimaryKey = []string{}
 	}
@@ -362,6 +404,9 @@ func (s *Service) Import(ctx context.Context, appID, dsID, schema, source, name 
 		}
 		return nil, err
 	}
+	if err := s.detectLinks(ctx, t); err != nil {
+		return nil, err
+	}
 	return s.Get(ctx, appID, t.ID)
 }
 
@@ -375,7 +420,7 @@ func defaultLabel(t *Table) string {
 		}
 	}
 	for _, c := range t.visible() {
-		if c.Type == "text" && c.Name != t.Key() {
+		if c.Type == "text" && !t.isKey(c.Name) {
 			return c.Name
 		}
 	}
@@ -392,6 +437,8 @@ type Patch struct {
 	// Options turn text columns into choice fields, by column name; an
 	// empty list turns one back into text.
 	Options map[string][]string `json:"options"`
+	// Links replace the table's links.
+	Links *[]Link `json:"links"`
 }
 
 // Update changes a table's name, label, permissions or hidden columns.
@@ -419,7 +466,7 @@ func (s *Service) Update(ctx context.Context, appID, id string, p Patch) (*Table
 		}
 		for i := range t.Columns {
 			c := &t.Columns[i]
-			c.Hidden = hide[strings.ToLower(c.Name)] && c.Name != t.Key()
+			c.Hidden = hide[strings.ToLower(c.Name)] && !t.isKey(c.Name)
 		}
 	}
 	for name, opts := range p.Options {
@@ -462,6 +509,13 @@ func (s *Service) Update(ctx context.Context, appID, id string, p Patch) (*Table
 			return nil, err
 		}
 		t.Permissions = perm
+	}
+	if p.Links != nil {
+		links, err := s.checkLinks(ctx, t, *p.Links)
+		if err != nil {
+			return nil, err
+		}
+		t.Links = links
 	}
 	// Row rules may name hidden columns no longer.
 	if err := checkPermissions(t, &t.Permissions); err != nil {
@@ -520,14 +574,30 @@ func (s *Service) Refresh(ctx context.Context, appID, id string) (*Table, error)
 	if c := t.column(t.PrimaryField); c == nil || c.Hidden {
 		t.PrimaryField = defaultLabel(t)
 	}
+	// Links of dropped columns go; foreign keys found since are added.
+	kept := []Link{}
+	for _, l := range t.Links {
+		if c := t.column(l.Column); c != nil {
+			l.Column = c.Name
+			kept = append(kept, l)
+		}
+	}
+	t.Links = kept
 	// Rules naming dropped columns are reported, not silently kept.
 	if err := checkPermissions(t, &t.Permissions); err != nil {
 		return nil, err
 	}
-	return s.save(ctx, t)
+	if _, err := s.save(ctx, t); err != nil {
+		return nil, err
+	}
+	if err := s.detectLinks(ctx, t); err != nil {
+		return nil, err
+	}
+	return s.Get(ctx, appID, t.ID)
 }
 
-// Delete forgets an imported table; the database table stays.
+// Delete forgets an imported table, and the links of other tables to it;
+// the database table stays.
 func (s *Service) Delete(ctx context.Context, appID, id string) error {
 	res, err := s.store.Meta.Exec(ctx, `DELETE FROM app_ext_tables WHERE app_id = ? AND id = ?`, appID, id)
 	if err != nil {
@@ -536,13 +606,50 @@ func (s *Service) Delete(ctx context.Context, appID, id string) error {
 	if n, _ := res.RowsAffected(); n == 0 {
 		return fmt.Errorf("table %w", tables.ErrNotFound)
 	}
-	return nil
+	return s.Unlink(ctx, appID, id)
 }
 
 // DeleteFor forgets every table imported from a data source.
 func (s *Service) DeleteFor(ctx context.Context, appID, dsID string) error {
-	_, err := s.store.Meta.Exec(ctx, `DELETE FROM app_ext_tables WHERE app_id = ? AND datasource_id = ?`, appID, dsID)
-	return err
+	gone, err := s.List(ctx, appID)
+	if err != nil {
+		return err
+	}
+	if _, err := s.store.Meta.Exec(ctx, `DELETE FROM app_ext_tables WHERE app_id = ? AND datasource_id = ?`, appID, dsID); err != nil {
+		return err
+	}
+	for _, t := range gone {
+		if t.DatasourceID == dsID {
+			if err := s.Unlink(ctx, appID, t.ID); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// Unlink drops the links of external tables to a table that is gone,
+// built-in or external.
+func (s *Service) Unlink(ctx context.Context, appID, tableID string) error {
+	ts, err := s.List(ctx, appID)
+	if err != nil {
+		return err
+	}
+	for _, t := range ts {
+		kept := []Link{}
+		for _, l := range t.Links {
+			if l.Table != tableID {
+				kept = append(kept, l)
+			}
+		}
+		if len(kept) != len(t.Links) {
+			t.Links = kept
+			if _, err := s.save(ctx, t); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // Formulas.

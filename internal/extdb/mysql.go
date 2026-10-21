@@ -111,21 +111,37 @@ var mysqlDialect = &dialect{
 		}
 		return t, rows.Err()
 	},
-	insert: func(ctx context.Context, src *sqlSource, t *Target, cols []string, args []any) (any, error) {
+	foreignKeys: `SELECT CONSTRAINT_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME
+		FROM information_schema.KEY_COLUMN_USAGE
+		WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND REFERENCED_TABLE_NAME IS NOT NULL
+		ORDER BY CONSTRAINT_NAME, ORDINAL_POSITION`,
+	insert: func(ctx context.Context, src *sqlSource, t *Target, cols []string, args []any) ([]any, error) {
 		res, err := src.db.ExecContext(ctx, src.insertSQL(t, cols, "", ""), args...)
 		if err != nil {
 			return nil, err
 		}
-		for i, c := range cols {
-			if c == t.Key {
-				return args[i], nil
+		if len(t.Keys) == 0 {
+			return nil, nil
+		}
+		// MySQL returns no row on insert: key values are the ones given,
+		// and the one left out is the AUTO_INCREMENT id.
+		key := make([]any, len(t.Keys))
+		for i, k := range t.Keys {
+			found := false
+			for j, c := range cols {
+				if c == k {
+					key[i], found = args[j], true
+				}
+			}
+			if !found {
+				id, err := res.LastInsertId()
+				if err != nil {
+					return nil, err
+				}
+				key[i] = id
 			}
 		}
-		id, err := res.LastInsertId()
-		if err != nil {
-			return nil, err
-		}
-		return id, nil
+		return key, nil
 	},
 	defaultSchema: func(s Settings) string {
 		if s.Schema != "" {
