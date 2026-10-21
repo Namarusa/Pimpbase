@@ -80,10 +80,22 @@ All of it, with the numbers, how they were measured and the limits, is in
   attachment (files such as PDFs) fields. Renaming a field rewrites the
   formulas that use it; converting a field's type converts its data.
 - **Formulas**: one Excel-style language (`IF([Qty] > 2, "bulk", "single")`)
-  with 45 functions, type checking with error positions, dynamic (computed
-  on read) or static (stored) formula fields. Filters are formulas too, and
-  are compiled to SQL when possible, so they run in the database; the rest
-  run in Go with the same results.
+  with 87 functions (logic, text, regular expressions, number and date
+  formatting, working days, lists), type checking with error positions,
+  dynamic (computed on read) or static (stored) formula fields. Filters are
+  formulas too, and are compiled to SQL when possible, so they run in the
+  database; the rest run in Go with the same results.
+- **Linked rows in formulas**: `[Customer].[City]` reads a field of the
+  linked row; over a many link it gives a list, so `SUM([Lines].[Amount])`
+  or `JOIN([Lines].[Item], ", ")` work. Rollups add a condition:
+  `SUMOF([Lines], [Qty] * [Price])`, `COUNTOF([Lines], NOT [Shipped])`,
+  `AVERAGEOF`, `MINOF`, `MAXOF`. They compile to SQL subqueries, so
+  filtering and sorting by a rollup run in the database. Formulas read one
+  link deep and must be dynamic (a stored formula would go stale when the
+  linked rows change). Renaming a field rewrites the formulas of other
+  tables that read it, and changes that would break them are refused. A
+  filter through a link needs the person to see every linked table without
+  row rules; otherwise a builder adds a formula field instead.
 - **Data studio**: grid with inline editing, sorting, formula filters,
   paging, row forms with link pickers and file uploads, CSV import and
   export.
@@ -188,7 +200,22 @@ Components (42):
 
 Any text setting accepts bindings such as `{{ row.Title }}`,
 `{{ url.id }}`, `{{ form.Hours | number:1 }}`, `{{ user.name }}` or
-`{{ state.status }}`. Buttons, forms and table rows run action lists:
+`{{ state.status }}`, and formulas: `{{ = ROUND(row.Price * 1.2, 2) }}`.
+Screen formulas use the language of table formulas and run in the browser
+with the same results (both engines are tested against one set of
+cases). They read `row.X` (or `[X]` for the current row), `form.X`,
+`user.x`, `state.x`, `url.x`, `data.x`, `device` (`desktop`, `tablet` or
+`phone`), and `row.[Unit price]` for names with spaces.
+
+Every component has **Show when**, a formula such as
+`form.Kind = "Business"`, and **Change settings when**: conditions that
+set other settings while their formula is true, such as a red "Late"
+badge or a disabled button (when several are true, the lower one wins).
+The designer shows every component (conditional ones outlined) until you turn on
+**Conditions** in its toolbar. Hidden components are not mounted, so they
+load no data. These rules only change what the page shows; they cannot
+change **Visible to**. Use Visible to, table permissions and row rules to
+keep data from people, since those are enforced by the server. Buttons, forms and table rows run action lists:
 navigate, open a URL, save or delete a row, open or close a dialog, show a
 toast, refresh data, set state, ask for confirmation, export CSV, print or
 save as PDF, sign out. Printing leaves out the app's navigation and any

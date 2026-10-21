@@ -92,7 +92,7 @@
         <label for="f-formula">Formula</label>
         <FormulaInput bind:value={formula} {app} table={table.id} isStatic={formulaMode === 'static'} multiline
           placeholder="[Quantity] * [Unit price]" onCheck={(ok) => (formulaOk = ok)} />
-        <small class="muted">Refer to fields as [Field name]. Use Current.User.Email for the person viewing.</small>
+        <small class="muted">Refer to fields as [Field name], to a linked row’s fields as [Link].[Field], and add up linked rows with SUMOF([Link], [Field]). Use Current.User.Email for the person viewing.</small>
       </div>
       <div class="field">
         <label for="f-mode">Computed</label>
