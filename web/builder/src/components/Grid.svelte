@@ -132,6 +132,8 @@
     {#if selected.size}<button class="danger small" onclick={deleteSelected}>Delete {selected.size}</button>{/if}
     {#if ext}
       {#if builder}<button class="small" disabled={refreshing} onclick={refresh} title="Read the columns from the database again">{refreshing ? 'Refreshing…' : 'Refresh columns'}</button>{/if}
+      {#if !ext.readOnly}<button class="small" onclick={() => { importOpen = true; importResult = null; importFile = null }}>Import</button>{/if}
+      <a class="btn small" href={api.exportURL(app, table.id, filter)}>Export</a>
       {#if !ext.readOnly}<button class="primary small" onclick={() => (rowModal = 'new')}>+ Row</button>{/if}
     {:else}
     <button class="small" onclick={() => { importOpen = true; importResult = null; importFile = null }}>Import</button>
@@ -217,7 +219,7 @@
       {/if}
     {/if}
     <span class="grow"></span>
-    <span>{ext?.readOnly ? (ext.primaryKey.length === 1 ? 'The data source is read only.' : 'Read only: the table has no single-column primary key.') : 'Double-click a cell to edit it.'}</span>
+    <span>{ext?.readOnly ? (ext.primaryKey.length ? 'The data source is read only.' : 'Read only: the table has no primary key.') : 'Double-click a cell to edit it.'}</span>
   </div>
 </div>
 
@@ -226,7 +228,7 @@
     onClose={() => (fieldModal = null)} onSaved={(t) => { fieldModal = null; onTable(t); load() }} />
 {/if}
 {#if settingsOpen}
-  <TableSettings {app} {table} onClose={() => (settingsOpen = false)}
+  <TableSettings {app} {table} {tables} onClose={() => (settingsOpen = false)}
     onSaved={(t) => { settingsOpen = false; onTable(t); load() }} onDeleted={() => { settingsOpen = false; onDeleted() }} />
 {/if}
 {#if rowModal}
@@ -245,7 +247,7 @@
       <form id="import-form" onsubmit={runImport}>
         <p class="muted">The first line of the CSV must name the fields. Values are matched to fields by name.</p>
         <div class="field"><input type="file" accept=".csv,text/csv" onchange={(e) => (importFile = e.currentTarget.files?.[0] ?? null)} /></div>
-        {#if builder}<label class="check"><input type="checkbox" bind:checked={importAdd} /> Add text fields for unknown columns</label>{/if}
+        {#if builder && !ext}<label class="check"><input type="checkbox" bind:checked={importAdd} /> Add text fields for unknown columns</label>{/if}
       </form>
     {/if}
     {#snippet footer()}

@@ -1,10 +1,10 @@
 <script lang="ts">
-  import { api, type Table } from '../lib/api'
+  import { api, type ExtLink, type Table } from '../lib/api'
   import { navigate } from '../lib/router.svelte'
   import Modal from './Modal.svelte'
 
-  let { app, table, onClose, onSaved, onDeleted }: {
-    app: string; table: Table; onClose: () => void; onSaved: (t: Table) => void; onDeleted: () => void
+  let { app, table, tables = [], onClose, onSaved, onDeleted }: {
+    app: string; table: Table; tables?: Table[]; onClose: () => void; onSaved: (t: Table) => void; onDeleted: () => void
   } = $props()
 
   let name = $state(table.name)
@@ -15,6 +15,15 @@
   const ext = table.external
   let hidden = $state<string[]>(ext?.columns.filter((c) => c.hidden).map((c) => c.name) ?? [])
   const toggle = (n: string, show: boolean) => (hidden = show ? hidden.filter((h) => h !== n) : [...hidden, n])
+  // A column can link to a built-in table or to an external table with a
+  // single-column key; found foreign keys come preset.
+  const targets = tables.filter((t) => t.id !== table.id && (!t.external || t.external.primaryKey.length === 1))
+  const linkable = ext?.columns.filter((c) => !c.binary) ?? []
+  let links = $state<Record<string, ExtLink>>(Object.fromEntries((ext?.links ?? []).map((l) => [l.column, { ...l }])))
+  const setTarget = (c: string, id: string) => {
+    const { [c]: old, ...rest } = links
+    links = id ? { ...rest, [c]: { column: c, table: id, reverse: old?.reverse ?? '', detected: old?.table === id && old?.detected } } : rest
+  }
 
   async function save(e: SubmitEvent) {
     e.preventDefault()
@@ -22,7 +31,7 @@
     try {
       const p: Record<string, unknown> = { name }
       if (primary) p.primaryField = primary
-      if (ext) p.hidden = hidden
+      if (ext) { p.hidden = hidden; p.links = Object.values(links) }
       onSaved(await api.updateTable(app, table.id, p))
     } catch (err: any) { error = err.message }
   }
@@ -56,6 +65,27 @@
         </div>
       </div>
     {/if}
+    {#if ext && linkable.length && targets.length}
+      <div class="field"><span class="label">Links</span>
+        <div class="links">
+          {#each linkable as c (c.name)}
+            {@const l = links[c.name]}
+            <div class="link">
+              <span class="col">{c.name}</span>
+              <select aria-label={`${c.name} links to`} value={l?.table ?? ''} onchange={(e) => setTarget(c.name, e.currentTarget.value)}>
+                <option value="">Not a link</option>
+                {#each targets as t (t.id)}<option value={t.id}>{t.name}{t.external ? '' : ' (built-in)'}</option>{/each}
+              </select>
+              {#if l}
+                <input aria-label={`Field on ${c.name}'s target`} placeholder="Field on the other table" bind:value={links[c.name].reverse} disabled={!tables.find((t) => t.id === l.table)?.external} />
+              {/if}
+              {#if c.references}<small class="muted hint">foreign key to {c.references.table}</small>{/if}
+            </div>
+          {/each}
+        </div>
+        <small class="muted">A link column shows the linked row's label. The field name adds a list of linking rows to the other table (external tables only).</small>
+      </div>
+    {/if}
     <p class="muted small">Who may read, change and delete rows, and which rows, is set on the
       <a href={`/apps/${app}/access/permissions`} onclick={(e) => { e.preventDefault(); onClose(); navigate(`/apps/${app}/access/permissions`) }}>Access</a> tab.</p>
   </form>
@@ -74,4 +104,8 @@
   .check { display: flex; gap: 8px; align-items: center; font-size: 13px; }
   .check small { margin-left: auto; font-size: 11px; }
   .off { opacity: 0.6; }
+  .links { display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow: auto; border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px; }
+  .link { display: grid; grid-template-columns: minmax(80px, 1fr) minmax(120px, 1.3fr) minmax(120px, 1.3fr); gap: 6px; align-items: center; font-size: 13px; }
+  .link .col { font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
+  .link .hint { grid-column: 2 / -1; font-size: 11px; margin-top: -4px; }
 </style>

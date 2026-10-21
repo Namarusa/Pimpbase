@@ -92,7 +92,7 @@
           {:else if i.kind === 'table'}
             <Select.Root type="single" value={step.inputs.table ?? ''} onValueChange={(v) => { step.inputs.table = v; if (step.inputs.values) step.inputs.values = []; step.inputs.field = ''; ed.changed() }}>
               <Select.Trigger size="sm" class="w-full">{table?.name ?? 'Choose a table'}</Select.Trigger>
-              <Select.Content>{#each ed.tables as t (t.id)}<Select.Item value={t.id} label={t.name}>{t.name}</Select.Item>{/each}</Select.Content>
+              <Select.Content>{#each step.type === 'generate_pdf' ? ed.tables.filter((t) => !t.external) : ed.tables as t (t.id)}<Select.Item value={t.id} label={t.name}>{t.name}{t.external ? ' · external' : ''}</Select.Item>{/each}</Select.Content>
             </Select.Root>
           {:else if i.kind === 'field' || i.kind === 'attachment_field'}
             {@const opts = i.kind === 'field' ? [{ name: '_id' }, { name: '_createdAt' }, { name: '_updatedAt' }, ...(table?.fields ?? [])] : (table?.fields ?? []).filter((f) => f.type === 'attachment')}

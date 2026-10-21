@@ -38,6 +38,8 @@ export interface Field {
   indexed?: boolean
   // readOnly fields of external tables are filled by their database.
   readOnly?: boolean
+  // column is the database column a link field of an external table reads.
+  column?: string
 }
 export interface Table {
   id: string; appId: string; name: string; fields: Field[]; primaryField?: string
@@ -49,10 +51,13 @@ export type DbKind = 'postgres' | 'mysql' | 'mssql' | 'mongodb'
 export interface DbColumn {
   name: string; type: FieldType; dbType: string; nullable: boolean; options?: string[]
   auto?: boolean; generated?: boolean; binary?: boolean; hidden?: boolean
+  references?: { schema: string; table: string; column: string }
 }
+// ExtLink makes a column of an external table a link to another table.
+export interface ExtLink { column: string; table: string; reverse?: string; detected?: boolean }
 export interface ExternalInfo {
   datasourceId: string; kind: DbKind; schema: string; source: string; sourceKind: 'table' | 'view' | 'collection'
-  primaryKey: string[]; readOnly: boolean; columns: DbColumn[]
+  primaryKey: string[]; readOnly: boolean; columns: DbColumn[]; links: ExtLink[]
 }
 export interface DbTableInfo { schema: string; name: string; kind: 'table' | 'view' | 'collection'; imported?: string; columns?: DbColumn[]; primaryKey?: string[] }
 export interface Connector { kind: DbKind; label: string; port: string }
