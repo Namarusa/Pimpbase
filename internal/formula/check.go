@@ -18,6 +18,8 @@ type Checked struct {
 	Root   Node
 	Type   Type
 	types  map[Node]Type
+	// linkTypes are the field types behind [Link].[Field] of many links.
+	linkTypes map[*LinkField]Type
 }
 
 // TypeOf returns the static type of a node in the formula.
@@ -35,18 +37,19 @@ func Compile(src string, scope Scope) (*Checked, []*Error) {
 
 // Check type checks a parsed formula.
 func Check(src string, root Node, scope Scope) (*Checked, []*Error) {
-	ch := &checker{scope: scope, types: map[Node]Type{}}
+	ch := &checker{scope: scope, types: map[Node]Type{}, linkTypes: map[*LinkField]Type{}}
 	t := ch.check(root)
 	if len(ch.errs) > 0 {
 		return nil, ch.errs
 	}
-	return &Checked{Source: src, Root: root, Type: t, types: ch.types}, nil
+	return &Checked{Source: src, Root: root, Type: t, types: ch.types, linkTypes: ch.linkTypes}, nil
 }
 
 type checker struct {
-	scope Scope
-	types map[Node]Type
-	errs  []*Error
+	scope     Scope
+	types     map[Node]Type
+	linkTypes map[*LinkField]Type
+	errs      []*Error
 }
 
 func (ch *checker) fail(n Node, format string, args ...any) {
@@ -81,6 +84,8 @@ func (ch *checker) typeOf(n Node) Type {
 			return Any
 		}
 		return t
+	case *LinkField:
+		return ch.checkLink(n)
 	case *NameRef:
 		t, ok := ch.scope.NameType(n.Parts)
 		if !ok {
@@ -160,6 +165,9 @@ func (ch *checker) typeOf(n Node) Type {
 			}
 			return Any
 		}
+		if f.rollup {
+			return ch.checkRollup(n, f)
+		}
 		args := make([]Type, len(n.Args))
 		for i, a := range n.Args {
 			args[i] = ch.check(a)
@@ -167,6 +175,12 @@ func (ch *checker) typeOf(n Node) Type {
 		if len(args) < f.min || (!f.variadic && len(args) > len(f.params)) {
 			ch.fail(n, "%s takes %s", n.Name, f.arity())
 			return f.result(args)
+		}
+		if f.check != nil {
+			if msg := f.check(args); msg != "" {
+				ch.fail(n, "%s", msg)
+				return f.result(args)
+			}
 		}
 		for i, t := range args {
 			want := f.param(i)

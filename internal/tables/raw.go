@@ -99,8 +99,8 @@ func (s *Service) DumpLinks(ctx context.Context, appID string, f *Field, fn func
 
 // Restore creates a table exactly as defined, ids and columns included,
 // with no rows. Its link fields must point at tables of the app or at
-// tables restored with it.
-func (s *Service) Restore(ctx context.Context, appID string, t *Table) error {
+// tables in with, which are being restored alongside it.
+func (s *Service) Restore(ctx context.Context, appID string, t *Table, with ...*Table) error {
 	if t.ID == "" || !strings.HasPrefix(t.ID, "tbl_") || strings.ContainsAny(t.ID, `"' `) {
 		return invalid("id", "bad table id %q", t.ID)
 	}
@@ -122,7 +122,18 @@ func (s *Service) Restore(ctx context.Context, appID string, t *Table) error {
 	if t.CreatedAt.IsZero() {
 		t.CreatedAt = s.now().UTC()
 	}
-	if _, err := compile(t); err != nil {
+	lookup := s.lookup(ctx, appID)
+	if _, err := compile(t, func(id string) (*Table, error) {
+		if id == t.ID {
+			return t, nil
+		}
+		for _, w := range with {
+			if w.ID == id {
+				return w, nil
+			}
+		}
+		return lookup(id)
+	}); err != nil {
 		return err
 	}
 	_, err := s.change(ctx, appID, true, func(tx *store.Tx) (*Table, error) {

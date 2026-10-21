@@ -6,6 +6,7 @@ package formula
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"unicode"
 )
@@ -156,21 +157,52 @@ func lex(src string) ([]token, *Error) {
 	return toks, nil
 }
 
-// RenameField rewrites every [old] reference in src to [new], leaving the
-// rest of the text exactly as written. Text that does not lex is returned
+// RenameField rewrites every reference to the field old of the current
+// row to [new], leaving the rest of the text exactly as written. Fields of
+// linked tables keep their names. Text that does not parse is returned
 // unchanged.
 func RenameField(src, old, new string) string {
-	toks, err := lex(src)
+	n, err := Parse(src)
 	if err != nil {
 		return src
 	}
+	return rewrite(src, outerRefs(n), old, new)
+}
+
+// RenameLinkedField rewrites references to the field old of the table that
+// the link field [link] points to: [link].[old] and [old] inside rollups
+// over [link].
+func RenameLinkedField(src, link, old, new string) string {
+	n, err := Parse(src)
+	if err != nil {
+		return src
+	}
+	return rewrite(src, linkedRefs(n, link), old, new)
+}
+
+// LinkedFieldRefs returns the fields of the table behind [link] that src
+// reads.
+func LinkedFieldRefs(src, link string) []string {
+	n, err := Parse(src)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, r := range linkedRefs(n, link) {
+		out = append(out, r.name)
+	}
+	return out
+}
+
+func rewrite(src string, refs []ref, old, new string) string {
+	sort.Slice(refs, func(i, j int) bool { return refs[i].start < refs[j].start })
 	var b strings.Builder
 	last := 0
-	for _, t := range toks {
-		if t.kind == tField && strings.EqualFold(t.text, old) {
-			b.WriteString(src[last:t.start])
+	for _, r := range refs {
+		if strings.EqualFold(r.name, old) && r.start >= last {
+			b.WriteString(src[last:r.start])
 			b.WriteString("[" + new + "]")
-			last = t.end
+			last = r.end
 		}
 	}
 	b.WriteString(src[last:])

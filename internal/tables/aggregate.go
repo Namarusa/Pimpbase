@@ -163,7 +163,7 @@ func (s *Service) Aggregate(ctx context.Context, actor rbac.Actor, appID, tableI
 
 // groupSQL is the SQL of a group key, or ok=false.
 func groupSQL(db *store.DB, c *compiled, env formula.Env, f *Field, dateGroup string) (expr string, args []any, ok bool) {
-	res := resolver{c: c, dialect: string(db.Dialect), env: env}
+	res := c.resolver(db, env)
 	switch {
 	case f.Type == TypeMultiSelect:
 		// The first option, as charts have always grouped them.
@@ -188,7 +188,7 @@ func groupSQL(db *store.DB, c *compiled, env formula.Env, f *Field, dateGroup st
 }
 
 func (s *Service) aggregateSQL(ctx context.Context, db *store.DB, c *compiled, actor rbac.Actor, env formula.Env, where string, whereArgs []any, group *Field, valueFields []*Field, q AggQuery) (*AggResult, bool, error) {
-	res := resolver{c: c, dialect: string(db.Dialect), env: env}
+	res := c.resolver(db, env)
 	// The inner query groups; the outer one orders, so that its ORDER BY
 	// may use the column names on both databases.
 	sel := []string{"COUNT(*) AS n"}

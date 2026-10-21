@@ -325,6 +325,31 @@ func (t *Template) Value(s Scope) (any, error) {
 	return t.Render(Text, s)
 }
 
+// Each walks a template in order, handing literal text to lit and each
+// binding's value, unescaped, to bind. Database queries use it to send
+// values as parameters instead of text.
+func (t *Template) Each(s Scope, lit func(text string) error, bind func(e *Expr, v any) error) error {
+	for _, p := range t.parts {
+		if p.expr == nil {
+			if err := lit(p.lit); err != nil {
+				return err
+			}
+			continue
+		}
+		v, err := p.expr.eval(s)
+		if err != nil {
+			return err
+		}
+		if r, ok := v.(raw); ok {
+			v = r.s
+		}
+		if err := bind(p.expr, v); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // jsonInString tracks whether text leaves the writer inside a JSON string.
 func jsonInString(lit string, in bool) bool {
 	for i := 0; i < len(lit); i++ {

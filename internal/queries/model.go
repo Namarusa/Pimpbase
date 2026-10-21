@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bubibase/bubibase/internal/extdb"
 	"github.com/bubibase/bubibase/internal/ids"
 	"github.com/bubibase/bubibase/internal/interp"
 	"github.com/bubibase/bubibase/internal/rbac"
@@ -27,16 +28,20 @@ type Datasource struct {
 	ID    string `json:"id"`
 	AppID string `json:"appId"`
 	Name  string `json:"name"`
-	// Kind is "rest"; other connectors come later.
+	// Kind is "rest", or a database: "postgres", "mysql", "mssql" or
+	// "mongodb".
 	Kind      string    `json:"kind"`
 	Config    Config    `json:"config"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
-// Config is a REST data source's settings. Text values may hold bindings,
+// Config is a data source's settings. Text values may hold bindings,
 // usually {{ env.NAME }}.
 type Config struct {
+	// DB is how to reach a database; REST data sources leave it out.
+	DB *extdb.Settings `json:"db,omitempty"`
+
 	BaseURL string `json:"baseUrl"`
 	// Headers are sent with every query; a query's own headers win.
 	Headers        []Pair `json:"headers"`
@@ -99,7 +104,24 @@ type Definition struct {
 	// Fields is the shape of the rows, kept from the last test run so the
 	// designer can offer them.
 	Fields []FieldInfo `json:"fields"`
+
+	// SQL is the statement of a query on an SQL database. Its bindings are
+	// sent as parameters, never written into the text.
+	SQL string `json:"sql"`
+	// MongoDB queries: an operation such as find, aggregate or updateOne
+	// on a collection, with a filter (a pipeline for aggregate), a
+	// document (the update or the new document) and options (sort, limit,
+	// skip, projection, upsert), each JSON with bindings.
+	Collection string `json:"collection"`
+	Operation  string `json:"operation"`
+	Filter     string `json:"filter"`
+	Document   string `json:"document"`
+	Options    string `json:"options"`
 }
+
+// Database reports whether a data source is a database rather than a REST
+// API.
+func (d *Datasource) Database() bool { return d.Kind != "rest" }
 
 // Param is a value a query takes.
 type Param struct {
@@ -201,8 +223,9 @@ func (d *Datasource) Check() error {
 		d.Kind = "rest"
 	}
 	if d.Kind != "rest" {
-		return invalid("kind", "only REST data sources are supported")
+		return d.checkDB()
 	}
+	d.Config.DB = nil
 	c := &d.Config
 	c.BaseURL = strings.TrimSpace(c.BaseURL)
 	if err := checkTemplate("baseUrl", c.BaseURL); err != nil {
@@ -240,6 +263,82 @@ func (d *Datasource) Check() error {
 	}
 	if c.TimeoutSeconds > 120 {
 		return invalid("timeoutSeconds", "the timeout is at most 120 seconds")
+	}
+	return nil
+}
+
+// checkDB validates a database data source.
+func (d *Datasource) checkDB() error {
+	if !extdb.Known(d.Kind) {
+		return invalid("kind", "a data source is rest, postgres, mysql, mssql or mongodb")
+	}
+	if _, err := extdb.Lookup(d.Kind); err != nil {
+		return invalid("kind", "%s", err)
+	}
+	c := &d.Config
+	if c.DB == nil {
+		c.DB = &extdb.Settings{}
+	}
+	db := c.DB
+	db.Host = strings.TrimSpace(db.Host)
+	db.Port = strings.TrimSpace(db.Port)
+	db.URI = strings.TrimSpace(db.URI)
+	if db.Options == nil {
+		db.Options = []extdb.Option{}
+	}
+	for _, s := range db.Text() {
+		if err := checkTemplate("db", *s); err != nil {
+			return err
+		}
+	}
+	switch db.SSL {
+	case "", "disable", "require", "verify":
+	default:
+		return invalid("ssl", "encryption is disable, require or verify")
+	}
+	if db.MaxConnections < 0 || db.MaxConnections > 100 {
+		return invalid("maxConnections", "a data source keeps 1 to 100 connections")
+	}
+	c.BaseURL, c.Headers, c.Auth = "", []Pair{}, Auth{Type: "none"}
+	if c.TimeoutSeconds <= 0 {
+		c.TimeoutSeconds = 30
+	}
+	if c.TimeoutSeconds > 300 {
+		return invalid("timeoutSeconds", "the timeout is at most 300 seconds")
+	}
+	return nil
+}
+
+// checkFor validates the parts of a query its data source's kind uses.
+func (q *Query) checkFor(ds *Datasource) error {
+	if !ds.Database() {
+		return nil
+	}
+	if ds.Kind == "mongodb" {
+		q.Operation = strings.TrimSpace(q.Operation)
+		if q.Operation == "" {
+			q.Operation = "find"
+		}
+		ops := []string{"find", "findOne", "aggregate", "count", "insertOne", "insertMany", "updateOne", "updateMany", "deleteOne", "deleteMany"}
+		ok := false
+		for _, o := range ops {
+			ok = ok || o == q.Operation
+		}
+		if !ok {
+			return invalid("operation", "the operation is one of %s", strings.Join(ops, ", "))
+		}
+		for field, src := range map[string]string{"collection": q.Collection, "filter": q.Filter, "document": q.Document, "options": q.Options} {
+			if err := checkTemplate(field, src); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if err := checkTemplate("sql", q.SQL); err != nil {
+		return err
+	}
+	if err := extdb.CheckSQL(ds.Kind, q.SQL); err != nil {
+		return invalid("sql", "%s", err)
 	}
 	return nil
 }
@@ -539,10 +638,14 @@ func (s *Service) prepare(ctx context.Context, appID string, q *Query, data []by
 	if err := q.Check(); err != nil {
 		return err
 	}
-	if _, err := s.Datasource(ctx, appID, q.DatasourceID); err != nil {
+	ds, err := s.Datasource(ctx, appID, q.DatasourceID)
+	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			return invalid("datasourceId", "choose the data source the query uses")
 		}
+		return err
+	}
+	if err := q.checkFor(ds); err != nil {
 		return err
 	}
 	// Bindings name queries ignoring case, so names must differ in more

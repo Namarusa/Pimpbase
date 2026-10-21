@@ -4,7 +4,6 @@ import (
 	"net/http"
 
 	"github.com/bubibase/bubibase/internal/screens"
-	"github.com/bubibase/bubibase/internal/tables"
 )
 
 // Screens, for builders.
@@ -112,11 +111,18 @@ func (s *Server) runtime(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	readable := []*tables.Table{}
+	readable := []any{}
 	for _, t := range ts {
 		if act.Has(t.Permissions.Read) {
 			readable = append(readable, t)
 		}
+	}
+	ext, err := s.extViews(r, a.ID, act)
+	if err != nil {
+		return err
+	}
+	for _, t := range ext {
+		readable = append(readable, t)
 	}
 	qs, err := s.runtimeQueries(r, a.ID, act)
 	if err != nil {

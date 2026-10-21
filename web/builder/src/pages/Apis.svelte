@@ -15,7 +15,10 @@
   import CheckIcon from '@lucide/svelte/icons/check'
   import CircleAlertIcon from '@lucide/svelte/icons/circle-alert'
   import PlugIcon from '@lucide/svelte/icons/plug'
-  import { api, type App, type Datasource, type Query, type Variable } from '../lib/api'
+  import DatabaseIcon from '@lucide/svelte/icons/database'
+  import { api, type App, type Connector, type Datasource, type DbKind, type Query, type Variable } from '../lib/api'
+  import DbSourceEditor from '../lib/apis/DbSourceEditor.svelte'
+  import { sourceKinds } from '../lib/apis/kinds'
   import { navigate } from '../lib/router.svelte'
   import AppNav from '../components/AppNav.svelte'
   import ConfirmHost from '../lib/screen/ConfirmHost.svelte'
@@ -30,6 +33,8 @@
   let datasources = $state<Datasource[]>([])
   let queries = $state<Query[]>([])
   let variables = $state<Variable[]>([])
+  // connectors are the database kinds this Bubibase was built with.
+  let connectors = $state<Connector[]>([])
   let error = $state('')
   let ready = $state(false)
   let confirmHost = $state<ConfirmHost>()
@@ -41,7 +46,7 @@
       const res = await api.app(slug)
       if (!res.builder) { error = 'Only builders can manage APIs.'; return }
       app = res.app
-      ;[datasources, queries, variables] = await Promise.all([api.datasources(app.id), api.queries(app.id), api.variables(app.id)])
+      ;[datasources, queries, variables, connectors] = await Promise.all([api.datasources(app.id), api.queries(app.id), api.variables(app.id), api.connectors()])
       ready = true
     } catch (e: any) { error = e.message }
   }
@@ -103,8 +108,10 @@
     await flush()
     let name = 'New query'
     for (let i = 2; queries.some((q) => q.name.toLowerCase() === name.toLowerCase()); i++) name = `New query ${i}`
+    const kind = datasources.find((d) => d.id === datasourceId)?.kind
     try {
-      const q = await api.createQuery(app.id, { name, datasourceId, method: 'GET', path: '' })
+      const q = await api.createQuery(app.id, kind === 'mongodb' ? { name, datasourceId, operation: 'find', filter: '{}' }
+        : kind && kind !== 'rest' ? { name, datasourceId, sql: 'SELECT 1' } : { name, datasourceId, method: 'GET', path: '' })
       queries = [...queries, q].sort((a, b) => a.name.localeCompare(b.name))
       go(q.id)
     } catch (e: any) { toast.error(e.message) }
@@ -143,13 +150,19 @@
   let adding = $state(false)
   let newName = $state('')
   let newUrl = $state('')
+  let newKind = $state<'rest' | DbKind>('rest')
   let addError = $state('')
+  const offered = $derived(sourceKinds.filter((k) => k.kind === 'rest' || connectors.some((c) => c.kind === k.kind)))
+  function startAdding(kind: 'rest' | DbKind = 'rest') { adding = true; newName = ''; newUrl = ''; newKind = kind; addError = '' }
   async function createDatasource(e: SubmitEvent) {
     e.preventDefault()
     if (!app) return
     addError = ''
+    const db = newKind !== 'rest'
     try {
-      const d = await api.createDatasource(app.id, { name: newName, config: { baseUrl: newUrl.trim(), headers: [], auth: { type: 'none' }, timeoutSeconds: 30 } })
+      const d = await api.createDatasource(app.id, db
+        ? { name: newName, kind: newKind, config: { baseUrl: '', headers: [], auth: { type: 'none' }, timeoutSeconds: 30, db: { host: '', port: '', database: '', user: '', password: '', options: [], uri: newUrl.trim() } } }
+        : { name: newName, config: { baseUrl: newUrl.trim(), headers: [], auth: { type: 'none' }, timeoutSeconds: 30 } })
       datasources = [...datasources, d].sort((a, b) => a.name.localeCompare(b.name))
       adding = false
       go(d.id)
@@ -167,14 +180,14 @@
       <aside class="bg-card flex w-68 shrink-0 flex-col border-r">
         <div class="flex items-center justify-between px-3 pt-3 pb-1">
           <span class="text-muted-foreground text-[11px] font-semibold tracking-wider uppercase">Data sources</span>
-          <Button variant="ghost" size="icon" class="size-7" onclick={() => { adding = true; newName = ''; newUrl = ''; addError = '' }} aria-label="New data source"><PlusIcon /></Button>
+          <Button variant="ghost" size="icon" class="size-7" onclick={() => startAdding()} aria-label="New data source"><PlusIcon /></Button>
         </div>
         <div class="flex flex-1 flex-col gap-2 overflow-y-auto px-2 pb-3">
           {#each datasources as d (d.id)}
             <div>
               <div class={['group flex items-center rounded-md', item === d.id ? 'bg-primary/10 text-primary' : 'hover:bg-muted']}>
                 <button type="button" class="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left" onclick={() => go(d.id)}>
-                  <GlobeIcon class="size-3.5 shrink-0 opacity-70" /><span class="truncate text-sm font-medium">{d.name}</span>
+                  {#if d.kind === 'rest'}<GlobeIcon class="size-3.5 shrink-0 opacity-70" />{:else}<DatabaseIcon class="size-3.5 shrink-0 opacity-70" />{/if}<span class="truncate text-sm font-medium">{d.name}</span>
                 </button>
                 <Button variant="ghost" size="icon" class="mr-1 size-6 opacity-0 group-hover:opacity-100" onclick={() => newQuery(d.id)} aria-label={`New query in ${d.name}`} title="New query"><PlusIcon class="size-3.5" /></Button>
               </div>
@@ -182,7 +195,8 @@
                 {#each queries.filter((q) => q.datasourceId === d.id) as q (q.id)}
                   <div class={['group flex items-center rounded-md', item === q.id ? 'bg-primary/10 text-primary' : 'hover:bg-muted']}>
                     <button type="button" class="flex min-w-0 flex-1 items-center gap-2 px-2 py-1 text-left" onclick={() => go(q.id)}>
-                      <span class={['w-11 shrink-0 font-mono text-[10px] font-semibold', methodColor[q.method]]}>{q.method}</span>
+                      {#if d.kind === 'rest'}<span class={['w-11 shrink-0 font-mono text-[10px] font-semibold', methodColor[q.method]]}>{q.method}</span>
+                      {:else}<span class="w-11 shrink-0 font-mono text-[10px] font-semibold text-sky-600 dark:text-sky-400">{d.kind === 'mongodb' ? 'MONGO' : 'SQL'}</span>{/if}
                       <span class="truncate text-sm">{q.name}</span>
                     </button>
                     <DropdownMenu.Root>
@@ -217,6 +231,10 @@
           {#key query.id}
             <QueryEditor appId={app.id} {query} {datasources} {queries} {variables} onChange={(p) => changeQuery(query.id, p)} />
           {/key}
+        {:else if ds && ds.kind !== 'rest'}
+          {#key ds.id}
+            <DbSourceEditor appId={app.id} {slug} datasource={ds} {variables} {queries} onChange={(p) => changeDatasource(ds.id, p)} onDelete={() => deleteDatasource(ds)} onNewQuery={() => newQuery(ds.id)} onOpen={(q) => go(q.id)} />
+          {/key}
         {:else if ds}
           <DatasourceEditor datasource={ds} {variables} {queries} onChange={(p) => changeDatasource(ds.id, p)} onDelete={() => deleteDatasource(ds)} onNewQuery={() => newQuery(ds.id)} onOpen={(q) => go(q.id)} />
         {:else if item === 'variables'}
@@ -225,10 +243,10 @@
           <Empty.Root class="h-full">
             <Empty.Header>
               <Empty.Media variant="icon"><PlugIcon /></Empty.Media>
-              <Empty.Title>Connect an API</Empty.Title>
-              <Empty.Description>Add a REST API as a data source, then write queries against it. Their results feed tables, lists and charts on your screens.</Empty.Description>
+              <Empty.Title>Connect an API or a database</Empty.Title>
+              <Empty.Description>Add a REST API or one of your databases as a data source, then write queries against it or import its tables. Their data feeds tables, lists and charts on your screens.</Empty.Description>
             </Empty.Header>
-            <Empty.Content><Button onclick={() => { adding = true; newName = ''; newUrl = ''; addError = '' }}><PlusIcon />New data source</Button></Empty.Content>
+            <Empty.Content><Button onclick={() => startAdding()}><PlusIcon />New data source</Button></Empty.Content>
           </Empty.Root>
         {/if}
       </section>
@@ -240,10 +258,24 @@
 
 <Dialog.Root bind:open={adding}>
   <Dialog.Content class="sm:max-w-md">
-    <Dialog.Header><Dialog.Title>New data source</Dialog.Title><Dialog.Description>A REST API your queries call. You can change everything later.</Dialog.Description></Dialog.Header>
+    <Dialog.Header><Dialog.Title>New data source</Dialog.Title><Dialog.Description>A REST API your queries call, or a database you already run. You can change everything later.</Dialog.Description></Dialog.Header>
     <form id="new-ds" class="flex flex-col gap-4" onsubmit={createDatasource}>
-      <div class="flex flex-col gap-1.5"><Label for="ds-name">Name</Label><Input id="ds-name" bind:value={newName} placeholder="Shop API" required /></div>
-      <div class="flex flex-col gap-1.5"><Label for="ds-url">Address</Label><Input id="ds-url" class="font-mono text-xs" bind:value={newUrl} placeholder={'https://api.example.com/v1  or  {{ env.API_URL }}'} /></div>
+      <div class="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Kind">
+        {#each offered as k (k.kind)}
+          <button type="button" role="radio" aria-checked={newKind === k.kind} onclick={() => (newKind = k.kind)}
+            class={['flex items-start gap-2.5 rounded-lg border p-2.5 text-left transition-colors', newKind === k.kind ? 'border-primary bg-primary/5 ring-primary/30 ring-2' : 'hover:bg-muted']}>
+            {#if k.kind === 'rest'}<GlobeIcon class="mt-0.5 size-4 shrink-0 opacity-70" />{:else}<DatabaseIcon class="mt-0.5 size-4 shrink-0 opacity-70" />{/if}
+            <span class="min-w-0"><span class="block text-sm font-medium">{k.label}</span><span class="text-muted-foreground block text-[11px] leading-tight">{k.hint}</span></span>
+          </button>
+        {/each}
+      </div>
+      <div class="flex flex-col gap-1.5"><Label for="ds-name">Name</Label><Input id="ds-name" bind:value={newName} placeholder={newKind === 'rest' ? 'Shop API' : 'Sales database'} required /></div>
+      {#if newKind === 'rest'}
+        <div class="flex flex-col gap-1.5"><Label for="ds-url">Address</Label><Input id="ds-url" class="font-mono text-xs" bind:value={newUrl} placeholder={'https://api.example.com/v1  or  {{ env.API_URL }}'} /></div>
+      {:else}
+        <div class="flex flex-col gap-1.5"><Label for="ds-url">Connection string <span class="text-muted-foreground font-normal">(optional)</span></Label><Input id="ds-url" class="font-mono text-xs" bind:value={newUrl} placeholder={'{{ env.DATABASE_URL }}'} />
+          <p class="text-muted-foreground text-xs">Or leave it empty and fill in the host, user and password next.</p></div>
+      {/if}
       {#if addError}<p class="text-destructive text-sm">{addError}</p>{/if}
     </form>
     <Dialog.Footer><Button variant="outline" onclick={() => (adding = false)}>Cancel</Button><Button type="submit" form="new-ds">Create</Button></Dialog.Footer>

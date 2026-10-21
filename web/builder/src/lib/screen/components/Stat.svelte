@@ -15,7 +15,7 @@
   const src = new RowSource(rt, node.id, () => {
     const own = fromRows ? rt.table(p.table) : undefined
     const op = p.op ?? 'count'
-    const agg = own && !own.id.startsWith('query:') ? { values: [op === 'count' || !p.field ? 'count' : `${op}:${p.field}`] } : undefined
+    const agg = own && !own.id.startsWith('query:') && !own.id.startsWith('ext_') ? { values: [op === 'count' || !p.field ? 'count' : `${op}:${p.field}`] } : undefined
     return { props: fromRows ? p : {}, scope: fromRows ? scope() : { ...scope(), data: undefined }, limit: 1000, agg }
   })
   const Icon = $derived(p.icon ? icons[p.icon] : null)

@@ -53,7 +53,7 @@
       </div>
       {#each tables as t (t.id)}
         <a href={`/apps/${slug}/data/${t.id}`} class:active={t.id === tableId}
-          onclick={(e) => { e.preventDefault(); navigate(`/apps/${slug}/data/${t.id}`) }}>{t.name}</a>
+          onclick={(e) => { e.preventDefault(); navigate(`/apps/${slug}/data/${t.id}`) }}>{t.name}{#if t.external}<span class="ext" title={`Rows live in ${t.external.source}, a ${t.external.sourceKind} of an external database`}>{t.external.kind === 'mongodb' ? 'mongo' : 'db'}</span>{/if}</a>
       {/each}
       {#if tables.length === 0}<p class="muted hint">{builder ? 'Create a table to start.' : 'No tables you can see.'}</p>{/if}
     </aside>
@@ -92,6 +92,7 @@
   aside a:hover { background: var(--hover); }
   aside a.active { background: var(--accent-soft); color: var(--primary); font-weight: 550; }
   .hint { padding: 0 10px; font-size: 13px; }
+  .ext { margin-left: 6px; font-size: 10px; padding: 0 5px; border-radius: 4px; background: var(--hover); color: var(--muted-foreground); font-weight: 500; vertical-align: 1px; }
   section { flex: 1; min-width: 0; }
   .check { display: flex; gap: 8px; align-items: center; color: var(--text); }
   @media (max-width: 700px) { aside { width: 140px; } }

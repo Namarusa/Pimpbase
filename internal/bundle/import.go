@@ -171,7 +171,7 @@ func (f *file) lines(name string, fn func([]byte) error) error {
 	return sc.Err()
 }
 
-var idRe = regexp.MustCompile(`^(app|tbl|scr|ds|qry|flw)_[a-z2-7]{16}$`)
+var idRe = regexp.MustCompile(`^(app|tbl|scr|ds|qry|flw|ext)_[a-z2-7]{16}$`)
 
 // packageIDs lists the ids a package brings, from its rows' "id" columns.
 func packageIDs(p *Package) []string {
@@ -189,13 +189,14 @@ func packageIDs(p *Package) []string {
 	add(p.Datasources)
 	add(p.Queries)
 	add(p.Flows)
+	add(p.ExtTables)
 	return out
 }
 
 // taken reports which ids already exist on this server.
 func (s *Service) taken(ctx context.Context, list []string) (map[string]bool, error) {
 	out := map[string]bool{}
-	for _, t := range []string{"apps", "app_tables", "app_screens", "app_datasources", "app_queries", "app_flows"} {
+	for _, t := range []string{"apps", "app_tables", "app_screens", "app_datasources", "app_queries", "app_flows", "app_ext_tables"} {
 		for start := 0; start < len(list); start += 500 {
 			chunk := list[start:min(start+500, len(list))]
 			args := make([]any, len(chunk))
@@ -367,15 +368,19 @@ func (s *Service) create(ctx context.Context, f *file, p *Package, opts ImportOp
 		return nil, err
 	}
 	defs := map[string]*tables.Table{}
+	var restoring []*tables.Table
 	for _, r := range p.Tables {
 		t, err := definition(r)
 		if err != nil {
 			return nil, err
 		}
-		if err := s.Tables.Restore(ctx, appID, t); err != nil {
+		defs[t.ID] = t
+		restoring = append(restoring, t)
+	}
+	for _, t := range restoring {
+		if err := s.Tables.Restore(ctx, appID, t, restoring...); err != nil {
 			return nil, fmt.Errorf("table %s: %w", t.Name, err)
 		}
-		defs[t.ID] = t
 	}
 	if f.manifest.Data {
 		if err := s.loadData(ctx, f, appID, defs, m); err != nil {
@@ -455,6 +460,11 @@ func (s *Service) insertMeta(ctx context.Context, appID string, p *Package, opts
 	}
 	for _, r := range p.Variables {
 		if err := ins(varCols.table, varCols.cols, r, nil); err != nil {
+			return err
+		}
+	}
+	for _, r := range p.ExtTables {
+		if err := ins(extCols.table, extCols.cols, r, nil); err != nil {
 			return err
 		}
 	}
@@ -591,7 +601,7 @@ func (s *Service) update(ctx context.Context, f *file, p *Package, opts ImportOp
 	}
 
 	cur := map[string][]Row{}
-	for _, mt := range []metaTable{tableCols, screenCols, dsCols, queryCols, flowCols, roleCols, varCols} {
+	for _, mt := range []metaTable{tableCols, screenCols, dsCols, queryCols, flowCols, roleCols, varCols, extCols} {
 		if cur[mt.table], err = s.readRows(ctx, mt, "app_id = ?", target.ID); err != nil {
 			return nil, err
 		}
@@ -624,6 +634,7 @@ func (s *Service) update(ctx context.Context, f *file, p *Package, opts ImportOp
 	match(p.Datasources, cur["app_datasources"], "name")
 	match(p.Queries, cur["app_queries"], "name")
 	match(p.Flows, cur["app_flows"], "name")
+	match(p.ExtTables, cur["app_ext_tables"], "name")
 	// Things the app lacks keep their ids unless another app has them.
 	var rest []string
 	for _, id := range packageIDs(p) {
@@ -752,6 +763,7 @@ func (s *Service) update(ctx context.Context, f *file, p *Package, opts ImportOp
 	planRows("datasource", p.Datasources, cur["app_datasources"], "name", "kind", "config")
 	planRows("query", p.Queries, cur["app_queries"], "name", "datasource_id", "definition")
 	planRows("flow", p.Flows, cur["app_flows"], "name", "definition")
+	planRows("external table", p.ExtTables, cur["app_ext_tables"], "name", "datasource_id", "definition")
 	haveVars := map[string]bool{}
 	for _, r := range cur["app_variables"] {
 		haveVars[str(r["name"])] = true
@@ -772,8 +784,12 @@ func (s *Service) update(ctx context.Context, f *file, p *Package, opts ImportOp
 	if err := s.upsertRoles(ctx, target.ID, p.Roles, haveRoles); err != nil {
 		return plan, err
 	}
+	var adding []*tables.Table
 	for _, w := range newTables {
-		if err := s.Tables.Restore(ctx, target.ID, w.pkg); err != nil {
+		adding = append(adding, w.pkg)
+	}
+	for _, w := range newTables {
+		if err := s.Tables.Restore(ctx, target.ID, w.pkg, adding...); err != nil {
 			return plan, fmt.Errorf("table %s: %w", w.pkg.Name, err)
 		}
 	}
@@ -1071,6 +1087,19 @@ func (s *Service) applyMeta(ctx context.Context, plan *Plan, appID string, p *Pa
 			return err
 		}
 	}
+	haveExt := map[string]bool{}
+	for _, r := range cur["app_ext_tables"] {
+		haveExt[str(r["id"])] = true
+	}
+	for _, r := range p.ExtTables {
+		if haveExt[str(r["id"])] {
+			if err := exec(`UPDATE app_ext_tables SET datasource_id = ?, name = ?, definition = ?, updated_at = ? WHERE app_id = ? AND id = ?`, r["datasource_id"], r["name"], r["definition"], now, appID, r["id"]); err != nil {
+				return err
+			}
+		} else if err := exec(`INSERT INTO app_ext_tables (app_id, id, datasource_id, name, definition, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`, appID, r["id"], r["datasource_id"], r["name"], r["definition"], now, now); err != nil {
+			return err
+		}
+	}
 	haveVars := map[string]bool{}
 	for _, r := range cur["app_variables"] {
 		haveVars[str(r["name"])] = true
@@ -1103,12 +1132,12 @@ func (s *Service) applyMeta(ctx context.Context, plan *Plan, appID string, p *Pa
 	}
 	if opts.Prune {
 		inFile := map[string]bool{}
-		for _, list := range [][]Row{p.Datasources, p.Queries, p.Flows} {
+		for _, list := range [][]Row{p.Datasources, p.Queries, p.Flows, p.ExtTables} {
 			for _, r := range list {
 				inFile[str(r["id"])] = true
 			}
 		}
-		for table, rows := range map[string][]Row{"app_queries": cur["app_queries"], "app_flows": cur["app_flows"]} {
+		for table, rows := range map[string][]Row{"app_queries": cur["app_queries"], "app_flows": cur["app_flows"], "app_ext_tables": cur["app_ext_tables"]} {
 			for _, h := range rows {
 				if !inFile[str(h["id"])] {
 					if err := exec(`DELETE FROM `+table+` WHERE app_id = ? AND id = ?`, appID, h["id"]); err != nil {
@@ -1120,6 +1149,9 @@ func (s *Service) applyMeta(ctx context.Context, plan *Plan, appID string, p *Pa
 		for _, h := range cur["app_datasources"] {
 			if !inFile[str(h["id"])] {
 				if err := exec(`DELETE FROM app_queries WHERE app_id = ? AND datasource_id = ?`, appID, h["id"]); err != nil {
+					return err
+				}
+				if err := exec(`DELETE FROM app_ext_tables WHERE app_id = ? AND datasource_id = ?`, appID, h["id"]); err != nil {
 					return err
 				}
 				if err := exec(`DELETE FROM app_datasources WHERE app_id = ? AND id = ?`, appID, h["id"]); err != nil {
@@ -1141,15 +1173,15 @@ func keepAuth(config, have string) string {
 	if json.Unmarshal([]byte(config), &c) != nil || json.Unmarshal([]byte(have), &h) != nil {
 		return config
 	}
-	ca, _ := c["auth"].(map[string]any)
-	ha, _ := h["auth"].(map[string]any)
-	if ca == nil || ha == nil || ca["type"] != ha["type"] {
-		return config
-	}
-	for _, k := range []string{"password", "token", "value"} {
-		if v, _ := ca[k].(string); v == "" {
-			if old, ok := ha[k].(string); ok {
-				ca[k] = old
+	for _, p := range secretPaths {
+		cp, _ := c[p[0]].(map[string]any)
+		hp, _ := h[p[0]].(map[string]any)
+		if cp == nil || hp == nil || (p[0] == "auth" && cp["type"] != hp["type"]) {
+			continue
+		}
+		if v, _ := cp[p[1]].(string); v == "" {
+			if old, ok := hp[p[1]].(string); ok {
+				cp[p[1]] = old
 			}
 		}
 	}

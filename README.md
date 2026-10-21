@@ -8,9 +8,11 @@ the **UI builder**: screens composed from components and published as apps,
 phase 3, **flows**: automations started by row changes, schedules,
 webhooks or buttons, phase 4, **access**: app roles, row rules, single
 sign-on and API keys, phase 5's **API studio**: REST and SOAP APIs as
-data sources whose query results feed screens, phase 6's **AI assistant**,
-and phase 7, **scale**: big tables, several servers, deployment, quotas and
-moving apps between servers ([docs/scale.md](docs/scale.md)).
+data sources whose query results feed screens, **external databases**
+(PostgreSQL, MySQL and MariaDB, SQL Server, MongoDB) as data sources and
+tables, phase 6's **AI assistant**, and phase 7, **scale**: big tables,
+several servers, deployment, quotas and moving apps between servers
+([docs/scale.md](docs/scale.md)).
 
 It stays one binary: `bubibase serve` needs no database server, no Node, no
 Docker and no outside service. Postgres, several servers, shared file
@@ -264,6 +266,65 @@ POST   /api/apps/{app}/queries/{query}/run         {"params": {…}}            
 GET    /api/apps/{app}/variables                   PUT /{name} {"secret", "development", "production"}, DELETE /{name}
 ```
 
+## External databases
+
+Bubibase keeps its own data in SQLite (or Postgres with `--postgres`); that
+does not change. Separately, an app can use databases you already run. In
+**APIs**, a new data source can be PostgreSQL (and Supabase, Neon,
+CockroachDB), MySQL or MariaDB, SQL Server (and Azure SQL) or MongoDB. Its
+settings are a host, port, database, user and password, or one connection
+string, plus TLS, a pool size, a timeout, driver options and a **read only**
+switch. Every setting can hold bindings, so the password stays in a secret
+variable (`{{ env.DB_PASSWORD }}`) and development and production can point
+at different servers. **Test connection** tries either one.
+
+**Queries** on a database are SQL, or for MongoDB an operation (`find`,
+`findOne`, `aggregate`, `count`, `insertOne`, `insertMany`, `updateOne`,
+`updateMany`, `deleteOne`, `deleteMany`) on a collection with a filter,
+document and options in extended JSON. Bindings in SQL are always sent as
+parameters, never written into the statement: write `WHERE id =
+{{ params.id }}` without quotes, and a list fills `IN ({{ params.ids }})`
+with one parameter per item. A binding inside quotes or a comment is
+refused, and `| raw` is not available. The request tab shows the statement
+and each parameter. A query reads at most 5,000 rows; statements that do
+not read rows report how many they changed. Read-only data sources run
+queries in a read-only transaction.
+
+**Tables**: the data source lists its tables, views and collections, and
+**Import** adds one to the app. It then appears in the data studio and on
+screens like a built-in table, and its rows stay in your database. Column
+types are mapped to field types (enums become single selects, binary
+columns are hidden); MongoDB columns are read from a sample of 200
+documents. Table permissions and row rules apply as for built-in tables,
+and filters, search and sorting run in the database when the formula has a
+SQL (or MongoDB) form, else in Bubibase over at most 50,000 rows.
+**Refresh columns** reads the schema again after it changes; the table's
+settings hide columns or remove the table from the app (the database table
+is never dropped).
+
+Limits: only tables with a single-column primary key (or MongoDB `_id`)
+can be written; others are read only. There are no link fields between
+external tables, no CSV import or export, and flows and the AI assistant do
+not use external tables yet. Text comparisons follow the database's
+collation, so they ignore case on most MySQL and SQL Server setups.
+
+The drivers are pure Go and compiled in, so there is still one binary and
+no database servers ship with it. They add about 8 MB (MongoDB about 5 MB,
+SQL Server about 2 MB, MySQL under 1 MB); build tags leave them out:
+
+```sh
+go build -tags "nomongo nomssql nomysql" ./cmd/bubibase   # PostgreSQL only, +0.4 MB
+```
+
+```
+GET    /api/connectors                                  compiled-in kinds
+POST   /api/apps/{app}/datasources/test                 {"kind", "config": {"db": {…}}, "env"}
+GET    /api/apps/{app}/datasources/{ds}/schema          tables, views and collections
+GET    /api/apps/{app}/datasources/{ds}/schema/table?schema=&name=
+POST   /api/apps/{app}/datasources/{ds}/tables          {"schema", "source", "name"}   import
+POST   /api/apps/{app}/tables/{table}/refresh           read the columns again
+```
+
 ## Flows
 
 A flow is a trigger and a list of steps, edited on a canvas in the
@@ -388,7 +449,9 @@ internal/screens/  app screens and their definitions
 internal/files/    files of attachment fields: in the app's database, a folder or S3
 internal/interp/   {{ binding }} templates for API queries, escaped per context
 internal/xmltree/  XML to JSON-like data and back
-internal/queries/  API data sources, queries, variables and the query runner
+internal/queries/  API and database data sources, queries, variables and the query runner
+internal/extdb/    PostgreSQL, MySQL, SQL Server and MongoDB drivers, schema, rows, SQL parameters
+internal/exttables/ tables imported from external databases
 internal/flows/    flows, the engine, cron, email, PDF documents
 internal/ai/       the assistant: settings, Anthropic API calls, drafts, formulas, questions
 internal/cluster/  servers sharing a database: heartbeats and job claims
@@ -407,6 +470,10 @@ web/builder/       Svelte builder, embedded from web/builder/dist
 go test ./...                                           # SQLite
 BUBIBASE_TEST_POSTGRES="postgres://…" go test ./...     # SQLite and Postgres
 ```
+
+External database tests run when their connection strings are set:
+`BUBIBASE_TEST_EXT_POSTGRES`, `BUBIBASE_TEST_EXT_MYSQL`,
+`BUBIBASE_TEST_EXT_MSSQL` and `BUBIBASE_TEST_EXT_MONGO`.
 
 The formula tests include a differential test that runs every filter both
 in Go and as SQL on each database and checks they select the same rows;

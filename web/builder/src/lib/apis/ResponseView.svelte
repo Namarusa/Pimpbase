@@ -38,6 +38,8 @@
       <span class="text-muted-foreground text-xs tabular-nums">{result.durationMs} ms · {size(result.size)}</span>
       <Badge variant="secondary" class="uppercase">{result.format}</Badge>
       {#if result.cached}<Badge variant="secondary">cached</Badge>{/if}
+      {#if result.rowsAffected}<Badge variant="secondary">{result.rowsAffected} changed</Badge>{/if}
+      {#if result.truncated}<Badge variant="outline" title="Database queries return at most 5000 rows">first 5000 rows</Badge>{/if}
       <span class="text-muted-foreground ml-auto text-xs">{result.rows.length} {result.rows.length === 1 ? 'row' : 'rows'}{resultPath ? ` at ${resultPath}` : ''}</span>
     {/if}
   </div>
@@ -51,7 +53,7 @@
           <Tabs.Trigger value="rows" class="text-xs">Rows</Tabs.Trigger>
           <Tabs.Trigger value="body" class="text-xs">Body</Tabs.Trigger>
           <Tabs.Trigger value="raw" class="text-xs">Raw</Tabs.Trigger>
-          <Tabs.Trigger value="headers" class="text-xs">Headers</Tabs.Trigger>
+          {#if Object.keys(result.headers).length}<Tabs.Trigger value="headers" class="text-xs">Headers</Tabs.Trigger>{/if}
           {#if result.request}<Tabs.Trigger value="request" class="text-xs">Request</Tabs.Trigger>{/if}
         </Tabs.List>
       </div>
@@ -100,6 +102,12 @@
             {#each result.request.headers as h (h.key)}<div><span class="text-muted-foreground">{h.key}:</span> <span class="break-all">{h.value}</span></div>{/each}
           </div>
           {#if result.request.body}<pre class="bg-muted/50 mt-3 rounded-md p-3 font-mono text-xs break-all whitespace-pre-wrap">{result.request.body}</pre>{/if}
+          {#if result.request.params?.length}
+            <div class="mt-3 flex flex-col gap-0.5 font-mono text-xs">
+              <span class="text-muted-foreground font-sans">Sent as parameters, never written into the SQL:</span>
+              {#each result.request.params as v, i (i)}<div><span class="text-muted-foreground">{result.request.method === 'SQL' && result.request.url.startsWith('postgres') ? `$${i + 1}` : `#${i + 1}`}</span> {JSON.stringify(v)}</div>{/each}
+            </div>
+          {/if}
           <p class="text-muted-foreground mt-3 text-xs">Secret variables and sign-in values are hidden.</p>
         </Tabs.Content>
       {/if}

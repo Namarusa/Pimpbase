@@ -77,6 +77,10 @@ func (s *Server) deleteDatasource(w http.ResponseWriter, r *http.Request) error 
 	if err := s.Queries.DeleteDatasource(r.Context(), a.ID, r.PathValue("ds")); err != nil {
 		return err
 	}
+	if err := s.Ext.DeleteFor(r.Context(), a.ID, r.PathValue("ds")); err != nil {
+		return err
+	}
+	s.Runner.Forget(r.PathValue("ds"))
 	return writeJSON(w, 200, map[string]any{"ok": true})
 }
 

@@ -25,7 +25,7 @@
     const op = p.op ?? 'count'
     const vals: string[] = Array.isArray(p.valueFields) && p.valueFields.length ? p.valueFields : ['']
     const top = Number(p.limitGroups) || 0
-    const agg = p.labelField && own && !own.id.startsWith('query:') ? {
+    const agg = p.labelField && own && !own.id.startsWith('query:') && !own.id.startsWith('ext_') ? {
       groupBy: p.labelField, dateGroup: isDateField(field) ? (p.dateGroup ?? 'month') : undefined,
       values: vals.map((f) => (op === 'count' || !f ? 'count' : `${op}:${f}`)),
       sortBy: p.sortBy === 'value' ? 'value' : undefined, limit: top > 0 ? top : 200,

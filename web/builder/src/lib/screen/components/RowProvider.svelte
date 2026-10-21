@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { api, type Row } from '../../api'
+  import { api, rowKey, type Row } from '../../api'
   import Children from '../Children.svelte'
   import { extendScope, getRuntime } from '../context.svelte'
   import { Skeleton } from '$lib/components/ui/skeleton'
@@ -15,7 +15,7 @@
 
   $effect(() => {
     const t = table
-    const id = Number(typeof p.rowId === 'object' && p.rowId ? p.rowId._id : p.rowId)
+    const id = rowKey(p.rowId)
     void rt.refresh.all
     void rt.refresh[node.id]
     if (!t || !id) {

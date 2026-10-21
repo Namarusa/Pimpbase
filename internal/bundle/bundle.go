@@ -69,6 +69,9 @@ type Package struct {
 	Queries     []Row `json:"queries"`
 	Variables   []Row `json:"variables"`
 	Flows       []Row `json:"flows"`
+	// ExtTables are tables read from a database data source; their rows
+	// stay in that database.
+	ExtTables []Row `json:"extTables,omitempty"`
 }
 
 // metaTable names a settings table and the columns a bundle carries.
@@ -86,6 +89,7 @@ var (
 	queryCols   = metaTable{"app_queries", []string{"id", "datasource_id", "name", "definition", "created_at", "updated_at"}}
 	varCols     = metaTable{"app_variables", []string{"name", "secret", "dev_value", "prod_value"}}
 	flowCols    = metaTable{"app_flows", []string{"id", "name", "enabled", "definition", "created_at", "updated_at"}}
+	extCols     = metaTable{"app_ext_tables", []string{"id", "datasource_id", "name", "definition", "created_at", "updated_at"}}
 	orderBy     = map[string]string{"app_roles": "position, id", "app_screens": "position, id", "app_variables": "name"}
 	errNotAZip  = &Error{"this is not a Bubibase app file"}
 	maxAppJSON  = int64(64 << 20)
@@ -171,7 +175,7 @@ func (s *Service) Export(ctx context.Context, appID string, opts ExportOptions, 
 	for _, part := range []struct {
 		dst *[]Row
 		m   metaTable
-	}{{&p.Roles, roleCols}, {&p.Tables, tableCols}, {&p.Screens, screenCols}, {&p.Datasources, dsCols}, {&p.Queries, queryCols}, {&p.Variables, varCols}, {&p.Flows, flowCols}} {
+	}{{&p.Roles, roleCols}, {&p.Tables, tableCols}, {&p.Screens, screenCols}, {&p.Datasources, dsCols}, {&p.Queries, queryCols}, {&p.Variables, varCols}, {&p.Flows, flowCols}, {&p.ExtTables, extCols}} {
 		if *part.dst, err = s.readRows(ctx, part.m, "app_id = ?", a.ID); err != nil {
 			return nil, err
 		}
@@ -299,6 +303,10 @@ func writeJSON(zw *zip.Writer, name string, v any) error {
 	return enc.Encode(v)
 }
 
+// secretPaths are the data source settings that may hold a password:
+// a REST API's sign-in and a database's password and connection string.
+var secretPaths = [][2]string{{"auth", "password"}, {"auth", "token"}, {"auth", "value"}, {"db", "password"}, {"db", "uri"}}
+
 // blankAuth clears passwords and tokens written straight into a data
 // source; bindings such as {{ env.TOKEN }} stay, as they hold no secret.
 func blankAuth(config string) string {
@@ -306,10 +314,10 @@ func blankAuth(config string) string {
 	if json.Unmarshal([]byte(config), &c) != nil {
 		return config
 	}
-	auth, _ := c["auth"].(map[string]any)
-	for _, k := range []string{"password", "token", "value"} {
-		if v, ok := auth[k].(string); ok && v != "" && !strings.Contains(v, "{{") {
-			auth[k] = ""
+	for _, p := range secretPaths {
+		part, _ := c[p[0]].(map[string]any)
+		if v, ok := part[p[1]].(string); ok && v != "" && !strings.Contains(v, "{{") {
+			part[p[1]] = ""
 		}
 	}
 	b, _ := json.Marshal(c)

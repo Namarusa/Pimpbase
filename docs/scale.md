@@ -24,7 +24,8 @@ Charts, stats, table pages, filters and row rules all run in the database.
   by a field, by day, month or year for dates, ordered by key or by value. The
   Chart and Stat components use it whenever they read their own table, so a
   chart covers every row instead of the first 1,000 the browser loaded. Charts
-  over an API query or a surrounding data provider still group in the browser.
+  over an API query, an external database table or a surrounding data
+  provider still group in the browser (over the rows they loaded).
 - **Roles and row rules apply to aggregates** exactly as to row lists: the
   person's row rule is added to the SQL `WHERE`, and links to rows they cannot
   read are shown as "Hidden row". Tests compare every SQL aggregate with the
@@ -199,12 +200,13 @@ Bearer token.
 ## Moving an app: export and import
 
 An app travels as one `.bubiapp` file (a zip): its tables, screens, roles,
-API data sources and queries, variables, flows and design, and optionally
-every row and file.
+API and database data sources and queries, external tables, variables,
+flows and design, and optionally every row and file of its built-in tables.
+Rows of external tables stay in their database.
 
 - **Export** from **Settings → Move this app**, or
-  `GET /api/apps/{app}/export?data=1`. Secret variable values and passwords
-  or tokens written into data sources are left blank unless an admin asks
+  `GET /api/apps/{app}/export?data=1`. Secret variable values, and passwords,
+  tokens and connection strings written into data sources, are left blank unless an admin asks
   for them with `secrets=1`; `{{ env.X }}` bindings are kept, as they hold
   no secret.
 - **Import as a new app** from **Apps → Import app…**, or

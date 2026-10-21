@@ -12,7 +12,7 @@
   import SearchIcon from '@lucide/svelte/icons/search'
   import TrashIcon from '@lucide/svelte/icons/trash'
   import DownloadIcon from '@lucide/svelte/icons/download'
-  import { api, type Field, type Row } from '../../api'
+  import { api, type Field, type Row, type RowId } from '../../api'
   import { getRuntime, getScope } from '../context.svelte'
   import { RowSource } from '../rows.svelte'
   import { runActions } from '../actions'
@@ -29,7 +29,7 @@
   let desc = $state(false)
   let search = $state('')
   let searchQ = $state('')
-  let selected = $state<number[]>([])
+  let selected = $state<RowId[]>([])
   const size = $derived(Number(p.pageSize) || 10)
 
   $effect(() => {

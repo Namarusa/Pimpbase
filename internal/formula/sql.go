@@ -136,7 +136,8 @@ func (comp *compiler) param(v any, t Type) (sqlExpr, bool) {
 func constant(n Node) bool {
 	c := true
 	Walk(n, func(n Node) {
-		if _, ok := n.(*FieldRef); ok {
+		switch n.(type) {
+		case *FieldRef, *LinkField:
 			c = false
 		}
 	})
@@ -212,7 +213,12 @@ func (comp *compiler) node(n Node) (sqlExpr, bool) {
 		}
 		parts = append(parts, "))")
 		return cat(false, parts...), true
+	case *LinkField:
+		return comp.linkFieldSQL(n, t)
 	case *Call:
+		if e, handled, ok := comp.callLinkSQL(n); handled {
+			return e, ok
+		}
 		return comp.call(n, t)
 	}
 	return sqlExpr{}, false
@@ -459,6 +465,75 @@ func (comp *compiler) call(n *Call, t Type) (sqlExpr, bool) {
 		}
 	case "ABS":
 		return cat(false, "ABS(", comp.zero(args[0], Number), ")"), true
+	case "SIGN":
+		return cat(false, "CAST(SIGN(", comp.zero(args[0], Number), ") AS "+comp.cast(Number)+")"), true
+	case "COALESCE":
+		// Text and dates count "" as blank, as Go does.
+		if t != Number && t != Text && t != Date || !sameKind(comp.c, n.Args[0], n.Args[1:]...) {
+			break
+		}
+		parts := []any{"COALESCE("}
+		for i, a := range args {
+			if i > 0 {
+				parts = append(parts, ", ")
+			}
+			if t == Number {
+				parts = append(parts, a)
+			} else {
+				parts = append(parts, "NULLIF(", a, ", '')")
+			}
+		}
+		return cat(true, append(parts, ")")...), true
+	case "FIND":
+		if len(args) == 2 && allText() {
+			fn := "INSTR("
+			if comp.pg() {
+				fn = "STRPOS("
+			}
+			return cat(false, "CAST("+fn, comp.zero(args[1], Text), ", ", comp.zero(args[0], Text), ") AS "+comp.cast(Number)+")"), true
+		}
+	case "YEAR", "MONTH", "DAY", "HOUR", "MINUTE", "QUARTER":
+		// Dates are DateLayout text in SQL: 2006-01-02T15:04:05Z.
+		if types[0] != Date {
+			break
+		}
+		pos := map[string]string{"YEAR": "1, 4", "MONTH": "6, 2", "DAY": "9, 2", "HOUR": "12, 2", "MINUTE": "15, 2", "QUARTER": "6, 2"}[n.Name]
+		part := cat(true, "CAST(SUBSTR(", args[0], ", "+pos+") AS INTEGER)")
+		if n.Name == "QUARTER" {
+			part = cat(true, "((", part, " + 2) / 3)")
+		}
+		return cat(true, "CAST(", part, " AS "+comp.cast(Number)+")"), true
+	case "REGEXMATCH", "REGEXEXTRACT", "REGEXREPLACE":
+		// SQLite runs Go's own regexp through registered functions;
+		// Postgres regular expressions differ, so those stay in Go. The
+		// pattern must be valid, or SQL would fail where Go gives blank.
+		if comp.pg() || !constant(n.Args[1]) {
+			break
+		}
+		ev := &evaluator{env: comp.env, c: comp.c}
+		pat, err := ev.eval(n.Args[1])
+		if err != nil {
+			break
+		}
+		if _, err := compileRegexp(ToText(pat)); err != nil {
+			break
+		}
+		fn := "bb_" + strings.ToLower(n.Name) + "("
+		parts := []any{fn}
+		for i, a := range args {
+			if i > 0 {
+				parts = append(parts, ", ")
+			}
+			if types[i] != Text && types[i] != Null {
+				return sqlExpr{}, false
+			}
+			parts = append(parts, comp.zero(a, Text))
+		}
+		parts = append(parts, ")")
+		if n.Name == "REGEXMATCH" {
+			return cat(false, append([]any{"("}, append(parts, " <> 0)")...)...), true
+		}
+		return cat(n.Name == "REGEXEXTRACT", parts...), true
 	}
 	return sqlExpr{}, false
 }
