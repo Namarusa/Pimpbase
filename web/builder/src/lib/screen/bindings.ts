@@ -4,19 +4,19 @@
 // starts with = is a formula: {{ = IF([Qty] > 10, "bulk", "") }}.
 import { formatDate, linkLabel } from '../format'
 import { runFormula } from './formulas'
+import { parsePath } from '../paths'
 import type { Scope } from './types'
 
 const re = /\{\{\s*([^}]*?)\s*\}\}/g
 
 export const hasBinding = (v: unknown): v is string => typeof v === 'string' && v.includes('{{')
 
-// lookup follows a dotted path; segments may hold spaces ("row.First name").
+// lookup follows a dotted path; segments may hold spaces ("row.First name"),
+// and brackets read positions and odd keys (row.tags[0], row["a.b"]).
 export function lookup(scope: Record<string, any>, path: string): any {
   let cur: any = scope
-  for (const raw of path.split('.')) {
-    const key = raw.trim()
-    if (key === '') continue
-    if (cur === null || cur === undefined) return undefined
+  for (const key of parsePath(path) ?? [undefined]) {
+    if (key === undefined || cur === null || cur === undefined) return undefined
     cur = Array.isArray(cur) && /^\d+$/.test(key) ? cur[Number(key)] : cur[key]
   }
   return cur

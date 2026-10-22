@@ -1,14 +1,16 @@
 <script lang="ts">
   import * as Popover from '$lib/components/ui/popover'
-  import * as Command from '$lib/components/ui/command'
   import BracesIcon from '@lucide/svelte/icons/braces'
   import type { BindingGroup } from '../designer/context'
   import { apiHelp } from './bindings'
+  import BindingPicker from '../designer/BindingPicker.svelte'
+  import BindingPreview from '../designer/BindingPreview.svelte'
 
   // TemplateEditor is a code box for request bodies: {{ bindings }} are
   // highlighted, and the picker inserts them at the cursor.
-  let { value, onChange, groups, placeholder = '', minRows = 10, id, help = apiHelp }: {
+  let { value, onChange, groups, placeholder = '', minRows = 10, id, help = apiHelp, scope = null }: {
     value: string; onChange: (v: string) => void; groups: BindingGroup[]; placeholder?: string; minRows?: number; id?: string; help?: string
+    scope?: Record<string, any> | null
   } = $props()
   let open = $state(false)
   let el = $state<HTMLTextAreaElement | null>(null)
@@ -58,24 +60,9 @@
     <Popover.Trigger class="text-muted-foreground hover:text-primary hover:bg-muted bg-background absolute top-1.5 right-1.5 grid size-7 place-items-center rounded border" title="Insert a binding">
       <BracesIcon class="size-3.5" />
     </Popover.Trigger>
-    <Popover.Content class="w-80 p-0" align="end">
-      <Command.Root>
-        <Command.Input placeholder="Find a binding…" />
-        <Command.List class="max-h-72">
-          <Command.Empty>No bindings here.</Command.Empty>
-          {#each groups as g}
-            <Command.Group heading={g.label}>
-              {#each g.items as b (b.path)}
-                <Command.Item value={b.path} onSelect={() => insert(b.path)} class="justify-between">
-                  <span class="truncate font-mono text-xs">{b.path}</span>
-                  {#if b.hint}<span class="text-muted-foreground text-xs">{b.hint}</span>{/if}
-                </Command.Item>
-              {/each}
-            </Command.Group>
-          {/each}
-        </Command.List>
-        <p class="text-muted-foreground border-t p-2 text-xs">{help}</p>
-      </Command.Root>
+    <Popover.Content class={[scope ? 'w-[26rem]' : 'w-80', 'p-0']} align="end">
+      <BindingPicker {groups} {scope} {help} onPick={insert} />
     </Popover.Content>
   </Popover.Root>
 </div>
+{#if scope}<BindingPreview class="mt-1" {value} {scope} />{/if}

@@ -101,7 +101,7 @@ export const stepTypes: StepInfo[] = [
     inputs: [{ key: 'query', label: 'Query', kind: 'query' }, { key: 'params', label: 'Parameters', kind: 'params' }, { key: 'failOnError', label: 'Fail when the API answers with an error', kind: 'boolean', default: true }],
     outputs: (s, _t, queries) => {
       const q = queries.find((x) => x.id === s.inputs?.query || x.name === s.inputs?.query)
-      return [{ path: 'body', hint: 'answer' }, { path: 'rows', hint: 'list' }, ...(q?.fields ?? []).slice(0, 12).map((f) => ({ path: `rows.0.${f.name}`, hint: f.type })), { path: 'status' }, { path: 'ok' }]
+      return [{ path: 'rows', hint: 'list' }, ...(q?.fields ?? []).slice(0, 12).map((f) => ({ path: `rows.0.${f.name}`, hint: f.type })), { path: 'body', hint: 'answer' }, { path: 'status' }, { path: 'ok' }, { path: 'headers' }]
     },
   },
   {
@@ -118,7 +118,7 @@ export const stepTypes: StepInfo[] = [
     type: 'loop', label: 'Loop', group: 'Logic', icon: RepeatIcon, tone: tones.logic, name: 'Each',
     description: 'Run steps once per item of a list.',
     inputs: [
-      { key: 'items', label: 'Items', kind: 'text', placeholder: '{{ steps.Found.rows }}', help: 'A list, or a number to repeat that many times. Inside, read {{ loop.item }}, {{ loop.number }}.' },
+      { key: 'items', label: 'Items', kind: 'text', placeholder: '{{ steps.Found.rows }}', help: 'A list, such as {{ steps.Api.rows }}, or a number to repeat that many times.' },
       { key: 'max', label: 'At most', kind: 'text', placeholder: '5000' },
     ],
     outputs: () => [{ path: 'count', hint: 'items done' }],
@@ -180,7 +180,7 @@ export const stepTypes: StepInfo[] = [
     description: 'Make a PDF from a template and keep it.',
     inputs: [
       { key: 'title', label: 'Title', kind: 'text', placeholder: 'Invoice {{ trigger.row._id }}' },
-      { key: 'content', label: 'Content', kind: 'template', help: 'Markdown: # headings, **bold**, - lists, | tables |, ---. Repeat rows with {{#each steps.Found.rows}} … {{ item.Name }} … {{/each}}.' },
+      { key: 'content', label: 'Content', kind: 'template', help: 'Markdown: # headings, **bold**, - lists, | tables |, ---. Repeat rows with {{#each steps.Found.rows}} … {{ loop.item.Name }} … {{/each}}.' },
       { key: 'footer', label: 'Footer', kind: 'text', placeholder: '{{ app.name }}' },
       { key: 'fileName', label: 'File name', kind: 'text', placeholder: 'invoice-{{ trigger.row._id }}' },
       { key: 'pageSize', label: 'Page', kind: 'select', default: 'A4', options: [{ value: 'A4', label: 'A4' }, { value: 'Letter', label: 'Letter' }] },
@@ -304,16 +304,24 @@ export function triggerBindings(f: Flow, tables: Table[]): BindingGroup {
   return { label: 'Button', items: (f.trigger.parameters ?? []).filter((p) => p.name).map((p) => ({ path: `trigger.params.${p.name}`, hint: p.type })) }
 }
 
-export function stepBindings(f: Flow, id: string | null, tables: Table[], queries: Query[], variables: Variable[]): BindingGroup[] {
+export function stepBindings(f: Flow, id: string | null, tables: Table[], queries: Query[], variables: Variable[], scope: Record<string, any> | null = null): BindingGroup[] {
   const groups: BindingGroup[] = [triggerBindings(f, tables)]
   const ctx = id ? before(f.steps, id) : { done: [], loops: [] }
   if (ctx?.loops.length) {
     const loop = ctx.loops[ctx.loops.length - 1]
-    const src = /steps\.(\w+)\.rows/.exec(loop.inputs?.items ?? '')?.[1]
+    // The keys of each item come from the step that made the list.
+    const src = /steps\.(\w+)\.rows\b/.exec(loop.inputs?.items ?? '')?.[1]
     let named: FlowStep | undefined
     if (src) walk(f.steps, (s) => { if (s.name === src) named = s })
     const t = named?.type === 'find_rows' ? tableOf(named, tables) : undefined
-    groups.push({ label: `Loop ${loop.name}`, items: [{ path: 'loop.item', hint: 'this item' }, ...fieldPaths('loop.item', t), { path: 'loop.number', hint: 'from 1' }, { path: 'loop.index', hint: 'from 0' }, { path: 'loop.count' }] })
+    const q = named?.type === 'run_query' ? queries.find((x) => x.id === named!.inputs?.query || x.name === named!.inputs?.query) : undefined
+    const keys = t ? fieldPaths('loop.item', t) : (q?.fields ?? []).map((x) => ({ path: `loop.item.${x.name}`, hint: x.type }))
+    const items = loop.inputs?.items ? `of ${loop.inputs.items.replace(/^\s*\{\{\s*|\s*\}\}\s*$/g, '')}` : ''
+    groups.unshift({
+      label: `Loop ${loop.name} · current item`, open: true,
+      note: scope?.loop?.item !== undefined ? `Each item ${items}; values below are from the first one.` : `Each item ${items}. Run a test or get sample data to see its keys.`,
+      items: [{ path: 'loop.item', hint: 'this item' }, ...keys, { path: 'loop.number', hint: 'from 1' }, { path: 'loop.index', hint: 'from 0' }, { path: 'loop.count', hint: 'items' }],
+    })
   }
   const vars = new Set<string>()
   for (const s of ctx?.done ?? []) {
@@ -321,7 +329,12 @@ export function stepBindings(f: Flow, id: string | null, tables: Table[], querie
     if (!info) continue
     const outs = info.outputs(s, tables, queries)
     if (s.continueOnError) outs.push({ path: 'error', hint: 'when it failed' })
-    if (outs.length) groups.push({ label: `${s.name} · ${info.label}`, items: outs.map((o) => ({ path: `steps.${s.name}.${o.path}`, hint: o.hint })) })
+    // Keys the sample has that the step type does not list.
+    const sample = scope?.steps?.[s.name]
+    if (sample && typeof sample === 'object' && !Array.isArray(sample)) {
+      for (const k of Object.keys(sample)) if (!outs.some((o) => o.path.split('.')[0].toLowerCase() === k.toLowerCase())) outs.push({ path: /^[A-Za-z_]\w*$/.test(k) ? k : `[${JSON.stringify(k)}]` })
+    }
+    if (outs.length) groups.push({ label: `${s.name} · ${info.label}`, items: outs.map((o) => ({ path: `steps.${s.name}${o.path.startsWith('[') ? '' : '.'}${o.path}`, hint: o.hint })) })
   }
   walk(f.steps, (s) => { if (s.type === 'set_variable' && s.inputs?.name && s.id !== id) vars.add(s.inputs.name) })
   if (vars.size) groups.push({ label: 'Variables', items: [...vars].map((v) => ({ path: `vars.${v}` })) })
@@ -331,7 +344,7 @@ export function stepBindings(f: Flow, id: string | null, tables: Table[], querie
   return groups
 }
 
-export const flowHelp = 'Pipes: | upper, | number:2, | default:"x", | json, | join:", ". Formulas: {{ = trigger.row.Qty * 2 }}. Repeat: {{#each list}}{{ item.Name }}{{/each}}; branch: {{#if x}}…{{else}}…{{/if}}.'
+export const flowHelp = 'Pipes: | upper, | number:2, | default:"x", | json, | join:", ". Formulas: {{ = trigger.row.Qty * 2 }}. Repeat: {{#each list}}{{ loop.item.Name }}{{/each}}; branch: {{#if x}}…{{else}}…{{/if}}.'
 
 // summary is a step's one-line description on the canvas.
 export function summary(s: FlowStep, tables: Table[], queries: Query[]): string {

@@ -119,3 +119,27 @@ func TestPaths(t *testing.T) {
 		t.Errorf("Paths = %v", s)
 	}
 }
+
+func TestBracketPaths(t *testing.T) {
+	s := Map{"steps": map[string]any{"Api": map[string]any{"rows": []any{
+		map[string]any{"name": "Ada", "first name": "A", "a.b": 1.0, "tags": []any{"x", "y"}},
+	}}}}
+	for src, want := range map[string]string{
+		`{{ steps.Api.rows.0.name }}`:               "Ada",
+		`{{ steps.Api.rows[0].name }}`:              "Ada",
+		`{{ steps.Api.rows[0]["name"] }}`:           "Ada",
+		`{{ steps.Api.rows[ 0 ][ 'first name' ] }}`: "A",
+		`{{ steps.Api.rows.0["a.b"] }}`:             "1",
+		`{{ steps.Api.rows.0.tags[1] | upper }}`:    "Y",
+	} {
+		out, err := MustParse(src).Render(Text, s)
+		if err != nil || out != want {
+			t.Errorf("%s = %q, %v; want %q", src, out, err, want)
+		}
+	}
+	for _, src := range []string{`{{ a[0 }}`, `{{ a["x ] }}`, `{{ a[] }}`} {
+		if _, err := Parse(src); err == nil {
+			t.Errorf("Parse(%q) succeeded", src)
+		}
+	}
+}

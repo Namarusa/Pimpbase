@@ -1,7 +1,9 @@
 // The flow editor's shared state: the flow being edited, the selection
 // and the edits the canvas and settings panel make.
 import { getContext, setContext } from 'svelte'
-import type { Flow, FlowStep, Query, RoleDef, Table, Variable } from '../api'
+import { api, type App, type Flow, type FlowRun, type FlowStep, type Query, type RoleDef, type Table, type Variable } from '../api'
+import { preview } from '../preview'
+import { scopeFor, type Samples } from './sample'
 import { copyStep, locate, newStep, walk } from './steps'
 
 export class FlowEditor {
@@ -16,7 +18,53 @@ export class FlowEditor {
   errorStep = $state<string>('')
   // lastRun maps step ids to how they did in the run being shown.
   lastRun = $state<Record<string, 'ok' | 'failed' | 'skipped'>>({})
+  // samples is the data previews use: the latest run, and outputs got
+  // with "Get sample data".
+  app = $state<App | null>(null)
+  samples = $state<Samples>({ run: null, fetched: {} })
   onChange: () => void = () => {}
+
+  // scope is what bindings read when the step runs, from the samples.
+  scope(id: string | null) {
+    return this.flow ? scopeFor(this.flow, id, this.samples, this.app, this.variables) : null
+  }
+
+  // loadSamples takes the flow's latest run as sample data.
+  async loadSamples() {
+    const f = this.flow
+    if (!f) return
+    try {
+      const runs = await api.flowRuns(f.appId, f.id)
+      const latest = runs.find((r) => r.status !== 'running')
+      const run = latest ? await api.flowRun(f.appId, latest.id) : null
+      if (this.flow?.id === f.id) this.samples = { run, fetched: {} }
+    } catch { /* previews stay empty */ }
+  }
+
+  useRun(run: FlowRun) { this.samples = { run, fetched: {} } }
+
+  // fetchSample runs a step's query, or reads a few rows of its table, so
+  // later steps can be written against real data. Nothing is changed.
+  async fetchSample(s: FlowStep) {
+    const f = this.flow
+    if (!f) return
+    const scope = this.scope(s.id)
+    if (s.type === 'run_query') {
+      const params: Record<string, any> = {}
+      for (const [k, src] of Object.entries((s.inputs.params ?? {}) as Record<string, string>)) {
+        if (!src) continue
+        const p = preview(src, scope)
+        if (p.kind === 'value' && p.found) params[k] = p.value
+        else if (p.kind === 'text' && !p.missing.length) params[k] = p.text
+        else if (p.kind === 'none') params[k] = src
+      }
+      const r = await api.runQuery(f.appId, s.inputs.query, params, 'development')
+      this.samples.fetched[s.id] = { ok: r.ok, status: r.status, body: r.body, rows: r.rows, headers: r.headers }
+    } else if (s.type === 'find_rows' && s.inputs.table) {
+      const page = await api.rows(f.appId, s.inputs.table, { sort: s.inputs.sort || undefined, desc: !!s.inputs.desc, limit: 5 })
+      this.samples.fetched[s.id] = { rows: page.rows, count: page.rows.length, total: page.total, first: page.rows[0] ?? null }
+    }
+  }
 
   table(id?: string) { return this.tables.find((t) => t.id === id) }
 

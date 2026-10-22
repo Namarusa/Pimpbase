@@ -50,6 +50,7 @@
       const res = await api.app(slug)
       if (!res.builder) { error = 'Only builders can manage flows.'; return }
       app = res.app
+      ed.app = res.app
       const [list, tables, queries, variables, roles] = await Promise.all([api.flows(app.id), api.tables(app.id), api.queries(app.id), api.variables(app.id), api.roles(app.id)])
       ed.roles = roles
       flows = list.map(normalize)
@@ -65,7 +66,9 @@
   const flow = $derived(flows.find((f) => f.id === item) ?? null)
   $effect.pre(() => {
     if (ed.flow?.id !== flow?.id) { ed.selected = 'trigger'; ed.errorStep = ''; shownRun = ''; tab = 'editor' }
+    const changed = ed.flow?.id !== flow?.id
     ed.flow = flow
+    if (changed) { ed.samples = { run: null, fetched: {} }; if (flow) ed.loadSamples() }
   })
   $effect(() => { if (ready && !item && flows[0]) go(flows[0].id) })
 
@@ -181,6 +184,7 @@
     testing = true
     try {
       const run = await api.testFlow(app.id, flow.id, data)
+      ed.useRun(run)
       testOpen = false
       shownRun = run.id
       runsKey++

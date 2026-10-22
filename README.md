@@ -401,6 +401,19 @@ A flow is a trigger and a list of steps, edited on a canvas in the
   `{{ vars.total }}`, `{{ env.API_KEY }}`, `{{ loop.item }}`, `{{ user }}`
   and `{{ app.name }}`, with pipes and `{{ = formula }}`. Templates also
   know `{{#each list}}…{{/each}}` and `{{#if x}}…{{else}}…{{/if}}`.
+  Paths join keys with dots; list positions count from 0 and can be
+  written `.0` or `[0]`, and keys with spaces or dots go in quoted
+  brackets: `{{ steps.Api.rows[0]["first name"] }}`. Inside a Loop step
+  or an `{{#each}}` block the current item is `{{ loop.item }}`, with
+  `{{ loop.number }}` (from 1), `{{ loop.index }}` (from 0) and
+  `{{ loop.count }}`; `{{#each}}` still accepts the short `{{ item }}`.
+- **Sample data**: the binding picker is a tree of what each step gives,
+  with the values from the flow's latest run, so an API step's answer and
+  a loop's current item can be unfolded key by key, nested keys included.
+  **Get sample data** on a query or find-rows step fills it before any
+  run (the query is called with development values). Each binding shows a
+  preview under its box, and paths the sample lacks are flagged with the
+  keys that are there.
 - **Generate PDF** writes Markdown (headings, bold, lists, tables, page
   breaks) into an A4 or Letter PDF in the app's accent colour, stores it
   with a table's files and can attach it to a row's attachment field.
@@ -408,6 +421,8 @@ A flow is a trigger and a list of steps, edited on a canvas in the
   result, the time taken and the error; the 200 latest runs of a flow are
   kept. Secret variables are hidden in the log. Test runs use the
   development values of variables and the newest row as sample data.
+  Large results are logged with long lists and texts cut short, keeping
+  their shape for the sample data.
 
 Row changes made by flows start other flows up to three levels deep, so
 flows that update each other stop.

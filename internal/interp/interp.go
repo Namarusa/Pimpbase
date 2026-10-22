@@ -115,11 +115,11 @@ func parseExpr(src string) (*Expr, error) {
 	if path == "" {
 		return nil, fmt.Errorf("the binding is empty")
 	}
-	for _, p := range strings.Split(path, ".") {
-		if p = strings.TrimSpace(p); p != "" {
-			e.Path = append(e.Path, p)
-		}
+	parts, err := SplitPath(path)
+	if err != nil {
+		return nil, err
 	}
+	e.Path = parts
 	for _, raw := range segs[1:] {
 		name, arg, has := strings.Cut(strings.TrimSpace(raw), ":")
 		name = strings.TrimSpace(name)
@@ -133,6 +133,79 @@ func parseExpr(src string) (*Expr, error) {
 		e.Pipes = append(e.Pipes, Pipe{Name: name, Arg: arg, hasArg: has})
 	}
 	return e, nil
+}
+
+// SplitPath reads a binding path: names joined by dots, with list
+// positions and odd keys in brackets. These all read the same value:
+//
+//	steps.Api.rows.0.name
+//	steps.Api.rows[0].name
+//	steps.Api.rows[0]["name"]
+//
+// Brackets with quotes hold keys that have spaces, dots or other signs:
+// loop.item["first name"].
+func SplitPath(s string) ([]string, error) {
+	var out []string
+	var cur strings.Builder
+	flush := func() {
+		if p := strings.TrimSpace(cur.String()); p != "" {
+			out = append(out, p)
+		}
+		cur.Reset()
+	}
+	for i := 0; i < len(s); i++ {
+		switch c := s[i]; c {
+		case '.':
+			flush()
+		case '[':
+			flush()
+			j := i + 1
+			for j < len(s) && s[j] == ' ' {
+				j++
+			}
+			if j < len(s) && (s[j] == '"' || s[j] == '\'') {
+				q := s[j]
+				var key strings.Builder
+				k := j + 1
+				for ; k < len(s) && s[k] != q; k++ {
+					if s[k] == '\\' && k+1 < len(s) {
+						k++
+					}
+					key.WriteByte(s[k])
+				}
+				if k >= len(s) {
+					return nil, fmt.Errorf("a quoted key in [ ] is not closed")
+				}
+				k++
+				for k < len(s) && s[k] == ' ' {
+					k++
+				}
+				if k >= len(s) || s[k] != ']' {
+					return nil, fmt.Errorf("a [ is not closed with ]")
+				}
+				out = append(out, key.String())
+				i = k
+				continue
+			}
+			end := strings.IndexByte(s[i:], ']')
+			if end < 0 {
+				return nil, fmt.Errorf("a [ is not closed with ]")
+			}
+			key := strings.TrimSpace(s[i+1 : i+end])
+			if key == "" {
+				return nil, fmt.Errorf("[ ] needs a position, such as [0], or a quoted key")
+			}
+			out = append(out, key)
+			i += end
+		default:
+			cur.WriteByte(c)
+		}
+	}
+	flush()
+	if len(out) == 0 {
+		return nil, fmt.Errorf("the binding is empty")
+	}
+	return out, nil
 }
 
 // splitPipes splits on "|" outside double quotes.

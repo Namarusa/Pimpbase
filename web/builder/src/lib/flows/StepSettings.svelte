@@ -10,17 +10,21 @@
   import TrashIcon from '@lucide/svelte/icons/trash'
   import CopyIcon from '@lucide/svelte/icons/copy'
   import BindingInput from '../designer/BindingInput.svelte'
+  import BindingPreview from '../designer/BindingPreview.svelte'
   import TemplateEditor from '../apis/TemplateEditor.svelte'
   import KeyValueEditor from '../apis/KeyValueEditor.svelte'
   import type { FlowStep, Pair } from '../api'
   import { getEditor } from './editor.svelte'
+  import LoopItemPanel from './LoopItemPanel.svelte'
+  import SampleBox from './SampleBox.svelte'
   import { flowHelp, stepBindings, stepInfo, type InputSpec } from './steps'
 
   // StepSettings edits the selected step's name and inputs.
   let { step }: { step: FlowStep } = $props()
   const ed = getEditor()
   const info = $derived(stepInfo(step.type))
-  const groups = $derived(ed.flow ? stepBindings(ed.flow, step.id, ed.tables, ed.queries, ed.variables) : [])
+  const scope = $derived(ed.scope(step.id))
+  const groups = $derived(ed.flow ? stepBindings(ed.flow, step.id, ed.tables, ed.queries, ed.variables, scope) : [])
   const table = $derived(ed.table(step.inputs.table))
   const query = $derived(ed.queries.find((q) => q.id === step.inputs.query))
   const shown = $derived((info?.inputs ?? []).filter((i) => !i.when || i.when(step.inputs)))
@@ -81,9 +85,9 @@
         <div class="flex flex-col gap-1.5">
           <Label class="text-xs">{i.label}</Label>
           {#if i.kind === 'text' || i.kind === 'formula'}
-            <BindingInput value={val(i)} mono={i.kind === 'formula' || String(val(i)).includes('{{')} {groups} help={flowHelp} placeholder={i.placeholder} onChange={(v) => set(i.key, v)} />
+            <BindingInput value={val(i)} mono={i.kind === 'formula' || String(val(i)).includes('{{')} {groups} {scope} help={flowHelp} placeholder={i.placeholder} onChange={(v) => set(i.key, v)} />
           {:else if i.kind === 'template' || i.kind === 'long'}
-            <TemplateEditor value={val(i)} {groups} help={flowHelp} minRows={i.key === 'content' ? 14 : 7} placeholder={i.placeholder} onChange={(v) => set(i.key, v)} />
+            <TemplateEditor value={val(i)} {groups} {scope} help={flowHelp} minRows={i.key === 'content' ? 14 : 7} placeholder={i.placeholder} onChange={(v) => set(i.key, v)} />
           {:else if i.kind === 'select'}
             <Select.Root type="single" value={val(i)} onValueChange={(v) => set(i.key, v)}>
               <Select.Trigger size="sm" class="w-full">{i.options?.find((o) => o.value === val(i))?.label ?? 'Choose'}</Select.Trigger>
@@ -116,13 +120,14 @@
             {#each query?.parameters ?? [] as qp (qp.name)}
               <div class="flex items-center gap-1.5">
                 <span class="w-2/5 shrink-0 truncate font-mono text-xs">{qp.name}</span>
-                <div class="min-w-0 flex-1"><BindingInput value={step.inputs.params?.[qp.name] ?? ''} {groups} help={flowHelp} placeholder={qp.default || 'default'} onChange={(v) => set('params', { ...(step.inputs.params ?? {}), [qp.name]: v })} /></div>
+                <div class="min-w-0 flex-1"><BindingInput value={step.inputs.params?.[qp.name] ?? ''} {groups} {scope} showPreview={false} help={flowHelp} placeholder={qp.default || 'default'} onChange={(v) => set('params', { ...(step.inputs.params ?? {}), [qp.name]: v })} /></div>
               </div>
+              <BindingPreview class="-mt-1 pl-[calc(40%+0.375rem)]" value={step.inputs.params?.[qp.name] ?? ''} {scope} />
             {:else}
               <span class="text-muted-foreground text-xs">{query ? 'This query takes no parameters.' : 'Choose a query first.'}</span>
             {/each}
           {:else if i.kind === 'pairs'}
-            <KeyValueEditor value={(step.inputs[i.key] ?? []) as Pair[]} {groups} addLabel="Add header" keyPlaceholder="X-Api-Key" onChange={(v) => set(i.key, v)} />
+            <KeyValueEditor value={(step.inputs[i.key] ?? []) as Pair[]} {groups} {scope} addLabel="Add header" keyPlaceholder="X-Api-Key" onChange={(v) => set(i.key, v)} />
           {:else if i.kind === 'values'}
             {#each values as v, k (k)}
               <div class="flex items-center gap-1.5">
@@ -130,9 +135,10 @@
                   <Select.Trigger size="sm" class="w-2/5 shrink-0">{v.field || 'Field'}</Select.Trigger>
                   <Select.Content>{#each (table?.fields ?? []).filter((f) => f.type !== 'formula' && f.type !== 'autonumber') as f (f.id)}<Select.Item value={f.name} label={f.name}>{f.name}<span class="text-muted-foreground ml-auto text-[10px]">{f.type}</span></Select.Item>{/each}</Select.Content>
                 </Select.Root>
-                <div class="min-w-0 flex-1"><BindingInput value={v.value} {groups} help={flowHelp} placeholder="value" onChange={(nv) => set('values', values.map((x, m) => (m === k ? { ...x, value: nv } : x)))} /></div>
+                <div class="min-w-0 flex-1"><BindingInput value={v.value} {groups} {scope} showPreview={false} help={flowHelp} placeholder="value" onChange={(nv) => set('values', values.map((x, m) => (m === k ? { ...x, value: nv } : x)))} /></div>
                 <Button variant="ghost" size="icon" class="size-7 shrink-0" aria-label="Remove value" onclick={() => set('values', values.filter((_, m) => m !== k))}><XIcon class="size-3.5" /></Button>
               </div>
+              <BindingPreview class="-mt-1 pr-8 pl-[calc(40%+0.375rem)]" value={v.value} {scope} />
             {/each}
             <div class="flex gap-2">
               <Button variant="outline" size="sm" class="h-7 border-dashed text-xs" onclick={() => set('values', [...values, { field: '', value: '' }])}><PlusIcon />Add value</Button>
@@ -142,10 +148,12 @@
             </div>
           {/if}
           {#if i.help}<p class="text-muted-foreground text-xs">{i.help}</p>{/if}
+          {#if step.type === 'loop' && i.key === 'items'}<LoopItemPanel {step} />{/if}
         </div>
       {/if}
     {/each}
 
+    {#if step.type === 'run_query' || step.type === 'find_rows'}<SampleBox {step} />{/if}
     <Separator />
     <div class="flex items-center gap-2">
       <Switch id="step-continue" checked={!!step.continueOnError} onCheckedChange={(v) => { step.continueOnError = v || undefined; ed.changed() }} />

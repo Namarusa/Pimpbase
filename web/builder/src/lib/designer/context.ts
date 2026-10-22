@@ -32,7 +32,9 @@ export function contextTable(root: Node, id: string, tables: Table[]): Table | u
   return undefined
 }
 
-export interface BindingGroup { label: string; items: { path: string; hint?: string }[] }
+// A BindingGroup is one heading of the binding picker. open shows its
+// first level unfolded; note explains the group under its heading.
+export interface BindingGroup { label: string; items: { path: string; hint?: string }[]; open?: boolean; note?: string }
 
 // bindingsFor lists the bindings a component can read.
 export function bindingsFor(root: Node, id: string, tables: Table[], route: string, forActions = false): BindingGroup[] {

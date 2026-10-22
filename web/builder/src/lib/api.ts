@@ -159,7 +159,7 @@ export interface Flow {
 }
 export interface StepLog {
   stepId: string; name: string; type: string; depth: number; item?: number
-  status: 'ok' | 'failed' | 'skipped'; inputs?: any; output?: any; error?: string; startedAt: string; durationMs: number
+  status: 'ok' | 'failed' | 'skipped'; inputs?: any; output?: any; trimmed?: boolean; error?: string; startedAt: string; durationMs: number
 }
 export interface FlowRun {
   id: string; appId: string; flowId: string; status: 'running' | 'succeeded' | 'failed'; test: boolean

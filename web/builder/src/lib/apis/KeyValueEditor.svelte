@@ -11,8 +11,8 @@
 
   // KeyValueEditor edits headers, query strings and form fields. Entries
   // switched off are kept but not sent.
-  let { value, onChange, groups, keyLabel = 'Name', valueLabel = 'Value', addLabel = 'Add', keyPlaceholder = '', valuePlaceholder = '' }: {
-    value: Pair[]; onChange: (v: Pair[]) => void; groups: BindingGroup[]
+  let { value, onChange, groups, keyLabel = 'Name', valueLabel = 'Value', addLabel = 'Add', keyPlaceholder = '', valuePlaceholder = '', scope = null }: {
+    value: Pair[]; onChange: (v: Pair[]) => void; groups: BindingGroup[]; scope?: Record<string, any> | null
     keyLabel?: string; valueLabel?: string; addLabel?: string; keyPlaceholder?: string; valuePlaceholder?: string
   } = $props()
   const set = (i: number, p: Partial<Pair>) => onChange(value.map((x, j) => (j === i ? { ...x, ...p } : x)))
@@ -28,7 +28,7 @@
     <div class={['grid grid-cols-[1.25rem_minmax(0,2fr)_minmax(0,3fr)_1.75rem] items-center gap-2', p.off ? 'opacity-50' : '']}>
       <Checkbox checked={!p.off} onCheckedChange={(v) => set(i, { off: !v || undefined })} aria-label="Send this entry" />
       <Input class="h-8 font-mono text-xs" value={p.key} placeholder={keyPlaceholder} oninput={(e) => set(i, { key: e.currentTarget.value })} aria-label={keyLabel} />
-      <BindingInput mono value={p.value} {groups} help={apiHelp} placeholder={valuePlaceholder} onChange={(v) => set(i, { value: v })} />
+      <BindingInput mono value={p.value} {groups} {scope} help={apiHelp} placeholder={valuePlaceholder} onChange={(v) => set(i, { value: v })} />
       <Button variant="ghost" size="icon" class="size-7" aria-label="Remove" onclick={() => onChange(value.filter((_, j) => j !== i))}><XIcon class="size-3.5" /></Button>
     </div>
   {/each}

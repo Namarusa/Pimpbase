@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/pimpbase/pimpbase/internal/interp"
 )
@@ -78,6 +79,10 @@ func TestBlocks(t *testing.T) {
 	js, err := render(`{"names": [{{#each steps.Find.rows}}"{{ item.Name }}",{{/each}}""]}`, interp.JSON, scope)
 	if err != nil || js != `{"names": ["Dune","Emma \"the novel\"",""]}` {
 		t.Errorf("json = %q, %v", js, err)
+	}
+	same, err := render("{{#each steps.Find.rows}}{{ loop.number }}/{{ loop.count }} {{ loop.item[\"Name\"] }};{{/each}}", interp.Text, scope)
+	if err != nil || same != "1/2 Dune;2/2 Emma \"the novel\";" {
+		t.Errorf("loop names = %q, %v", same, err)
 	}
 	v, err := value("{{ steps.Find.rows }}", scope)
 	if list, ok := v.([]any); err != nil || !ok || len(list) != 2 {
@@ -188,5 +193,29 @@ func TestMailBytes(t *testing.T) {
 	}
 	if got := addresses([]any{"a@x.com; b@y.com", map[string]any{"email": "c@z.com"}}); strings.Join(got, ",") != "a@x.com,b@y.com,c@z.com" {
 		t.Errorf("addresses = %v", got)
+	}
+}
+
+func TestTrimLog(t *testing.T) {
+	rows := make([]any, 400)
+	for i := range rows {
+		rows[i] = map[string]any{"id": float64(i), "name": strings.Repeat("é", 300)}
+	}
+	var cut bool
+	out := trimLog(map[string]any{"rows": rows, "ok": true}, &cut)
+	m, ok := out.(map[string]any)
+	if !cut || !ok || m["ok"] != true {
+		t.Fatalf("trimLog = %v, cut %v", out, cut)
+	}
+	list := m["rows"].([]any)
+	if len(list) == 0 || len(list) > 20 || list[0].(map[string]any)["id"] != 0.0 {
+		t.Errorf("rows kept: %d", len(list))
+	}
+	if name := list[0].(map[string]any)["name"].(string); !utf8.ValidString(name) || len(name) > 1004 {
+		t.Errorf("name cut badly: %d bytes", len(name))
+	}
+	cut = false
+	if trimLog(map[string]any{"a": 1.0}, &cut); cut {
+		t.Error("a small value was marked as cut")
 	}
 }

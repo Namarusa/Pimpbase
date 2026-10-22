@@ -1,16 +1,19 @@
 <script lang="ts">
   import * as Popover from '$lib/components/ui/popover'
-  import * as Command from '$lib/components/ui/command'
   import { Input } from '$lib/components/ui/input'
   import { Textarea } from '$lib/components/ui/textarea'
   import BracesIcon from '@lucide/svelte/icons/braces'
   import type { BindingGroup } from './context'
   import { pipeHelp } from './context'
+  import BindingPicker from './BindingPicker.svelte'
+  import BindingPreview from './BindingPreview.svelte'
 
   // BindingInput is a text box with a picker that inserts {{ bindings }}.
-  let { value, onChange, groups, multiline = false, placeholder = '', mono = false, id, help = pipeHelp, class: className = '' }: {
+  // With sample data (scope), the picker shows values and a line under the
+  // box previews what the text gives.
+  let { value, onChange, groups, multiline = false, placeholder = '', mono = false, id, help = pipeHelp, class: className = '', scope = null, showPreview = true }: {
     value: string; onChange: (v: string) => void; groups: BindingGroup[]
-    multiline?: boolean; placeholder?: string; mono?: boolean; id?: string; help?: string; class?: string
+    multiline?: boolean; placeholder?: string; mono?: boolean; id?: string; help?: string; class?: string; scope?: Record<string, any> | null; showPreview?: boolean
   } = $props()
   let open = $state(false)
   let el = $state<HTMLInputElement | HTMLTextAreaElement | null>(null)
@@ -22,6 +25,7 @@
     const end = el?.selectionEnd ?? at
     onChange(v.slice(0, at) + text + v.slice(end))
     open = false
+    requestAnimationFrame(() => { el?.focus(); el?.setSelectionRange(at + text.length, at + text.length) })
   }
 </script>
 
@@ -35,24 +39,9 @@
     <Popover.Trigger class="text-muted-foreground hover:text-primary hover:bg-muted absolute top-1 right-1 grid size-6 place-items-center rounded" title="Insert a binding">
       <BracesIcon class="size-3.5" />
     </Popover.Trigger>
-    <Popover.Content class="w-72 p-0" align="end">
-      <Command.Root>
-        <Command.Input placeholder="Find a binding…" />
-        <Command.List class="max-h-72">
-          <Command.Empty>No bindings here.</Command.Empty>
-          {#each groups as g}
-            <Command.Group heading={g.label}>
-              {#each g.items as b (b.path)}
-                <Command.Item value={b.path} onSelect={() => insert(b.path)} class="justify-between">
-                  <span class="truncate font-mono text-xs">{b.path}</span>
-                  {#if b.hint}<span class="text-muted-foreground text-xs">{b.hint}</span>{/if}
-                </Command.Item>
-              {/each}
-            </Command.Group>
-          {/each}
-        </Command.List>
-        <p class="text-muted-foreground border-t p-2 text-xs">{help}</p>
-      </Command.Root>
+    <Popover.Content class={[scope ? 'w-[26rem]' : 'w-80', 'p-0']} align="end">
+      <BindingPicker {groups} {scope} {help} onPick={insert} />
     </Popover.Content>
   </Popover.Root>
 </div>
+{#if scope && showPreview}<BindingPreview {value} {scope} />{/if}

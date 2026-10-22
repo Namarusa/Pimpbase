@@ -590,9 +590,11 @@ type StepLog struct {
 	// Item numbers the loop item, from 1, for steps inside a loop.
 	Item int `json:"item,omitempty"`
 	// Status is "ok", "failed" or "skipped".
-	Status     string    `json:"status"`
-	Inputs     any       `json:"inputs,omitempty"`
-	Output     any       `json:"output,omitempty"`
+	Status string `json:"status"`
+	Inputs any    `json:"inputs,omitempty"`
+	Output any    `json:"output,omitempty"`
+	// Trimmed is true when long lists and texts were cut for the log.
+	Trimmed    bool      `json:"trimmed,omitempty"`
 	Error      string    `json:"error,omitempty"`
 	StartedAt  time.Time `json:"startedAt"`
 	DurationMs int64     `json:"durationMs"`

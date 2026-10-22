@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/pimpbase/pimpbase/internal/apps"
 	"github.com/pimpbase/pimpbase/internal/cluster"
@@ -619,7 +620,7 @@ func (x *exec) list(steps []*Step, sc interp.Scope, depth, item int) error {
 		start := time.Now()
 		out, err := x.step(s, in, depth, item)
 		l.DurationMs = time.Since(start).Milliseconds()
-		l.Inputs = trimLog(in.values)
+		l.Inputs = trimLog(in.values, &l.Trimmed)
 		if err != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
 			l.Status, l.Error = "failed", "stopped"
 			x.put(at, l)
@@ -646,7 +647,7 @@ func (x *exec) list(steps []*Step, sc interp.Scope, depth, item int) error {
 		}
 		out = plain(out)
 		x.steps[s.Name] = out
-		l.Status, l.Output = "ok", trimLog(out)
+		l.Status, l.Output = "ok", trimLog(out, &l.Trimmed)
 		x.put(at, l)
 	}
 	return nil
@@ -930,6 +931,10 @@ func (x *exec) step(s *Step, in *inputs, depth, item int) (any, error) {
 			items = items[:limit]
 		}
 		in.values["items"] = fmt.Sprintf("%d items", len(items))
+		if len(items) > 0 {
+			// The builder shows the first item's keys in its binding picker.
+			in.values["firstItem"] = plain(items[0])
+		}
 		for i, it := range items {
 			sc := overlay{names: map[string]any{"loop": map[string]any{"item": plain(it), "index": float64(i), "number": float64(i + 1), "count": float64(len(items))}}, base: in.sc}
 			if err := x.list(s.Do, sc, depth+1, i+1); err != nil {
@@ -1503,10 +1508,48 @@ func plain(v any) any {
 }
 
 // trimLog keeps large values out of the run log.
-func trimLog(v any) any {
+func trimLog(v any, trimmed *bool) any {
 	js, err := json.Marshal(v)
 	if err != nil || len(js) <= maxLogValue {
 		return v
 	}
+	// Keep the shape, so the builder can still offer the keys and show
+	// sample values: cut long lists and texts, then cut harder.
+	for _, lim := range []struct{ items, text int }{{20, 1000}, {5, 200}, {2, 80}} {
+		short := shorten(v, lim.items, lim.text)
+		if js, err := json.Marshal(short); err == nil && len(js) <= maxLogValue {
+			*trimmed = true
+			return short
+		}
+	}
 	return map[string]any{"truncated": true, "preview": string(js[:2048]) + "…", "size": len(js)}
+}
+
+// shorten copies v keeping at most items list items and text bytes of
+// each text.
+func shorten(v any, items, text int) any {
+	switch x := v.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(x))
+		for k, y := range x {
+			out[k] = shorten(y, items, text)
+		}
+		return out
+	case []any:
+		n := min(len(x), items)
+		out := make([]any, n)
+		for i := range n {
+			out[i] = shorten(x[i], items, text)
+		}
+		return out
+	case string:
+		if len(x) > text {
+			cut := text
+			for cut > 0 && !utf8.RuneStart(x[cut]) {
+				cut--
+			}
+			return x[:cut] + "…"
+		}
+	}
+	return v
 }

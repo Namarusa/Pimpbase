@@ -11,11 +11,12 @@ import (
 
 // Step texts are interp templates plus two blocks, for emails and PDFs:
 //
-//	{{#each steps.Orders.rows}} {{ item.Name }} ({{ number }}) {{/each}}
+//	{{#each steps.Orders.rows}} {{ loop.item.Name }} ({{ loop.number }}) {{/each}}
 //	{{#if trigger.row.Paid}} paid {{else}} due {{/if}}
 //
-// Inside each, item is the current element, index counts from 0 and
-// number from 1. Blocks nest.
+// Inside each, loop.item is the current element, loop.index counts from 0
+// and loop.number from 1, as in a Loop step; the short names item, index
+// and number work too. Blocks nest, and the innermost loop wins.
 
 type block struct {
 	text string // a plain template, when kind is ""
@@ -137,8 +138,10 @@ func renderBlocks(bs []*block, mode interp.Mode, s interp.Scope, b *strings.Buil
 			if err != nil {
 				return err
 			}
-			for i, item := range asList(v) {
-				inner := overlay{names: map[string]any{"item": item, "index": float64(i), "number": float64(i + 1)}, base: s}
+			list := asList(v)
+			for i, item := range list {
+				inner := overlay{names: map[string]any{"item": item, "index": float64(i), "number": float64(i + 1),
+					"loop": map[string]any{"item": item, "index": float64(i), "number": float64(i + 1), "count": float64(len(list))}}, base: s}
 				if err := renderBlocks(bl.body, mode, inner, b); err != nil {
 					return err
 				}
