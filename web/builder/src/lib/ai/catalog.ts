@@ -21,7 +21,9 @@ export function catalog(kind: DraftKind, tables: Table[]): any {
         settings: c.settings.map((s) => ({ key: s.key, kind: s.kind, label: s.label, options: options(s.options), help: s.help })),
       })),
       commonSettings: ['grow', 'span', 'roles', 'showWhen', 'conditions', 'printHide'],
-      actions: actionTypes.map((a) => ({ type: a.type, label: a.label, fields: a.fields.map((f) => ({ key: f.key, kind: f.kind, label: f.label })) })),
+      // Drafts go to other screens by address; the editor shows it as the
+      // screen it points at.
+      actions: actionTypes.map((a) => ({ type: a.type, label: a.label, fields: a.type === 'navigate' ? [{ key: 'route', kind: 'text', label: 'Address' }] : a.fields.map((f) => ({ key: f.key, kind: f.kind, label: f.label })) })),
       examples: sample ? [listScreen(sample), detailScreen(sample)].map((s) => ({ ...s, definition: compact(s.definition) })) : [],
     }
   }

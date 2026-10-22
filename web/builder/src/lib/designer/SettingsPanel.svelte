@@ -31,6 +31,7 @@
   import RoleSelect from '../access/RoleSelect.svelte'
   import RolesPicker from '../access/RolesPicker.svelte'
   import type { Node, Setting } from '../screen/types'
+  import { incoming } from '../screen/navigation'
 
   const d = getDesigner()
   const node = $derived(d.node)
@@ -38,8 +39,12 @@
   const props = $derived(node ? { ...def?.defaults(), ...node.props } : {})
   const sources = $derived(withQueries(d.tables, d.queries))
   const table = $derived(node && d.root ? contextTable(d.root, node.id, sources) : undefined)
-  const groups = $derived(node && d.root && d.screen ? bindingsFor(d.root, node.id, sources, d.screen.route) : [])
-  const actionGroups = $derived(node && d.root && d.screen ? bindingsFor(d.root, node.id, sources, d.screen.route, true) : [])
+  // received is what other screens send here; this screen's own tree is
+  // the one being edited.
+  const liveScreens = $derived(d.screens.map((s) => (s.id === d.screen?.id && d.root ? { ...s, definition: d.root } : s)))
+  const received = $derived(d.screen ? incoming(d.screen, liveScreens) : [])
+  const groups = $derived(node && d.root && d.screen ? bindingsFor(d.root, node.id, sources, d.screen.route, false, received) : [])
+  const actionGroups = $derived(node && d.root && d.screen ? bindingsFor(d.root, node.id, sources, d.screen.route, true, received) : [])
   const nodeQuery = $derived(String(props.table ?? '').startsWith('query:') ? d.queries.find((q) => q.id === String(props.table).slice(6)) : undefined)
   const order = ['Data', '', 'Validation', 'Layout', 'Style', 'Conditions']
   const sections = $derived.by(() => {
@@ -129,6 +134,13 @@
           <div class="flex flex-col gap-1.5"><Label for="scr-route" class="text-xs">Route</Label>
             <Input id="scr-route" class="h-8 font-mono text-xs" bind:value={screenRoute} onblur={() => screenRoute !== d.screen?.route && saveMeta({ route: screenRoute })} />
             <p class="text-muted-foreground text-xs">Use <code>:id</code> for a part that changes, such as <code>/orders/:id</code>.</p></div>
+          <div class="flex flex-col gap-1.5"><Label class="text-xs">Values this screen receives</Label>
+            {#each received as r (r.path)}
+              <div class="flex items-baseline gap-2 text-xs"><code class="font-mono">{`{{ ${r.path} }}`}</code><span class="text-muted-foreground ml-auto truncate">{r.from.length ? `from ${r.from.join(', ')}` : 'from the address'}</span></div>
+            {:else}
+              <p class="text-muted-foreground text-xs">None yet. Another screen sends values with a Go to screen action; add <code>:id</code> to the route or an extra value there.</p>
+            {/each}
+          </div>
           <div class="flex flex-col gap-1.5"><Label class="text-xs">Who can open it</Label>
             <RoleSelect roles={d.roles} value={d.screen.role} onChange={(v) => saveMeta({ role: v })} /></div>
           {#if metaError}<p class="text-destructive text-xs">{metaError}</p>{/if}

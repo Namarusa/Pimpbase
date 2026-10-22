@@ -4,16 +4,17 @@ import { api, rowKey } from '../api'
 import { resolve, resolveText } from './bindings'
 import type { Runtime } from './context.svelte'
 import type { Action, Scope } from './types'
+import { buildPath, navTarget, routeParams, type QueryValue, type ScreenRef } from './navigation'
 
 export interface ActionInfo {
   type: string
   label: string
   // fields are the settings the action editor shows.
-  fields: { key: string; label: string; kind: 'text' | 'table' | 'dialog' | 'select' | 'values' | 'boolean' | 'component' | 'query' | 'params' | 'flow' | 'flowparams'; options?: { value: string; label: string }[]; placeholder?: string }[]
+  fields: { key: string; label: string; kind: 'text' | 'table' | 'dialog' | 'select' | 'values' | 'boolean' | 'component' | 'query' | 'params' | 'flow' | 'flowparams' | 'screen'; options?: { value: string; label: string }[]; placeholder?: string }[]
 }
 
 export const actionTypes: ActionInfo[] = [
-  { type: 'navigate', label: 'Go to screen', fields: [{ key: 'route', label: 'Route', kind: 'text', placeholder: '/orders/{{ row._id }}' }] },
+  { type: 'navigate', label: 'Go to screen', fields: [{ key: 'screen', label: 'Screen', kind: 'screen' }] },
   { type: 'open_url', label: 'Open web address', fields: [{ key: 'url', label: 'Address', kind: 'text', placeholder: 'https://…' }, { key: 'newTab', label: 'In a new tab', kind: 'boolean' }] },
   { type: 'save_row', label: 'Save row', fields: [
     { key: 'table', label: 'Table', kind: 'table' },
@@ -51,7 +52,13 @@ export const actionTypes: ActionInfo[] = [
 export const actionInfo = (type: string) => actionTypes.find((a) => a.type === type)
 
 // describe summarises an action for the action list.
-export function describe(a: Action, rt?: { table: (id?: string) => { name: string } | undefined; flows?: { id: string; name: string }[] }): string {
+export function describe(a: Action, rt?: { table: (id?: string) => { name: string } | undefined; flows?: { id: string; name: string }[]; screens?: ScreenRef[] }): string {
+  if (a.type === 'navigate' && rt?.screens) {
+    const t = navTarget(a, rt.screens)
+    const s = t && rt.screens.find((x) => x.id === t.screen)
+    if (s) return `Go to ${s.name || s.route}`
+    if (a.screen) return 'Go to a deleted screen'
+  }
   if (a.type === 'run_flow') return `Run ${(a.flow && rt?.flows?.find((f) => f.id === a.flow)?.name) || 'flow'}`
   if (a.type === 'run_query') return `Run ${(a.query && rt?.table(`query:${a.query}`)?.name) || 'API query'}`
   switch (a.type) {
@@ -88,6 +95,16 @@ export async function runActions(actions: Action[] | undefined, rt: Runtime, bas
     try {
       switch (a.type) {
         case 'navigate': {
+          if (a.screen) {
+            const s = rt.screens.find((x) => x.id === a.screen)
+            if (!s) throw new Error('the screen this goes to was deleted')
+            const params = Object.fromEntries(routeParams(s.route).map((p) => [p, resolveText(a.params?.[p] ?? '', scope)]))
+            const missing = Object.keys(params).filter((p) => !params[p])
+            if (missing.length) throw new Error(`${s.name || s.route} needs a value for ${missing.join(', ')}`)
+            const query = ((a.query ?? []) as QueryValue[]).map((q) => ({ key: q.key, value: resolveText(q.value, scope) }))
+            rt.navigate(buildPath(s.route, params, query))
+            break
+          }
           const route = resolveText(a.route, scope)
           if (route) rt.navigate(route.startsWith('/') ? route : '/' + route)
           break

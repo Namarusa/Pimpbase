@@ -42,6 +42,7 @@
   import ConfirmHost from '../lib/screen/ConfirmHost.svelte'
   import AppFrame from '../lib/screen/AppFrame.svelte'
   import type { Node, Screen } from '../lib/screen/types'
+  import { incoming } from '../lib/screen/navigation'
 
   let { app: slug, screenId }: { app: string; screenId?: string } = $props()
   const d = new Designer()
@@ -53,6 +54,8 @@
   let confirmHost = $state<ConfirmHost>()
   const drag = $state<{ id: string | null }>({ id: null })
   let params = $state<Record<string, string>>({})
+  // queryPreview fills the query string values other screens send here.
+  let queryPreview = $state<Record<string, string>>({})
 
   const rt = new Runtime({
     appId: '', appSlug: slug, tables: [], editing: true, env: 'development',
@@ -109,6 +112,7 @@
   // data.
   async function previewParams(s: Screen) {
     params = {}
+    queryPreview = {}
     const names = s.route.split('/').filter((x) => x.startsWith(':')).map((x) => x.slice(1))
     if (!names.length) return
     const holder = [s.definition, ...flat(s.definition)].find((n) => (n.type === 'row_provider' || (n.type === 'form' && n.props.mode === 'update')) && n.props.table)
@@ -207,7 +211,8 @@
   const theme = $derived(d.app?.design?.theme === 'dark' ? 'dark' : d.app?.design?.theme === 'light' ? 'theme-light' : '')
   const width = $derived(d.device === 'phone' ? 'w-[390px]' : d.device === 'tablet' ? 'w-[820px]' : 'w-full')
   const paramNames = $derived(d.screen ? d.screen.route.split('/').filter((x) => x.startsWith(':')).map((x) => x.slice(1)) : [])
-  const appUrl = $derived(d.screen ? `/app/${slug}${d.screen.route.replace(/:(\w+)/g, (_, n) => params[n] || '1')}` : `/app/${slug}`)
+  const queryNames = $derived(d.screen ? incoming(d.screen, d.screens.map((s) => (s.id === d.screen?.id && d.root ? { ...s, definition: d.root } : s))).filter((r) => r.path.startsWith('query.')).map((r) => r.path.slice(6)) : [])
+  const appUrl = $derived(d.screen ? `/app/${slug}${d.screen.route.replace(/:(\w+)/g, (_, n) => params[n] || '1')}${Object.values(queryPreview).some(Boolean) ? '?' + new URLSearchParams(Object.entries(queryPreview).filter(([, v]) => v)) : ''}` : `/app/${slug}`)
 </script>
 
 <svelte:window onkeydown={keydown} />
@@ -296,6 +301,12 @@
               <Input class="h-7 w-16 text-xs" value={params[pn] ?? ''} oninput={(e) => (params = { ...params, [pn]: e.currentTarget.value })} aria-label={`Preview ${pn}`} />
             </div>
           {/each}
+          {#each queryNames as qn (qn)}
+            <div class="text-muted-foreground flex items-center gap-1.5 text-xs">
+              <span class="font-mono">?{qn}</span>
+              <Input class="h-7 w-24 text-xs" value={queryPreview[qn] ?? ''} oninput={(e) => (queryPreview = { ...queryPreview, [qn]: e.currentTarget.value })} aria-label={`Preview ${qn}`} />
+            </div>
+          {/each}
           <div class="ml-auto flex items-center gap-2">
             <span class="text-muted-foreground flex items-center gap-1 text-xs">
               {#if d.saving === 'saving'}Saving…{:else if d.saving === 'error'}<CircleAlertIcon class="text-destructive size-3.5" /><span class="text-destructive" title={d.saveError}>Not saved</span>{:else}<CheckIcon class="size-3.5" />Saved{/if}
@@ -314,7 +325,7 @@
                 {#key d.screen.id}
                   <ScreenHost {rt} root={d.root} scope={() => ({
                     user: session.user ? { id: session.user.id, name: session.user.name, email: session.user.email } : null,
-                    app: { id: d.app.id, name: d.app.name, slug: d.app.slug }, url: params, query: {}, state: rt.state,
+                    app: { id: d.app.id, name: d.app.name, slug: d.app.slug }, url: params, query: queryPreview, state: rt.state,
                   })} />
                 {/key}
               </AppFrame>

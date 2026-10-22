@@ -86,7 +86,7 @@
   onDestroy(() => setMode('system'))
 
   const rt = $derived(info ? new Runtime({
-    appId: info.app.id, appSlug: info.app.slug, tables: info.tables, queries: info.queries, flows: info.flows ?? [], editing: false,
+    appId: info.app.id, appSlug: info.app.slug, tables: info.tables, queries: info.queries, flows: info.flows ?? [], screens: info.screens, editing: false,
     navigate: (to) => navigate(base + (to === '/' ? '' : to)),
     toast: (kind, message) => (kind === 'error' ? toast.error(message) : kind === 'info' ? toast.info(message) : toast.success(message)),
     confirm: (t, m) => confirmHost?.ask(t, m) ?? Promise.resolve(window.confirm(t)),
@@ -114,10 +114,10 @@
     <AppFrame design={info.app.design} appName={info.app.name} screens={info.screens} current={matched?.screen.id} user={info.user}
       onNavigate={(r) => rt.navigate(r)} onSignOut={signOut} onSignIn={() => (needsLogin = true)}>
       {#if matched}
-        {#key matched.screen.id + JSON.stringify(matched.params)}
+        {#key matched.screen.id + JSON.stringify(matched.params) + route.search}
           <ScreenHost {rt} root={matched.screen.definition} scope={() => ({
             user: info!.user, app: { id: info!.app.id, name: info!.app.name, slug: info!.app.slug },
-            url: matched.params, query: Object.fromEntries(new URLSearchParams(location.search)), state: rt.state,
+            url: matched.params, query: Object.fromEntries(new URLSearchParams(route.search)), state: rt.state,
           })} />
         {/key}
       {:else if info.screens.length === 0}

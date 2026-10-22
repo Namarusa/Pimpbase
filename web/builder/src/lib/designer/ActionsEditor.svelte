@@ -9,6 +9,7 @@
   import ArrowUpIcon from '@lucide/svelte/icons/arrow-up'
   import BindingInput from './BindingInput.svelte'
   import FieldSelect from './FieldSelect.svelte'
+  import NavigateEditor from './NavigateEditor.svelte'
   import { actionInfo, actionTypes, describe } from '../screen/actions'
   import { registry } from '../screen/registry'
   import { getDesigner } from './state.svelte'
@@ -57,7 +58,9 @@
           {:else}
             <div class="flex flex-col gap-1">
               <Label class="text-muted-foreground text-xs font-normal">{f.label}</Label>
-              {#if f.kind === 'text'}
+              {#if f.kind === 'screen'}
+                <NavigateEditor action={a} screens={d.screens} {groups} onChange={(na) => onChange(list.map((x, j) => (j === i ? na : x)))} />
+              {:else if f.kind === 'text'}
                 <BindingInput value={a[f.key] ?? ''} onChange={(v) => set(i, f.key, v)} {groups} placeholder={f.placeholder} />
               {:else if f.kind === 'select'}
                 <Select.Root type="single" value={a[f.key] ?? ''} onValueChange={(v) => set(i, f.key, v)}>

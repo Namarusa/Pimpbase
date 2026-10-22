@@ -4,6 +4,7 @@ import { getContext, setContext } from 'svelte'
 import type { RuntimeFlow, RuntimeQuery, Table } from '../api'
 import { queryTable } from '../apis/bindings'
 import type { Node, Scope } from './types'
+import type { ScreenRef } from './navigation'
 
 export class Runtime {
   appId: string
@@ -13,6 +14,8 @@ export class Runtime {
   queries: RuntimeQuery[]
   // flows are the button-started flows the visitor may run.
   flows: RuntimeFlow[]
+  // screens are the app's screens, for Go to screen actions.
+  screens: ScreenRef[]
   // env picks the variables queries use: development in the builder.
   env: 'development' | 'production'
   // editing is true inside the builder's canvas.
@@ -40,7 +43,7 @@ export class Runtime {
 
   constructor(o: {
     appId: string; appSlug: string; tables: Table[]; editing: boolean
-    queries?: RuntimeQuery[]; flows?: RuntimeFlow[]; env?: 'development' | 'production'
+    queries?: RuntimeQuery[]; flows?: RuntimeFlow[]; screens?: ScreenRef[]; env?: 'development' | 'production'
     navigate: (path: string) => void
     toast: (kind: 'success' | 'error' | 'info', message: string) => void
     confirm: (title: string, message: string) => Promise<boolean>
@@ -51,6 +54,7 @@ export class Runtime {
     this.tables = o.tables
     this.queries = o.queries ?? []
     this.flows = o.flows ?? []
+    this.screens = o.screens ?? []
     this.env = o.env ?? 'production'
     this.editing = o.editing
     this.navigate = o.navigate

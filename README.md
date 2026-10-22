@@ -221,6 +221,17 @@ toast, refresh data, set state, ask for confirmation, export CSV, print or
 save as PDF, sign out. Printing leaves out the app's navigation and any
 component marked "Hide when printing", and prints dark themes light.
 
+To pass values from one screen to another, use the **Go to screen** action:
+pick the target screen, fill a value for each `:part` of its route (`:id`
+gets `{{ row._id }}`), and add extra values that go in the query string.
+The target reads them as `{{ url.id }}` and `{{ query.customer }}`, for
+example in a row provider's Row id or a table filter
+(`[Customer] = "{{ query.customer }}"`; a filter line whose value is empty
+is skipped, so the same screen opened from the menu shows every row). The
+target's settings list the values it receives and which screens send them,
+the binding picker offers them, and the designer's toolbar has a box for
+each to preview the screen with a value.
+
 The UI uses [shadcn-svelte](https://shadcn-svelte.com) components (bits-ui,
 Tailwind CSS 4) and LayerChart for charts. Known limits: charts and stats
 group rows in the browser over at most 1,000 rows; there is no custom code

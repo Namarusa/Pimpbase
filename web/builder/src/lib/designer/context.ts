@@ -37,7 +37,9 @@ export function contextTable(root: Node, id: string, tables: Table[]): Table | u
 export interface BindingGroup { label: string; items: { path: string; hint?: string }[]; open?: boolean; note?: string }
 
 // bindingsFor lists the bindings a component can read.
-export function bindingsFor(root: Node, id: string, tables: Table[], route: string, forActions = false): BindingGroup[] {
+// received lists the values other screens send to this one (see
+// incoming in screen/navigation).
+export function bindingsFor(root: Node, id: string, tables: Table[], route: string, forActions = false, received: { path: string; from: string[] }[] = []): BindingGroup[] {
   const groups: BindingGroup[] = []
   const path = pathTo(root, id) ?? []
   const self = path[path.length - 1]
@@ -70,8 +72,14 @@ export function bindingsFor(root: Node, id: string, tables: Table[], route: stri
     groups.push({ label: 'Row the dialog was opened from', items: [{ path: 'row._id', hint: 'id' }] })
   }
 
-  const params = route.split('/').filter((s) => s.startsWith(':')).map((s) => ({ path: `url.${s.slice(1)}`, hint: 'route' }))
-  if (params.length) groups.push({ label: 'Route', items: params })
+  const sent = (r: { from: string[] }) => (r.from.length ? `from ${r.from.join(', ')}` : undefined)
+  const params = route.split('/').filter((s) => s.startsWith(':')).map((s) => {
+    const r = received.find((x) => x.path === `url.${s.slice(1)}`)
+    return { path: `url.${s.slice(1)}`, hint: (r && sent(r)) || 'route' }
+  })
+  if (params.length) groups.push({ label: 'Route', items: params, note: 'Filled from the address: on /orders/42, url.id is 42.' })
+  const query = received.filter((r) => r.path.startsWith('query.')).map((r) => ({ path: r.path, hint: sent(r) }))
+  if (query.length) groups.push({ label: 'Query string', items: query, note: 'Extra values other screens send when they open this one.' })
 
   const state = new Set<string>()
   for (const n of all(root)) {
