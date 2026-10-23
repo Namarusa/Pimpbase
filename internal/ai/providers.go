@@ -19,6 +19,8 @@ const (
 	XAI        = "xai"
 	DeepSeek   = "deepseek"
 	Groq       = "groq"
+	OpenRouter = "openrouter"
+	TypeSafe   = "typesafe"
 )
 
 // Provider describes an LLM vendor the assistant can use.
@@ -44,6 +46,12 @@ type Provider struct {
 	KeyHelp       string `json:"keyHelp"`
 	// Step says which settings the flow AI step offers with this provider.
 	Step StepOptions `json:"step"`
+	// SystemOne lists the starts of the provider's model ids that are
+	// System One models ("" for all), which answer typed questions.
+	SystemOne []string `json:"systemOne,omitempty"`
+	// NoChat is true where the provider has no chat models, so it serves
+	// flows but not the assistant.
+	NoChat bool `json:"noChat,omitempty"`
 }
 
 // DefaultModel is the model used unless an admin picks another.
@@ -65,6 +73,8 @@ var Providers = []Provider{
 	{ID: XAI, Name: "xAI Grok", NeedsKey: true, DefaultBaseURL: "https://api.x.ai/v1", CanList: true, ModelLabel: "Model", KeyPrefix: "xai-", KeyHelp: "Create one at console.x.ai.", Step: chatStep},
 	{ID: DeepSeek, Name: "DeepSeek", NeedsKey: true, DefaultBaseURL: "https://api.deepseek.com/v1", CanList: true, ModelLabel: "Model", KeyPrefix: "sk-", KeyHelp: "Create one at platform.deepseek.com.", Step: deepseekStep},
 	{ID: Groq, Name: "Groq", NeedsKey: true, DefaultBaseURL: "https://api.groq.com/openai/v1", CanList: true, ModelLabel: "Model", KeyPrefix: "gsk_", KeyHelp: "Create one at console.groq.com.", Step: chatStep},
+	{ID: OpenRouter, Name: "OpenRouter", NeedsKey: true, DefaultBaseURL: "https://openrouter.ai/api/v1", CanList: true, ModelLabel: "Model", KeyPrefix: "sk-or-v1-", KeyHelp: "Create one at openrouter.ai/keys. One key reaches chat models of many vendors, and System One models such as typesafe/jev-1.14 for flows.", Step: chatStep, SystemOne: []string{"typesafe/", "~typesafe/"}},
+	{ID: TypeSafe, Name: "TypeSafe Jev", NeedsKey: true, DefaultBaseURL: "https://api.typesafe.ai/v1", DefaultModel: "jev-latest", CanList: true, ModelLabel: "Model", KeyHelp: "Create one at typesafe.ai. Jev is a System One model: in flows it answers questions (choice, score, yes/no) about your data, with probabilities. It does not write text, so it cannot run the assistant.", SystemOne: []string{""}, NoChat: true},
 	{ID: Compatible, Name: "OpenAI-compatible", NeedsBaseURL: true, CanList: true, ModelLabel: "Model", KeyHelp: "Any server speaking the OpenAI chat completions API: Ollama (http://localhost:11434/v1), LM Studio (http://localhost:1234/v1), Jan (http://localhost:1337/v1), OpenRouter, Together, vLLM… Leave the key empty when the server needs none.", Step: chatStep},
 }
 
@@ -198,10 +208,13 @@ func (s *Service) active(ctx context.Context) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
-	if _, ok := provider(p); ok {
+	if pr, ok := provider(p); ok && !pr.NoChat {
 		return p, "workspace", nil
 	}
 	for _, pr := range Providers {
+		if pr.NoChat {
+			continue
+		}
 		st, _, err := s.providerStatus(ctx, pr)
 		if err != nil {
 			return "", "", err
@@ -302,6 +315,9 @@ func (s *Service) Update(ctx context.Context, u Update) error {
 			return &Error{"the server was started with this setting, which is used instead; change it there"}
 		}
 	}
+	if u.Use && p.NoChat {
+		return &Error{p.Name + " answers questions in flows but cannot run the assistant; pick a chat provider for it"}
+	}
 	if u.Use && s.ServerProvider != "" && s.ServerProvider != id {
 		return &Error{"the server was started with a provider, which is used instead; change it there"}
 	}
@@ -371,6 +387,9 @@ func (s *Service) Test(ctx context.Context, id string) (*Check, error) {
 	}
 	if !st.Configured {
 		return nil, &Error{p.Name + " still needs " + st.Missing}
+	}
+	if p.NoChat || systemOne(p, cfg.Model) {
+		return s.testSystemOne(ctx, p, cfg)
 	}
 	start := s.now()
 	echo := Tool{

@@ -441,6 +441,17 @@ A flow is a trigger and a list of steps, edited on a canvas in the
   with its API version). The result also has `text`, `model`, `provider`,
   `usage.input`, `usage.output` and `truncated`; one call may take up to
   3 minutes.
+- **System One models** (TypeSafe's Jev, with the TypeSafe provider or
+  through OpenRouter as `typesafe/jev-1.14` or `~typesafe/jev-latest`) do
+  not take a prompt. The step then asks for a **state** (text, or a whole
+  binding such as `{{ trigger.row }}`, sent as JSON) and **questions**:
+  a *choice* among options, a *score* on 2 to 10 levels, or a *yes/no*
+  (noul). Each is answered in parallel with probabilities:
+  `{{ steps.Jev.data.team.choice }}`, `.confidence`, `.probabilities.billing`,
+  `{{ steps.Jev.data.urgency.score }}` (the expected level from 0) and
+  `{{ steps.Jev.data.angry.noul }}` (0 to 1). A condition on `.confidence`
+  can hand unsure cases to a person or a larger model. TypeSafe has no chat
+  models, so it serves flows only, not the assistant.
 - **Runs**: each run keeps its trigger data and, per step, the inputs, the
   result, the time taken and the error; the 200 latest runs of a flow are
   kept. Secret variables are hidden in the log. Test runs use the
@@ -492,6 +503,8 @@ that calls a model from the AI provider a workspace admin picks:
 | xAI Grok | `--xai-key`, `XAI_API_KEY` | optional | picked from the list, or `--ai-model` |
 | DeepSeek | `--deepseek-key`, `DEEPSEEK_API_KEY` | optional | picked from the list, or `--ai-model` |
 | Groq | `--groq-key`, `GROQ_API_KEY` | optional | picked from the list, or `--ai-model` |
+| OpenRouter | `--openrouter-key`, `OPENROUTER_API_KEY` | optional | picked from the list, or `--ai-model` |
+| TypeSafe Jev (flows only) | `--typesafe-key`, `TYPESAFE_API_KEY` | optional | `jev-latest` unless another is picked |
 | OpenAI-compatible | `--openai-compatible-key` (optional) | `--openai-compatible-url` | `--openai-compatible-model` |
 
 Every flag also reads `PIMPBASE_<FLAG>` (e.g. `PIMPBASE_OPENAI_KEY`).
@@ -598,7 +611,7 @@ internal/queries/  API and database data sources, queries, variables and the que
 internal/extdb/    PostgreSQL, MySQL, SQL Server and MongoDB drivers, schema, rows, SQL parameters
 internal/exttables/ tables imported from external databases
 internal/flows/    flows, the engine, cron, email, PDF documents, AI steps
-internal/ai/       the assistant: providers (Anthropic, OpenAI, Gemini, Azure, Mistral, xAI, DeepSeek, Groq, OpenAI-compatible), drafts, formulas, questions, flow AI steps
+internal/ai/       the assistant: providers (Anthropic, OpenAI, Gemini, Azure, Mistral, xAI, DeepSeek, Groq, OpenRouter, TypeSafe, OpenAI-compatible), drafts, formulas, questions, flow AI steps
 internal/cluster/  servers sharing a database: heartbeats and job claims
 internal/bundle/   .bubiapp export and import
 internal/backup/   SQLite backups while serving

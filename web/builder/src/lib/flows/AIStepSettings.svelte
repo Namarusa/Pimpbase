@@ -16,7 +16,8 @@
   import { navigate } from '../router.svelte'
   import { isAdmin } from '../session.svelte'
   import { getEditor } from './editor.svelte'
-  import { flowHelp, type AIField } from './steps'
+  import { flowHelp, systemOneModel, type AIField, type AIQuestion } from './steps'
+  import QuestionsEditor from './QuestionsEditor.svelte'
 
   // AIStepSettings edits an AI step. Its model settings follow the
   // provider: each shows only what that provider's API takes.
@@ -64,6 +65,13 @@
   const model = $derived(step.inputs.model ?? '')
   $effect(() => {
     if (model && known.length && !known.includes(model) && !model.includes('{{')) typing = true
+  })
+
+  // A System One model answers questions about a state, not a prompt.
+  const so = $derived(!!p && systemOneModel(p.id, model || p.model, p.systemOne ?? []))
+  const questions = $derived((step.inputs.questions ?? []) as AIQuestion[])
+  $effect(() => {
+    if (so && !questions.length) set('questions', [{ name: 'category', type: 'choice', instructions: '', options: [{ name: '' }, { name: '' }] }])
   })
 
   function set(key: string, v: any) {
@@ -167,6 +175,22 @@
   {/if}
 {/if}
 
+{#if so}
+  <div class="rounded-md border border-violet-500/30 bg-violet-500/6 p-2 text-xs" data-testid="so-note">
+    <span class="font-medium">{model || p?.model} is a System One model.</span>
+    It does not write text: it answers typed questions about the state below, each with probabilities, in one fast call. Use a condition on <code class="font-mono">.confidence</code> to send unsure cases to a person or a larger model.
+  </div>
+  <div class="flex flex-col gap-1.5">
+    <Label class="text-xs">State</Label>
+    <TemplateEditor value={step.inputs.state ?? ''} {groups} {scope} help={flowHelp} minRows={4} placeholder={'{{ trigger.row }}'} onChange={(v) => set('state', v)} />
+    <p class="text-muted-foreground text-xs">What the questions are about. A whole binding such as <code class="font-mono">{'{{ trigger.row }}'}</code> is sent as JSON; anything else as text.</p>
+  </div>
+  <div class="flex flex-col gap-1.5">
+    <Label class="text-xs">Questions</Label>
+    <QuestionsEditor {questions} step={step.name} {groups} {scope} onChange={(q) => set('questions', q)} />
+    <p class="text-muted-foreground text-xs">Each question is answered on its own, in parallel. Ask one specific thing per question.</p>
+  </div>
+{:else}
 <div class="flex flex-col gap-1.5">
   <Label class="text-xs">Instructions</Label>
   <TemplateEditor value={step.inputs.system ?? ''} {groups} {scope} help={flowHelp} minRows={3} placeholder="You sort support tickets for Acme. Be brief." onChange={(v) => set('system', v)} />
@@ -211,7 +235,9 @@
   {/if}
 </div>
 
-{#if o}
+{/if}
+
+{#if o && !so}
   <Separator />
   <div class="flex flex-col gap-3" data-testid="ai-model-settings">
     <div>

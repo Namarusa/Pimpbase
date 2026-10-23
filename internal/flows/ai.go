@@ -60,6 +60,20 @@ func (x *exec) aiStep(in *inputs) (any, error) {
 			}
 		}
 	}
+	if list, _ := in.raw["questions"].([]any); len(list) > 0 {
+		if g.Questions, err = questions(in, list); err != nil {
+			return nil, err
+		}
+		var names []string
+		for _, q := range g.Questions {
+			names = append(names, q.Name+" ("+q.Type+")")
+		}
+		in.values["questions"] = strings.Join(names, ", ")
+		if g.State, err = in.value("state"); err != nil {
+			return nil, err
+		}
+		g.State = plain(g.State)
+	}
 	num := func(key string) (*float64, error) {
 		s, err := in.text(key, interp.Text)
 		if err != nil || strings.TrimSpace(s) == "" {
@@ -121,8 +135,60 @@ func (x *exec) aiStep(in *inputs) (any, error) {
 		"text": a.Text, "provider": a.Provider, "model": a.Model, "truncated": a.Truncated,
 		"usage": map[string]any{"input": a.Usage.Input, "output": a.Usage.Output},
 	}
-	if g.Output != "text" && g.Output != "" {
+	if a.Usage.Cost > 0 {
+		out["usage"].(map[string]any)["cost"] = a.Usage.Cost
+	}
+	if a.Data != nil {
 		out["data"] = a.Data
+	}
+	return out, nil
+}
+
+// questions reads a System One step's questions; their texts may hold
+// bindings.
+func questions(in *inputs, list []any) ([]ai.Question, error) {
+	text := func(src string) (string, error) { return render(src, interp.Text, in.sc) }
+	var out []ai.Question
+	for _, item := range list {
+		m, _ := item.(map[string]any)
+		q := ai.Question{Name: strings.TrimSpace(str(m, "name")), Type: str(m, "type")}
+		if q.Name == "" {
+			continue
+		}
+		var err error
+		fail := func(e error) error { return fmt.Errorf("%s: %w", q.Name, e) }
+		if q.Instructions, err = text(str(m, "instructions")); err != nil {
+			return nil, fail(err)
+		}
+		if q.True, err = text(str(m, "true")); err != nil {
+			return nil, fail(err)
+		}
+		if q.False, err = text(str(m, "false")); err != nil {
+			return nil, fail(err)
+		}
+		opts, _ := m["options"].([]any)
+		for _, o := range opts {
+			om, _ := o.(map[string]any)
+			f := ai.Field{Name: strings.TrimSpace(str(om, "name"))}
+			if f.Name == "" {
+				continue
+			}
+			if f.Description, err = text(str(om, "description")); err != nil {
+				return nil, fail(err)
+			}
+			q.Options = append(q.Options, f)
+		}
+		levels, _ := m["levels"].([]any)
+		for _, l := range levels {
+			s, _ := l.(string)
+			if s, err = text(s); err != nil {
+				return nil, fail(err)
+			}
+			if strings.TrimSpace(s) != "" {
+				q.Levels = append(q.Levels, s)
+			}
+		}
+		out = append(out, q)
 	}
 	return out, nil
 }

@@ -199,6 +199,11 @@ export const stepTypes: StepInfo[] = [
 // aiOutputs lists what an AI step gives later steps.
 const aiOutputs = (s: FlowStep) => {
   const i = s.inputs ?? {}
+  if (systemOneStep(i)) {
+    const per: Record<string, string[]> = { choice: ['choice', 'confidence', 'probabilities'], score: ['score', 'confidence', 'probabilities', 'legend'], noul: ['noul'] }
+    return [{ path: 'data', hint: 'the answers' }, ...((i.questions ?? []) as AIQuestion[]).filter((q) => q.name).flatMap((q) => (per[q.type] ?? []).map((k) => ({ path: `data.${q.name}.${k}`, hint: k === 'noul' ? '0 to 1' : k === 'score' ? 'from 0' : k === 'confidence' ? '0 to 1' : '' }))),
+      { path: 'text', hint: 'answers in words' }, { path: 'model' }, { path: 'provider' }, { path: 'usage.input', hint: 'tokens in' }, { path: 'usage.cost', hint: 'USD, OpenRouter' }]
+  }
   const data = i.output === 'fields'
     ? [{ path: 'data', hint: 'the fields' }, ...((i.fields ?? []) as AIField[]).filter((f) => f.name).map((f) => ({ path: `data.${f.name}`, hint: f.type || 'text' }))]
     : i.output === 'json' ? [{ path: 'data', hint: 'parsed JSON' }] : []
@@ -207,13 +212,23 @@ const aiOutputs = (s: FlowStep) => {
 
 export interface AIField { name: string; type: 'text' | 'number' | 'boolean' | 'list'; description?: string }
 
+// System One models (TypeSafe's Jev, directly or through OpenRouter)
+// answer typed questions about a state instead of a prompt.
+export interface AIQuestion {
+  name: string; type: 'choice' | 'score' | 'noul'; instructions: string
+  options?: { name: string; description?: string }[]; levels?: string[]; true?: string; false?: string
+}
+export const systemOneModel = (provider: string, model: string, prefixes?: string[]) =>
+  (prefixes ?? (provider === 'typesafe' ? [''] : provider === 'openrouter' ? ['typesafe/', '~typesafe/'] : [])).some((p) => model.startsWith(p))
+const systemOneStep = (i: Record<string, any>) => !!i.questions?.length && systemOneModel(i.provider ?? '', i.model || (i.provider === 'typesafe' ? 'jev-latest' : ''))
+
 // The AI step's settings are drawn by AIStepSettings, which shows only
 // those the chosen provider takes; this list names them for drafts.
 stepTypes.splice(stepTypes.findIndex((s) => s.type === 'generate_pdf') + 1, 0, {
   type: 'ai', label: 'AI prompt', group: 'Actions', icon: SparklesIcon, tone: tones.ai, name: 'Ai',
-  description: 'Ask an AI model, for text or structured fields.',
+  description: 'Ask an AI model for text or fields, or a System One model (Jev) typed questions.',
   inputs: [
-    { key: 'provider', label: 'Provider', kind: 'text', help: 'anthropic, openai, gemini, azure, mistral, xai, deepseek, groq or openai_compatible; empty uses the workspace’s.' },
+    { key: 'provider', label: 'Provider', kind: 'text', help: 'anthropic, openai, gemini, azure, mistral, xai, deepseek, groq, openrouter, typesafe or openai_compatible; empty uses the workspace’s.' },
     { key: 'model', label: 'Model', kind: 'text', help: 'Empty uses the provider’s saved model. For Azure, the deployment.' },
     { key: 'system', label: 'Instructions', kind: 'template' },
     { key: 'prompt', label: 'Prompt', kind: 'template', placeholder: 'Summarise this ticket: {{ trigger.row.Description }}' },
@@ -227,6 +242,8 @@ stepTypes.splice(stepTypes.findIndex((s) => s.type === 'generate_pdf') + 1, 0, {
     { key: 'seed', label: 'Seed', kind: 'text' },
     { key: 'stop', label: 'Stop sequences', kind: 'long', help: 'One per line.' },
     { key: 'apiVersion', label: 'API version', kind: 'text', help: 'Azure only.' },
+    { key: 'state', label: 'State', kind: 'template', help: 'System One models (provider typesafe, or openrouter with a typesafe/ model) only: the data the questions are about; a whole binding is sent as JSON.' },
+    { key: 'questions', label: 'Questions', kind: 'ai_fields', help: 'System One only, instead of a prompt: list of {name, type: choice|score|noul, instructions, options: [{name, description}] for choice, levels: [text] for score, true/false texts for noul}. Read as steps.Name.data.<name>.choice|score|noul, .confidence, .probabilities.' },
   ],
   outputs: aiOutputs,
 })
@@ -403,6 +420,7 @@ export function summary(s: FlowStep, tables: Table[], queries: Query[]): string 
     case 'generate_pdf': return `${i.title || i.fileName || 'Untitled'}${i.field ? ` → ${i.field}` : ''}`
     case 'ai': {
       const who = i.model || i.provider || 'AI'
+      if (systemOneStep(i)) return `${who} asks ${((i.questions ?? []) as AIQuestion[]).map((q) => q.name).filter(Boolean).join(', ') || 'questions'}`
       if (i.output === 'fields') return `${who} → ${((i.fields ?? []) as AIField[]).map((f) => f.name).filter(Boolean).join(', ') || 'fields'}`
       return `${who}${i.output === 'json' ? ' → JSON' : ''}: ${String(i.prompt || '…').replace(/\s+/g, ' ').slice(0, 80)}`
     }

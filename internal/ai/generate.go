@@ -73,6 +73,10 @@ type Generation struct {
 	Stop        []string
 	Effort      string
 	Thinking    string
+	// State and Questions are for System One models, which answer typed
+	// questions about the state instead of a prompt.
+	State     any
+	Questions []Question
 }
 
 // Generated is a model's answer to a Generation.
@@ -90,6 +94,8 @@ type Generated struct {
 type Usage struct {
 	Input  int64 `json:"input"`
 	Output int64 `json:"output"`
+	// Cost is in US dollars, where the provider says (OpenRouter).
+	Cost float64 `json:"cost,omitempty"`
 }
 
 // genConfig is a Generation's settings, as the chat adapters read them.
@@ -217,9 +223,6 @@ func (s *Service) Generate(ctx context.Context, g Generation) (*Generated, error
 	if !ok {
 		return nil, &Error{fmt.Sprintf("there is no AI provider %q", id)}
 	}
-	if err := g.check(p); err != nil {
-		return nil, err
-	}
 	st, cfg, err := s.providerStatus(ctx, p)
 	if err != nil {
 		return nil, err
@@ -238,6 +241,15 @@ func (s *Service) Generate(ctx context.Context, g Generation) (*Generated, error
 		return nil, &Error{p.Name + " is not set up: a workspace admin adds " + st.Missing + " in Users → AI assistant"}
 	case cfg.Model == "":
 		return nil, &Error{"choose the " + strings.ToLower(p.ModelLabel) + " to use"}
+	}
+	if systemOne(p, cfg.Model) {
+		if err := checkQuestions(g.Questions); err != nil {
+			return nil, err
+		}
+		return s.askSystemOne(ctx, p, cfg, g.State, g.Questions)
+	}
+	if err := g.check(p); err != nil {
+		return nil, err
 	}
 
 	gc := &genConfig{temperature: g.Temperature, topP: g.TopP, seed: g.Seed, stop: g.Stop, effort: g.Effort, thinking: g.Thinking}

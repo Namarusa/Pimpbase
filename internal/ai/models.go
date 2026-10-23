@@ -64,6 +64,8 @@ func (s *Service) ListModels(ctx context.Context, id string, draft Update) (*Mod
 		models, err = s.geminiModels(ctx, cfg)
 	case Azure:
 		models, err = s.azureDeployments(ctx, cfg)
+	case TypeSafe:
+		models, err = s.typesafeModels(ctx, cfg)
 	default:
 		models, err = s.openaiModels(ctx, id, cfg)
 	}
@@ -162,11 +164,17 @@ func (s *Service) openaiModels(ctx context.Context, id string, cfg Config) ([]Mo
 		if m.Supported != nil && !containsString(m.Supported, "tools") {
 			skip = true
 		}
-		if skip {
+		// System One models take no tools: they answer questions in flows.
+		p, _ := provider(id)
+		so := systemOne(p, m.ID)
+		if skip && !(so && !seen[m.ID]) {
 			continue
 		}
 		seen[m.ID] = true
 		mm := Model{ID: m.ID}
+		if so {
+			mm.Note = "System One"
+		}
 		if m.Name != "" && m.Name != m.ID {
 			mm.Name = m.Name
 		}
@@ -174,6 +182,15 @@ func (s *Service) openaiModels(ctx context.Context, id string, cfg Config) ([]Mo
 			mm.Note = "deprecated"
 		}
 		out = append(out, mm)
+	}
+	// OpenRouter's alias for the newest Jev is not in its list.
+	if id == OpenRouter && !seen["~typesafe/jev-latest"] {
+		for _, m := range out {
+			if strings.HasPrefix(m.ID, "typesafe/jev") {
+				out = append([]Model{{ID: "~typesafe/jev-latest", Note: "System One, newest Jev"}}, out...)
+				break
+			}
+		}
 	}
 	return out, nil
 }

@@ -343,7 +343,7 @@ export type AISource = '' | 'server' | 'workspace' | 'default'
 export interface AIProviderStatus {
   id: string; name: string; needsKey: boolean; needsBaseUrl: boolean; defaultBaseUrl: string; defaultModel: string
   models: string[]; canList: boolean; modelLabel: string; hasApiVersion: boolean; keyPrefix: string; keyHelp: string
-  configured: boolean; missing?: string; step: AIStepOptions
+  configured: boolean; missing?: string; step: AIStepOptions; systemOne?: string[]; noChat?: boolean
   keySource: AISource; keyHint: string; baseUrl: string; baseUrlSource: AISource
   model: string; modelSource: AISource; apiVersion: string; apiVersionSource: AISource
 }

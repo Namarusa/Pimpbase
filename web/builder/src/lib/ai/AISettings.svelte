@@ -143,7 +143,9 @@
           <div class="flex flex-col gap-4 rounded-lg border p-4" data-testid="provider-settings">
             <div class="flex flex-wrap items-center gap-2">
               <div class="text-sm font-medium">{p.name}</div>
-              {#if !inUse}
+              {#if p.noChat}
+                <span class="text-muted-foreground ml-auto text-xs">For flow AI steps only: it answers questions, it does not chat.</span>
+              {:else if !inUse}
                 <Button size="sm" class="ml-auto" disabled={saving || status.providerSource === 'server'} onclick={() => save({ use: true }, `The assistant now uses ${p.name}`)}>Use {p.name}</Button>
               {/if}
             </div>
@@ -202,7 +204,7 @@
                       <Select.Item value={'__other__'} label="Type another name">Type another name…</Select.Item>
                     </Select.Content>
                   </Select.Root>
-                  <p class="text-muted-foreground text-xs">{models.length} {p.id === 'azure' ? 'deployments' : 'models'} from {p.name}{p.id === 'azure' ? '' : ' that can use tools'}.</p>
+                  <p class="text-muted-foreground text-xs">{models.length} {p.id === 'azure' ? 'deployments' : 'models'} from {p.name}{p.id === 'azure' || p.noChat ? '' : ' that can use tools'}.</p>
                 {:else}
                   <Input id="ai-model" bind:value={model} autocomplete="off" list="ai-models" class="font-mono"
                     placeholder={p.defaultModel || (p.id === 'azure' ? 'the deployment name' : 'the model name')} />

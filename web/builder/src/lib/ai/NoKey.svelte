@@ -14,7 +14,7 @@
   <div class="bg-muted flex size-10 items-center justify-center rounded-full"><KeyRoundIcon class="text-muted-foreground size-5" /></div>
   <div class="text-sm font-medium">The assistant needs an AI provider</div>
   <p class="text-muted-foreground max-w-xs text-sm">
-    Pick Anthropic, OpenAI, Gemini, Azure OpenAI, Mistral, xAI Grok, DeepSeek, Groq or your own OpenAI-compatible server. Keys stay on the Pimpbase server and are never sent to published apps or browsers.
+    Pick Anthropic, OpenAI, Gemini, Azure OpenAI, Mistral, xAI Grok, DeepSeek, Groq, OpenRouter or your own OpenAI-compatible server. Keys stay on the Pimpbase server and are never sent to published apps or browsers.
     {#if !admin}Ask a workspace admin to add one.{/if}
   </p>
   {#if admin}<Button size="sm" onclick={() => { onNavigate?.(); navigate('/users/ai') }}>Set it up</Button>{/if}

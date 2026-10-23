@@ -2,7 +2,7 @@
 // queries and flows from a description, writes formulas, and answers
 // questions about an app's data. It calls a model from one of several
 // providers (Anthropic, OpenAI, Google Gemini, Azure OpenAI, Mistral, xAI,
-// DeepSeek, Groq, or any OpenAI-compatible server) with settings kept on
+// DeepSeek, Groq, OpenRouter, or any OpenAI-compatible server) with settings kept on
 // the server: from the environment, or saved by a workspace admin. Flows
 // call it too, through Generate.
 // Nothing it makes is applied by itself; drafts go back to the builder to
@@ -117,8 +117,11 @@ func (s *Service) converse(ctx context.Context, system, prompt string, tools []T
 	if err != nil {
 		return nil, err
 	}
-	if !st.Configured {
+	if !st.Configured || p.NoChat {
 		return nil, ErrNoKey
+	}
+	if systemOne(p, cfg.Model) {
+		return nil, &Error{cfg.Model + " is a System One model, which answers questions in flows but cannot run the assistant; pick another model in Users → AI assistant"}
 	}
 	return s.run(ctx, p, cfg, system, prompt, tools, maxTokens, finish)
 }
@@ -236,7 +239,7 @@ func (s *Service) newChat(p Provider, cfg Config, req request) chat {
 	switch p.ID {
 	case Gemini:
 		return &geminiChat{s: s, cfg: cfg, req: req}
-	case OpenAI, Azure, Mistral, XAI, DeepSeek, Groq, Compatible:
+	case OpenAI, Azure, Mistral, XAI, DeepSeek, Groq, OpenRouter, Compatible:
 		return &openaiChat{s: s, flavor: p.ID, cfg: cfg, req: req}
 	}
 	return newAnthropicChat(s, cfg, req)
