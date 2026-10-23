@@ -16,6 +16,9 @@ const (
 	Azure      = "azure"
 	Mistral    = "mistral"
 	Compatible = "openai_compatible"
+	XAI        = "xai"
+	DeepSeek   = "deepseek"
+	Groq       = "groq"
 )
 
 // Provider describes an LLM vendor the assistant can use.
@@ -39,6 +42,8 @@ type Provider struct {
 	HasAPIVersion bool   `json:"hasApiVersion"`
 	KeyPrefix     string `json:"keyPrefix"`
 	KeyHelp       string `json:"keyHelp"`
+	// Step says which settings the flow AI step offers with this provider.
+	Step StepOptions `json:"step"`
 }
 
 // DefaultModel is the model used unless an admin picks another.
@@ -52,12 +57,15 @@ var Models = []string{"claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"
 
 // Providers lists the vendors, in the order the builder shows them.
 var Providers = []Provider{
-	{ID: Anthropic, Name: "Anthropic", NeedsKey: true, DefaultBaseURL: "https://api.anthropic.com", DefaultModel: DefaultModel, Models: Models, CanList: true, ModelLabel: "Model", KeyPrefix: "sk-ant-", KeyHelp: "Create one at console.anthropic.com."},
-	{ID: OpenAI, Name: "OpenAI", NeedsKey: true, DefaultBaseURL: "https://api.openai.com/v1", CanList: true, ModelLabel: "Model", KeyPrefix: "sk-", KeyHelp: "Create one at platform.openai.com."},
-	{ID: Gemini, Name: "Google Gemini", NeedsKey: true, DefaultBaseURL: "https://generativelanguage.googleapis.com/v1beta", CanList: true, ModelLabel: "Model", KeyHelp: "Create one in Google AI Studio (aistudio.google.com)."},
-	{ID: Azure, Name: "Azure OpenAI", NeedsKey: true, NeedsBaseURL: true, CanList: true, ModelLabel: "Deployment", HasAPIVersion: true, KeyHelp: "Find the key and endpoint under the resource's Keys and Endpoint page in the Azure portal."},
-	{ID: Mistral, Name: "Mistral", NeedsKey: true, DefaultBaseURL: "https://api.mistral.ai/v1", CanList: true, ModelLabel: "Model", KeyHelp: "Create one at console.mistral.ai."},
-	{ID: Compatible, Name: "OpenAI-compatible", NeedsBaseURL: true, CanList: true, ModelLabel: "Model", KeyHelp: "Any server speaking the OpenAI chat completions API: Ollama (http://localhost:11434/v1), LM Studio (http://localhost:1234/v1), OpenRouter, Groq, Together, vLLM… Leave the key empty when the server needs none."},
+	{ID: Anthropic, Name: "Anthropic", NeedsKey: true, DefaultBaseURL: "https://api.anthropic.com", DefaultModel: DefaultModel, Models: Models, CanList: true, ModelLabel: "Model", KeyPrefix: "sk-ant-", KeyHelp: "Create one at console.anthropic.com.", Step: anthropicStep},
+	{ID: OpenAI, Name: "OpenAI", NeedsKey: true, DefaultBaseURL: "https://api.openai.com/v1", CanList: true, ModelLabel: "Model", KeyPrefix: "sk-", KeyHelp: "Create one at platform.openai.com.", Step: openaiStep},
+	{ID: Gemini, Name: "Google Gemini", NeedsKey: true, DefaultBaseURL: "https://generativelanguage.googleapis.com/v1beta", CanList: true, ModelLabel: "Model", KeyHelp: "Create one in Google AI Studio (aistudio.google.com).", Step: geminiStep},
+	{ID: Azure, Name: "Azure OpenAI", NeedsKey: true, NeedsBaseURL: true, CanList: true, ModelLabel: "Deployment", HasAPIVersion: true, KeyHelp: "Find the key and endpoint under the resource's Keys and Endpoint page in the Azure portal.", Step: openaiStep},
+	{ID: Mistral, Name: "Mistral", NeedsKey: true, DefaultBaseURL: "https://api.mistral.ai/v1", CanList: true, ModelLabel: "Model", KeyHelp: "Create one at console.mistral.ai.", Step: chatStep},
+	{ID: XAI, Name: "xAI Grok", NeedsKey: true, DefaultBaseURL: "https://api.x.ai/v1", CanList: true, ModelLabel: "Model", KeyPrefix: "xai-", KeyHelp: "Create one at console.x.ai.", Step: chatStep},
+	{ID: DeepSeek, Name: "DeepSeek", NeedsKey: true, DefaultBaseURL: "https://api.deepseek.com/v1", CanList: true, ModelLabel: "Model", KeyPrefix: "sk-", KeyHelp: "Create one at platform.deepseek.com.", Step: deepseekStep},
+	{ID: Groq, Name: "Groq", NeedsKey: true, DefaultBaseURL: "https://api.groq.com/openai/v1", CanList: true, ModelLabel: "Model", KeyPrefix: "gsk_", KeyHelp: "Create one at console.groq.com.", Step: chatStep},
+	{ID: Compatible, Name: "OpenAI-compatible", NeedsBaseURL: true, CanList: true, ModelLabel: "Model", KeyHelp: "Any server speaking the OpenAI chat completions API: Ollama (http://localhost:11434/v1), LM Studio (http://localhost:1234/v1), Jan (http://localhost:1337/v1), OpenRouter, Together, vLLM… Leave the key empty when the server needs none.", Step: chatStep},
 }
 
 func provider(id string) (Provider, bool) {
@@ -322,7 +330,7 @@ func checkKey(p Provider, k string) error {
 }
 
 // keyPrefixes are the public starts of keys, which a hint may show.
-var keyPrefixes = []string{"sk-ant-", "sk-proj-", "sk-or-v1-", "sk-svcacct-", "sk-", "AIza", "gsk_"}
+var keyPrefixes = []string{"sk-ant-", "sk-proj-", "sk-or-v1-", "sk-svcacct-", "sk-", "AIza", "gsk_", "xai-"}
 
 func hint(key string) string {
 	if len(key) < 12 {

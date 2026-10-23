@@ -106,7 +106,7 @@ type aiOptions struct {
 // variable, and keys also the provider's usual one.
 func aiFlags(fs *flag.FlagSet) *aiOptions {
 	o := &aiOptions{
-		provider: fs.String("ai-provider", env("PIMPBASE_AI_PROVIDER", ""), "provider of the builder's AI assistant: anthropic, openai, gemini, azure, mistral or openai_compatible; empty lets admins pick (PIMPBASE_AI_PROVIDER)"),
+		provider: fs.String("ai-provider", env("PIMPBASE_AI_PROVIDER", ""), "provider of the builder's AI assistant: anthropic, openai, gemini, azure, mistral, xai, deepseek, groq or openai_compatible; empty lets admins pick (PIMPBASE_AI_PROVIDER)"),
 		model:    fs.String("ai-model", env("PIMPBASE_AI_MODEL", ""), "model of --ai-provider (for Azure, the deployment) (PIMPBASE_AI_MODEL)"),
 	}
 	add := func(provider, field, name, usage string, envs ...string) {
@@ -124,6 +124,9 @@ func aiFlags(fs *flag.FlagSet) *aiOptions {
 	add(ai.Azure, "url", "azure-openai-endpoint", "Azure OpenAI resource endpoint, e.g. https://name.openai.azure.com", "PIMPBASE_AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_ENDPOINT")
 	add(ai.Azure, "model", "azure-openai-deployment", "Azure OpenAI deployment name", "PIMPBASE_AZURE_OPENAI_DEPLOYMENT")
 	add(ai.Azure, "version", "azure-openai-api-version", "Azure OpenAI API version, or v1 for the v1 API (default "+ai.DefaultAzureAPIVersion+")", "PIMPBASE_AZURE_OPENAI_API_VERSION", "OPENAI_API_VERSION")
+	add(ai.XAI, "key", "xai-key", "xAI (Grok) API key for the AI assistant", "PIMPBASE_XAI_KEY", "XAI_API_KEY")
+	add(ai.DeepSeek, "key", "deepseek-key", "DeepSeek API key for the AI assistant", "PIMPBASE_DEEPSEEK_KEY", "DEEPSEEK_API_KEY")
+	add(ai.Groq, "key", "groq-key", "Groq API key for the AI assistant", "PIMPBASE_GROQ_KEY", "GROQ_API_KEY")
 	add(ai.Compatible, "url", "openai-compatible-url", "address of an OpenAI-compatible server for the AI assistant, e.g. http://localhost:11434/v1 for Ollama", "PIMPBASE_OPENAI_COMPATIBLE_URL")
 	add(ai.Compatible, "key", "openai-compatible-key", "API key of the OpenAI-compatible server, if it needs one", "PIMPBASE_OPENAI_COMPATIBLE_KEY")
 	add(ai.Compatible, "model", "openai-compatible-model", "model on the OpenAI-compatible server", "PIMPBASE_OPENAI_COMPATIBLE_MODEL")

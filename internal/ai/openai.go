@@ -45,10 +45,10 @@ func (c *openaiChat) azureV1() bool {
 
 func (c *openaiChat) send(ctx context.Context, results []toolResult, user string) (*reply, error) {
 	if c.messages == nil {
-		c.messages = []any{
-			map[string]any{"role": "system", "content": c.req.system},
-			map[string]any{"role": "user", "content": c.req.prompt},
+		if c.req.system != "" || c.req.gen == nil {
+			c.messages = append(c.messages, map[string]any{"role": "system", "content": c.req.system})
 		}
+		c.messages = append(c.messages, map[string]any{"role": "user", "content": c.req.prompt})
 	}
 	for _, r := range results {
 		content := r.content
@@ -84,6 +84,9 @@ func (c *openaiChat) send(ctx context.Context, results []toolResult, user string
 		}
 		body["tools"] = tools
 	}
+	if g := c.req.gen; g != nil {
+		c.settings(body, g)
+	}
 	header := http.Header{}
 	if c.flavor == Azure {
 		header.Set("api-key", c.cfg.APIKey)
@@ -106,6 +109,10 @@ func (c *openaiChat) send(ctx context.Context, results []toolResult, user string
 			} `json:"message"`
 			FinishReason string `json:"finish_reason"`
 		} `json:"choices"`
+		Usage struct {
+			Prompt     int64 `json:"prompt_tokens"`
+			Completion int64 `json:"completion_tokens"`
+		} `json:"usage"`
 	}
 	if err := c.s.postJSON(ctx, c.endpoint(), header, body, &out); err != nil {
 		return nil, err
@@ -114,7 +121,7 @@ func (c *openaiChat) send(ctx context.Context, results []toolResult, user string
 		return nil, &providerError{status: 502, message: "the answer has no choices"}
 	}
 	ch := out.Choices[0]
-	r := &reply{stop: stopEnd, text: openaiText(ch.Message.Content)}
+	r := &reply{stop: stopEnd, text: openaiText(ch.Message.Content), usage: Usage{Input: out.Usage.Prompt, Output: out.Usage.Completion}}
 	switch {
 	case ch.Message.Refusal != "":
 		r.stop = stopRefusal
@@ -145,6 +152,36 @@ func (c *openaiChat) send(ctx context.Context, results []toolResult, user string
 	}
 	c.messages = append(c.messages, m)
 	return r, nil
+}
+
+// settings adds a flow step's settings to a request.
+func (c *openaiChat) settings(body map[string]any, g *genConfig) {
+	if g.temperature != nil {
+		body["temperature"] = *g.temperature
+	}
+	if g.topP != nil {
+		body["top_p"] = *g.topP
+	}
+	if g.seed != nil {
+		// Mistral names the seed differently.
+		if c.flavor == Mistral {
+			body["random_seed"] = *g.seed
+		} else {
+			body["seed"] = *g.seed
+		}
+	}
+	if len(g.stop) > 0 {
+		body["stop"] = g.stop
+	}
+	if g.effort != "" {
+		body["reasoning_effort"] = g.effort
+	}
+	switch g.format {
+	case "json":
+		body["response_format"] = map[string]any{"type": "json_object"}
+	case "schema":
+		body["response_format"] = map[string]any{"type": "json_schema", "json_schema": map[string]any{"name": "answer", "strict": true, "schema": g.schema}}
+	}
 }
 
 // schema is a tool's input as JSON Schema.

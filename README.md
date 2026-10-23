@@ -428,6 +428,19 @@ A flow is a trigger and a list of steps, edited on a canvas in the
 - **Generate PDF** writes Markdown (headings, bold, lists, tables, page
   breaks) into an A4 or Letter PDF in the app's accent colour, stores it
   with a table's files and can attach it to a row's attachment field.
+- **AI prompt** asks a model from any provider set up in **Users → AI
+  assistant** (or the workspace's default) and gives back text, any JSON,
+  or named fields (`{{ steps.Ai.data.category }}`). The settings follow
+  the provider: Anthropic takes an effort (low to max) and no temperature;
+  OpenAI and Azure a reasoning effort, temperature, top P, seed and stop
+  sequences; Gemini a thinking setting; xAI, Groq, Mistral and
+  OpenAI-compatible servers temperature, top P and seed; DeepSeek has no
+  JSON schemas, so fields are asked for in the instructions and checked.
+  Fields are enforced with a JSON schema where the provider has one. The
+  model is picked from the provider's live list (the deployment for Azure,
+  with its API version). The result also has `text`, `model`, `provider`,
+  `usage.input`, `usage.output` and `truncated`; one call may take up to
+  3 minutes.
 - **Runs**: each run keeps its trigger data and, per step, the inputs, the
   result, the time taken and the error; the 200 latest runs of a flow are
   kept. Secret variables are hidden in the log. Test runs use the
@@ -476,12 +489,16 @@ that calls a model from the AI provider a workspace admin picks:
 | Google Gemini | `--gemini-key`, `GEMINI_API_KEY`, `GOOGLE_API_KEY` | optional | picked from the list, or `--ai-model` |
 | Azure OpenAI | `--azure-openai-key`, `AZURE_OPENAI_API_KEY` | `--azure-openai-endpoint`, `AZURE_OPENAI_ENDPOINT` | the deployment: `--azure-openai-deployment` |
 | Mistral | `--mistral-key`, `MISTRAL_API_KEY` | optional | picked from the list, or `--ai-model` |
+| xAI Grok | `--xai-key`, `XAI_API_KEY` | optional | picked from the list, or `--ai-model` |
+| DeepSeek | `--deepseek-key`, `DEEPSEEK_API_KEY` | optional | picked from the list, or `--ai-model` |
+| Groq | `--groq-key`, `GROQ_API_KEY` | optional | picked from the list, or `--ai-model` |
 | OpenAI-compatible | `--openai-compatible-key` (optional) | `--openai-compatible-url` | `--openai-compatible-model` |
 
 Every flag also reads `PIMPBASE_<FLAG>` (e.g. `PIMPBASE_OPENAI_KEY`).
 **OpenAI-compatible** is any server speaking the chat completions API with
 tools: Ollama (`http://localhost:11434/v1`), LM Studio
-(`http://localhost:1234/v1`), OpenRouter, Groq, Together, vLLM and the like.
+(`http://localhost:1234/v1`), Jan (`http://localhost:1337/v1`), OpenRouter,
+Together, vLLM and the like.
 With a local model nothing leaves your machines. Azure uses API version
 `2024-10-21` unless `--azure-openai-api-version` (or `OPENAI_API_VERSION`)
 says otherwise; `v1` selects Azure's v1 API, where the deployment is sent as
@@ -497,7 +514,7 @@ paste its key, change its address, pick a model, and **Test connection**,
 which sends one small request that must call a tool. The model list comes
 from the provider itself, read with the key and address on the page even
 before they are saved: Anthropic's and Gemini's model lists, the `/models`
-list of OpenAI, Mistral and OpenAI-compatible servers (for Ollama, the
+list of OpenAI, Mistral, xAI, DeepSeek, Groq and OpenAI-compatible servers (for Ollama, the
 models you have pulled), and an Azure resource's deployments. Models that
 cannot use tools are left out where the provider says so (Mistral,
 OpenRouter, Gemini) or the name shows it (OpenAI embeddings, audio, images).
@@ -580,8 +597,8 @@ internal/xmltree/  XML to JSON-like data and back
 internal/queries/  API and database data sources, queries, variables and the query runner
 internal/extdb/    PostgreSQL, MySQL, SQL Server and MongoDB drivers, schema, rows, SQL parameters
 internal/exttables/ tables imported from external databases
-internal/flows/    flows, the engine, cron, email, PDF documents
-internal/ai/       the assistant: providers (Anthropic, OpenAI, Gemini, Azure, Mistral, OpenAI-compatible), drafts, formulas, questions
+internal/flows/    flows, the engine, cron, email, PDF documents, AI steps
+internal/ai/       the assistant: providers (Anthropic, OpenAI, Gemini, Azure, Mistral, xAI, DeepSeek, Groq, OpenAI-compatible), drafts, formulas, questions, flow AI steps
 internal/cluster/  servers sharing a database: heartbeats and job claims
 internal/bundle/   .bubiapp export and import
 internal/backup/   SQLite backups while serving

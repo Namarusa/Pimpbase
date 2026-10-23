@@ -1,9 +1,10 @@
 // Package ai is the builder's assistant. It drafts tables, screens, API
 // queries and flows from a description, writes formulas, and answers
 // questions about an app's data. It calls a model from one of several
-// providers (Anthropic, OpenAI, Google Gemini, Azure OpenAI, Mistral, or any
-// OpenAI-compatible server) with settings kept on the server: from the
-// environment, or saved by a workspace admin.
+// providers (Anthropic, OpenAI, Google Gemini, Azure OpenAI, Mistral, xAI,
+// DeepSeek, Groq, or any OpenAI-compatible server) with settings kept on
+// the server: from the environment, or saved by a workspace admin. Flows
+// call it too, through Generate.
 // Nothing it makes is applied by itself; drafts go back to the builder to
 // be reviewed.
 package ai
@@ -193,6 +194,8 @@ type request struct {
 	prompt    string
 	tools     []Tool
 	maxTokens int64
+	// gen holds a flow step's settings; nil for the assistant.
+	gen *genConfig
 }
 
 // A chat is one conversation with one provider. It keeps the history in
@@ -226,13 +229,14 @@ type reply struct {
 	text  string
 	calls []toolCall
 	stop  string
+	usage Usage
 }
 
 func (s *Service) newChat(p Provider, cfg Config, req request) chat {
 	switch p.ID {
 	case Gemini:
 		return &geminiChat{s: s, cfg: cfg, req: req}
-	case OpenAI, Azure, Mistral, Compatible:
+	case OpenAI, Azure, Mistral, XAI, DeepSeek, Groq, Compatible:
 		return &openaiChat{s: s, flavor: p.ID, cfg: cfg, req: req}
 	}
 	return newAnthropicChat(s, cfg, req)

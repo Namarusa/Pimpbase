@@ -102,6 +102,7 @@ func New(s *store.Store, ui fs.FS, log *slog.Logger) *Server {
 	srv.AI = ai.NewService(s)
 	srv.Bundles = bundle.NewService(s, srv.Apps, srv.Tables, srv.Files, srv.Flows)
 	srv.Engine = flows.NewEngine(srv.Flows, srv.Tables, srv.Queries, srv.Runner, srv.Files, srv.Apps, log)
+	srv.Engine.AI = srv.AI
 	srv.Tables.BeforeInsert = srv.checkRows
 	srv.Files.BeforeSave = srv.checkFiles
 	srv.Engine.BeforeRun = srv.checkRuns

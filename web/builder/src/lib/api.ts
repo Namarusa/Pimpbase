@@ -343,9 +343,14 @@ export type AISource = '' | 'server' | 'workspace' | 'default'
 export interface AIProviderStatus {
   id: string; name: string; needsKey: boolean; needsBaseUrl: boolean; defaultBaseUrl: string; defaultModel: string
   models: string[]; canList: boolean; modelLabel: string; hasApiVersion: boolean; keyPrefix: string; keyHelp: string
-  configured: boolean; missing?: string
+  configured: boolean; missing?: string; step: AIStepOptions
   keySource: AISource; keyHint: string; baseUrl: string; baseUrlSource: AISource
   model: string; modelSource: AISource; apiVersion: string; apiVersionSource: AISource
+}
+// AIStepOptions says which settings a flow AI step takes with a provider.
+export interface AIStepOptions {
+  temperature: boolean; topP: boolean; seed: boolean; stop: boolean; schema: boolean; jsonMode: boolean; maxTokens: number
+  effort?: string[]; effortLabel?: string; effortHelp?: string; thinking?: string[]; notes?: string
 }
 export interface AIStatus {
   configured: boolean; provider: string; providerSource: AISource

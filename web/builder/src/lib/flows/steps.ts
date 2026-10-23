@@ -14,6 +14,7 @@ import GlobeIcon from '@lucide/svelte/icons/globe'
 import VariableIcon from '@lucide/svelte/icons/variable'
 import FileTextIcon from '@lucide/svelte/icons/file-text'
 import CornerDownLeftIcon from '@lucide/svelte/icons/corner-down-left'
+import SparklesIcon from '@lucide/svelte/icons/sparkles'
 import TableIcon from '@lucide/svelte/icons/table-2'
 import ClockIcon from '@lucide/svelte/icons/clock'
 import WebhookIcon from '@lucide/svelte/icons/webhook'
@@ -23,7 +24,7 @@ import type { BindingGroup } from '../designer/context'
 
 export type InputKind =
   | 'text' | 'long' | 'template' | 'formula' | 'table' | 'field' | 'attachment_field' | 'values' | 'pairs'
-  | 'select' | 'boolean' | 'query' | 'params'
+  | 'select' | 'boolean' | 'query' | 'params' | 'ai_fields'
 
 export interface InputSpec {
   key: string; label: string; kind: InputKind; placeholder?: string; help?: string
@@ -48,6 +49,7 @@ const tones = {
   logic: 'bg-amber-500/14 text-amber-700 dark:text-amber-300',
   action: 'bg-sky-500/12 text-sky-700 dark:text-sky-300',
   doc: 'bg-rose-500/12 text-rose-700 dark:text-rose-300',
+  ai: 'bg-violet-500/12 text-violet-700 dark:text-violet-300',
 }
 
 const fieldPaths = (prefix: string, t?: Table) => (t?.fields ?? []).map((f) => ({ path: `${prefix}.${f.name}`, hint: f.type }))
@@ -193,6 +195,41 @@ export const stepTypes: StepInfo[] = [
     outputs: () => [{ path: 'file', hint: 'the PDF' }, { path: 'file.url', hint: 'address' }, { path: 'file.name' }, { path: 'attached' }],
   },
 ]
+
+// aiOutputs lists what an AI step gives later steps.
+const aiOutputs = (s: FlowStep) => {
+  const i = s.inputs ?? {}
+  const data = i.output === 'fields'
+    ? [{ path: 'data', hint: 'the fields' }, ...((i.fields ?? []) as AIField[]).filter((f) => f.name).map((f) => ({ path: `data.${f.name}`, hint: f.type || 'text' }))]
+    : i.output === 'json' ? [{ path: 'data', hint: 'parsed JSON' }] : []
+  return [...data, { path: 'text', hint: 'the answer' }, { path: 'model' }, { path: 'provider' }, { path: 'usage.input', hint: 'tokens in' }, { path: 'usage.output', hint: 'tokens out' }, { path: 'truncated', hint: 'cut off' }]
+}
+
+export interface AIField { name: string; type: 'text' | 'number' | 'boolean' | 'list'; description?: string }
+
+// The AI step's settings are drawn by AIStepSettings, which shows only
+// those the chosen provider takes; this list names them for drafts.
+stepTypes.splice(stepTypes.findIndex((s) => s.type === 'generate_pdf') + 1, 0, {
+  type: 'ai', label: 'AI prompt', group: 'Actions', icon: SparklesIcon, tone: tones.ai, name: 'Ai',
+  description: 'Ask an AI model, for text or structured fields.',
+  inputs: [
+    { key: 'provider', label: 'Provider', kind: 'text', help: 'anthropic, openai, gemini, azure, mistral, xai, deepseek, groq or openai_compatible; empty uses the workspace’s.' },
+    { key: 'model', label: 'Model', kind: 'text', help: 'Empty uses the provider’s saved model. For Azure, the deployment.' },
+    { key: 'system', label: 'Instructions', kind: 'template' },
+    { key: 'prompt', label: 'Prompt', kind: 'template', placeholder: 'Summarise this ticket: {{ trigger.row.Description }}' },
+    { key: 'output', label: 'Answer', kind: 'select', default: 'text', options: [{ value: 'text', label: 'Text' }, { value: 'json', label: 'JSON' }, { value: 'fields', label: 'Fields' }] },
+    { key: 'fields', label: 'Fields', kind: 'ai_fields', help: 'List of {name, type: text|number|boolean|list, description}; later steps read steps.Name.data.<name>.', when: (i) => i.output === 'fields' },
+    { key: 'maxTokens', label: 'Length limit (tokens)', kind: 'text' },
+    { key: 'temperature', label: 'Temperature', kind: 'text', help: 'Not for Anthropic.' },
+    { key: 'topP', label: 'Top P', kind: 'text', help: 'Not for Anthropic.' },
+    { key: 'effort', label: 'Effort', kind: 'text', help: 'Anthropic: low, medium, high, xhigh, max. OpenAI and Azure reasoning models: minimal, low, medium, high.' },
+    { key: 'thinking', label: 'Thinking', kind: 'text', help: 'Gemini only: off, low or high.' },
+    { key: 'seed', label: 'Seed', kind: 'text' },
+    { key: 'stop', label: 'Stop sequences', kind: 'long', help: 'One per line.' },
+    { key: 'apiVersion', label: 'API version', kind: 'text', help: 'Azure only.' },
+  ],
+  outputs: aiOutputs,
+})
 
 export const stepInfo = (type: string) => stepTypes.find((s) => s.type === type)
 
@@ -364,6 +401,11 @@ export function summary(s: FlowStep, tables: Table[], queries: Query[]): string 
     case 'send_email': return `To ${i.to || '…'}${i.subject ? ` · ${i.subject}` : ''}`
     case 'http_request': return `${i.method ?? 'POST'} ${i.url || '…'}`
     case 'generate_pdf': return `${i.title || i.fileName || 'Untitled'}${i.field ? ` → ${i.field}` : ''}`
+    case 'ai': {
+      const who = i.model || i.provider || 'AI'
+      if (i.output === 'fields') return `${who} → ${((i.fields ?? []) as AIField[]).map((f) => f.name).filter(Boolean).join(', ') || 'fields'}`
+      return `${who}${i.output === 'json' ? ' → JSON' : ''}: ${String(i.prompt || '…').replace(/\s+/g, ' ').slice(0, 80)}`
+    }
   }
   return s.type
 }

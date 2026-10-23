@@ -119,7 +119,7 @@ type Step struct {
 var StepTypes = []string{
 	"create_row", "update_row", "delete_row", "find_rows", "run_query",
 	"condition", "loop", "delay", "send_email", "http_request",
-	"set_variable", "generate_pdf", "return",
+	"set_variable", "generate_pdf", "ai", "return",
 }
 
 const (

@@ -17,6 +17,7 @@
   import { getEditor } from './editor.svelte'
   import LoopItemPanel from './LoopItemPanel.svelte'
   import SampleBox from './SampleBox.svelte'
+  import AIStepSettings from './AIStepSettings.svelte'
   import { flowHelp, stepBindings, stepInfo, type InputSpec } from './steps'
 
   // StepSettings edits the selected step's name and inputs.
@@ -75,7 +76,8 @@
     </div>
     <Separator />
 
-    {#each shown as i (i.key)}
+    {#if step.type === 'ai'}<AIStepSettings {step} {groups} {scope} />{/if}
+    {#each step.type === 'ai' ? [] : shown as i (i.key)}
       {#if i.kind === 'boolean'}
         <div class="flex items-center gap-2">
           <Switch id={`in-${i.key}`} checked={!!(step.inputs[i.key] ?? i.default)} onCheckedChange={(v) => set(i.key, v)} />

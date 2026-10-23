@@ -70,13 +70,19 @@ func (s *Server) aiTest(w http.ResponseWriter, r *http.Request) error {
 }
 
 // aiModels lists a provider's models, with settings typed but not saved.
+// Builders may list them with the saved settings, to pick one in a flow.
 func (s *Server) aiModels(w http.ResponseWriter, r *http.Request) error {
-	if _, err := s.requireAdmin(r); err != nil {
+	if _, err := s.requireBuilder(r); err != nil {
 		return err
 	}
 	var in ai.Update
 	if err := readJSON(r, &in); err != nil {
 		return err
+	}
+	if typed := func(v *string) bool { return v != nil && strings.TrimSpace(*v) != "" }; typed(in.APIKey) || typed(in.BaseURL) || typed(in.APIVersion) {
+		if _, err := s.requireAdmin(r); err != nil {
+			return err
+		}
 	}
 	list, err := s.AI.ListModels(r.Context(), in.Provider, in)
 	if err != nil {

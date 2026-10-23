@@ -53,10 +53,16 @@ func (c *geminiChat) send(ctx context.Context, results []toolResult, user string
 	if len(parts) > 0 {
 		c.contents = append(c.contents, map[string]any{"role": "user", "parts": parts})
 	}
+	gen := map[string]any{"maxOutputTokens": c.req.maxTokens}
 	body := map[string]any{
-		"systemInstruction": map[string]any{"parts": []any{map[string]any{"text": c.req.system}}},
-		"contents":          c.contents,
-		"generationConfig":  map[string]any{"maxOutputTokens": c.req.maxTokens},
+		"contents":         c.contents,
+		"generationConfig": gen,
+	}
+	if c.req.system != "" || c.req.gen == nil {
+		body["systemInstruction"] = map[string]any{"parts": []any{map[string]any{"text": c.req.system}}}
+	}
+	if g := c.req.gen; g != nil {
+		geminiSettings(gen, g, c.cfg.Model)
 	}
 	if len(c.req.tools) > 0 {
 		var decls []any
@@ -78,6 +84,11 @@ func (c *geminiChat) send(ctx context.Context, results []toolResult, user string
 		PromptFeedback struct {
 			BlockReason string `json:"blockReason"`
 		} `json:"promptFeedback"`
+		UsageMetadata struct {
+			Prompt     int64 `json:"promptTokenCount"`
+			Candidates int64 `json:"candidatesTokenCount"`
+			Thoughts   int64 `json:"thoughtsTokenCount"`
+		} `json:"usageMetadata"`
 	}
 	if err := c.s.postJSON(ctx, endpoint, header, body, &out); err != nil {
 		return nil, err
@@ -93,7 +104,7 @@ func (c *geminiChat) send(ctx context.Context, results []toolResult, user string
 		Parts []geminiPart `json:"parts"`
 	}
 	json.Unmarshal(cand.Content, &content)
-	r := &reply{stop: stopEnd}
+	r := &reply{stop: stopEnd, usage: Usage{Input: out.UsageMetadata.Prompt, Output: out.UsageMetadata.Candidates + out.UsageMetadata.Thoughts}}
 	switch cand.FinishReason {
 	case "MAX_TOKENS":
 		r.stop = stopMaxTokens
@@ -123,4 +134,43 @@ func (c *geminiChat) send(ctx context.Context, results []toolResult, user string
 	}
 	r.text = strings.TrimSpace(strings.Join(text, ""))
 	return r, nil
+}
+
+// geminiSettings adds a flow step's settings to generationConfig. Gemini 3
+// models take a thinking level; earlier ones a thinking budget.
+func geminiSettings(gen map[string]any, g *genConfig, model string) {
+	if g.temperature != nil {
+		gen["temperature"] = *g.temperature
+	}
+	if g.topP != nil {
+		gen["topP"] = *g.topP
+	}
+	if g.seed != nil {
+		gen["seed"] = *g.seed
+	}
+	if len(g.stop) > 0 {
+		gen["stopSequences"] = g.stop
+	}
+	switch g.format {
+	case "json":
+		gen["responseMimeType"] = "application/json"
+	case "schema":
+		gen["responseMimeType"] = "application/json"
+		gen["responseJsonSchema"] = g.schema
+	}
+	if g.thinking == "" {
+		return
+	}
+	m := strings.TrimPrefix(model, "models/")
+	if strings.HasPrefix(m, "gemini-2") {
+		budget := map[string]int{"off": 0, "low": 1024, "high": 16384}[g.thinking]
+		gen["thinkingConfig"] = map[string]any{"thinkingBudget": budget}
+		return
+	}
+	level := g.thinking
+	if level == "off" {
+		// Gemini 3 cannot stop thinking; minimal is the least it does.
+		level = "minimal"
+	}
+	gen["thinkingConfig"] = map[string]any{"thinkingLevel": level}
 }

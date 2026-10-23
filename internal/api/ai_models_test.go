@@ -167,10 +167,14 @@ func TestAIModelLists(t *testing.T) {
 		srv.AI.Server[ai.OpenAI] = ai.Config{APIKey: "sk-typed-not-saved-1234"}
 		owner.do("POST", "/api/ai/models", map[string]any{"provider": "openai", "apiKey": "sk-wrong-key-123456", "baseUrl": fake.URL + "/openai/v1"}, 200)
 
-		// Only admins list models.
+		// Builders list models with the saved settings, for flow AI steps;
+		// only admins try settings that are not saved.
 		owner.do("POST", "/api/users", map[string]any{"email": "bea@example.com", "password": "a long secret", "role": "builder"}, 201)
 		bea := newClient(t, hs.URL)
 		bea.do("POST", "/api/auth/login", map[string]any{"email": "bea@example.com", "password": "a long secret"}, 200)
-		bea.do("POST", "/api/ai/models", map[string]any{"provider": "anthropic"}, 403)
+		bea.do("POST", "/api/ai/models", map[string]any{"provider": "anthropic"}, 200)
+		bea.do("POST", "/api/ai/models", map[string]any{"provider": "openai", "baseUrl": fake.URL + "/openai/v1"}, 403)
+		bob, _ := member(t, owner, hs.URL, "", "bob@example.com", "")
+		bob.do("POST", "/api/ai/models", map[string]any{"provider": "anthropic"}, 403)
 	})
 }

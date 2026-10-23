@@ -141,7 +141,7 @@ func TestAIProviders(t *testing.T) {
 
 		// Every provider is listed; Anthropic is used until another is picked.
 		st := owner.do("GET", "/api/ai", nil, 200)
-		if st["provider"] != "anthropic" || len(st["providers"].([]any)) != 6 {
+		if st["provider"] != "anthropic" || len(st["providers"].([]any)) != 9 {
 			t.Fatalf("status = %v", st)
 		}
 		// Settings are checked per provider.

@@ -58,6 +58,8 @@ type Engine struct {
 	Log     *slog.Logger
 	// Client sends HTTP request steps.
 	Client *http.Client
+	// AI answers AI steps; nil makes them fail.
+	AI Generator
 	// Node, when set, shares the work with other servers on the same
 	// database: each scheduled run is claimed by one server, and runs of
 	// servers that died are marked failed. Without it the engine assumes
@@ -1015,6 +1017,8 @@ func (x *exec) step(s *Step, in *inputs, depth, item int) (any, error) {
 		return x.httpRequest(in)
 	case "generate_pdf":
 		return x.generatePDF(in)
+	case "ai":
+		return x.aiStep(in)
 	}
 	return nil, fmt.Errorf("the step type %q is unknown", s.Type)
 }

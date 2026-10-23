@@ -47,6 +47,20 @@ func newAnthropicChat(s *Service, cfg Config, req request) *anthropicChat {
 		params.Betas = []anthropic.AnthropicBeta{anthropic.AnthropicBetaServerSideFallback2026_07_01}
 		params.Fallbacks = anthropic.BetaFallbacksParamOfDefault()
 	}
+	if g := req.gen; g != nil {
+		if g.effort != "" {
+			params.OutputConfig.Effort = anthropic.BetaOutputConfigEffort(g.effort)
+		} else {
+			params.OutputConfig.Effort = ""
+		}
+		if g.format == "schema" {
+			params.OutputConfig.Format = anthropic.BetaJSONOutputFormatParam{Schema: g.schema}
+		}
+		params.StopSequences = g.stop
+		if req.system == "" {
+			params.System = nil
+		}
+	}
 	return &anthropicChat{client: anthropic.NewClient(opts...), params: params}
 }
 
@@ -67,7 +81,7 @@ func (c *anthropicChat) send(ctx context.Context, results []toolResult, user str
 		return nil, err
 	}
 	c.params.Messages = append(c.params.Messages, msg.ToParam())
-	r := &reply{stop: stopEnd}
+	r := &reply{stop: stopEnd, usage: Usage{Input: msg.Usage.InputTokens, Output: msg.Usage.OutputTokens}}
 	switch msg.StopReason {
 	case anthropic.BetaStopReasonRefusal:
 		r.stop = stopRefusal
