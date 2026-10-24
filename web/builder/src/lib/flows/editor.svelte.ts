@@ -4,7 +4,7 @@ import { getContext, setContext } from 'svelte'
 import { api, type App, type EmailTemplate, type Flow, type FlowRun, type FlowStep, type Query, type RoleDef, type Table, type Variable } from '../api'
 import { preview } from '../preview'
 import { scopeFor, type Samples } from './sample'
-import { copyStep, locate, newStep, walk } from './steps'
+import { copyStep, locate, newStep, uniqueName, walk } from './steps'
 
 export class FlowEditor {
   flow = $state<Flow | null>(null)
@@ -77,6 +77,19 @@ export class FlowEditor {
     const s = newStep(type, this.flow.steps, this.tables)
     // With templates around, a new email starts from the first one.
     if (type === 'send_email' && this.emailTemplates[0]) Object.assign(s.inputs, { mode: 'template', template: this.emailTemplates[0].id, data: {} })
+    list.splice(index, 0, s)
+    this.selected = s.id
+    this.changed()
+  }
+
+  // insertIntegration adds a step that runs one action of a connection,
+  // named after the action, such as Checkout or Message.
+  insertIntegration(list: FlowStep[], index: number, connection: string, action: string, stem: string) {
+    if (!this.flow) return
+    const s = newStep('integration', this.flow.steps, this.tables)
+    const words = stem.split(/[^A-Za-z0-9]+/).filter((w) => w && !/^(a|an|the|or|to)$/i.test(w)).slice(0, 3)
+    s.name = uniqueName(this.flow.steps, words.map((w) => w[0].toUpperCase() + w.slice(1)).join('') || 'Service')
+    s.inputs = { connection, action, params: {} }
     list.splice(index, 0, s)
     this.selected = s.id
     this.changed()

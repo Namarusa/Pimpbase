@@ -19,6 +19,9 @@
   import SampleBox from './SampleBox.svelte'
   import AIStepSettings from './AIStepSettings.svelte'
   import EmailStepPanel from './EmailStepPanel.svelte'
+  import IntegrationStepSettings from '../integrations/IntegrationStepSettings.svelte'
+  import IntegrationIcon from '../integrations/IntegrationIcon.svelte'
+  import { actionOf } from '../integrations/state.svelte'
   import PencilIcon from '@lucide/svelte/icons/pencil'
   import WandIcon from '@lucide/svelte/icons/wand-sparkles'
   import { navigate } from '../router.svelte'
@@ -26,6 +29,7 @@
 
   // StepSettings edits the selected step's name and inputs.
   let { step }: { step: FlowStep } = $props()
+  const svc = $derived(step.type === 'integration' ? actionOf(step.inputs) : null)
   const ed = getEditor()
   const info = $derived(stepInfo(step.type))
   const scope = $derived(ed.scope(step.id))
@@ -84,10 +88,10 @@
 {#if info}
   <div class="flex flex-col gap-4 p-4">
     <div class="flex items-center gap-3">
-      <span class={['grid size-9 place-items-center rounded-lg', info.tone]}><info.icon class="size-4.5" /></span>
+      {#if svc?.manifest}<IntegrationIcon manifest={svc.manifest} />{:else}<span class={['grid size-9 place-items-center rounded-lg', info.tone]}><info.icon class="size-4.5" /></span>{/if}
       <div class="min-w-0 flex-1">
-        <h2 class="text-sm font-semibold">{info.label}</h2>
-        <p class="text-muted-foreground text-xs">{info.description}</p>
+        <h2 class="text-sm font-semibold">{svc?.manifest ? svc.manifest.name : info.label}</h2>
+        <p class="text-muted-foreground text-xs">{svc?.manifest ? svc.manifest.description : info.description}</p>
       </div>
     </div>
 
@@ -101,7 +105,8 @@
     <Separator />
 
     {#if step.type === 'ai'}<AIStepSettings {step} {groups} {scope} />{/if}
-    {#each step.type === 'ai' ? [] : shown as i (i.key)}
+    {#if step.type === 'integration'}<IntegrationStepSettings {step} {groups} {scope} />{/if}
+    {#each step.type === 'ai' || step.type === 'integration' ? [] : shown as i (i.key)}
       {#if i.kind === 'boolean'}
         <div class="flex items-center gap-2">
           <Switch id={`in-${i.key}`} checked={!!(step.inputs[i.key] ?? i.default)} onCheckedChange={(v) => set(i.key, v)} />

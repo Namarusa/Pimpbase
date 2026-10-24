@@ -9,6 +9,8 @@
   import Self from './StepList.svelte'
   import { getEditor } from './editor.svelte'
   import { stepInfo, summary } from './steps'
+  import IntegrationIcon from '../integrations/IntegrationIcon.svelte'
+  import { actionOf } from '../integrations/state.svelte'
 
   // StepList draws a list of steps top to bottom, with the branches of
   // conditions side by side and the body of loops in a frame.
@@ -20,16 +22,17 @@
   {#each steps as s, i (s.id)}
     {@const info = stepInfo(s.type)}
     {@const run = ed.lastRun[s.id]}
+    {@const svc = s.type === 'integration' ? actionOf(s.inputs) : null}
     <AddStep list={steps} index={i} />
     <div class={['group relative w-76', s.disabled ? 'opacity-55' : '']}>
       <button type="button" data-step={s.id} onclick={() => (ed.selected = s.id)}
         class={['bg-card hover:border-primary/50 flex w-full items-start gap-3 rounded-xl border p-3 text-left shadow-xs transition-all',
           ed.selected === s.id ? 'border-primary ring-primary/20 ring-[3px]' : '',
           ed.errorStep === s.id ? 'border-destructive ring-destructive/20 ring-[3px]' : '']}>
-        {#if info}<span class={['grid size-9 shrink-0 place-items-center rounded-lg', info.tone]}><info.icon class="size-4.5" /></span>{/if}
+        {#if svc?.manifest}<IntegrationIcon manifest={svc.manifest} />{:else if info}<span class={['grid size-9 shrink-0 place-items-center rounded-lg', info.tone]}><info.icon class="size-4.5" /></span>{/if}
         <span class="flex min-w-0 flex-1 flex-col gap-0.5 pr-5">
           <span class="flex items-center gap-1.5">
-            <span class="text-sm font-semibold">{info?.label ?? s.type}</span>
+            <span class="truncate text-sm font-semibold">{svc?.action ? `${svc.manifest!.name}: ${svc.action.label}` : (info?.label ?? s.type)}</span>
             {#if run === 'ok'}<CircleCheckIcon class="size-3.5 text-emerald-600 dark:text-emerald-400" />{:else if run === 'failed'}<CircleXIcon class="text-destructive size-3.5" />{/if}
             {#if ed.errorStep === s.id}<CircleAlertIcon class="text-destructive size-3.5" />{/if}
           </span>

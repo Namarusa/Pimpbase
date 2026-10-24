@@ -26,6 +26,7 @@
   import TriggerSettings from '../lib/flows/TriggerSettings.svelte'
   import RunsView from '../lib/flows/RunsView.svelte'
   import { FlowEditor, setEditor } from '../lib/flows/editor.svelte'
+  import { integrations, loadIntegrations, manifestOf } from '../lib/integrations/state.svelte'
   import { describeCron, normalize, triggerInfo, triggerTypes } from '../lib/flows/steps'
 
   // Flows is the automation builder: the app's flows on the left, the
@@ -51,7 +52,7 @@
       if (!res.builder) { error = 'Only builders can manage flows.'; return }
       app = res.app
       ed.app = res.app
-      const [list, tables, queries, variables, roles, templates] = await Promise.all([api.flows(app.id), api.tables(app.id), api.queries(app.id), api.variables(app.id), api.roles(app.id), api.emailTemplates(app.id)])
+      const [list, tables, queries, variables, roles, templates] = await Promise.all([api.flows(app.id), api.tables(app.id), api.queries(app.id), api.variables(app.id), api.roles(app.id), api.emailTemplates(app.id), loadIntegrations(app.id)])
       ed.roles = roles
       ed.emailTemplates = templates
       flows = list.map(normalize)
@@ -120,6 +121,11 @@
     await flush()
     const trigger: Flow['trigger'] = { type: newTrigger, role: 'BASIC' }
     if (newTrigger.startsWith('row_')) trigger.table = ed.tables[0]?.id
+    if (newTrigger === 'integration') {
+      const c = integrations.connections.find((x) => manifestOf(x.kind)?.webhook)
+      trigger.connection = c?.id
+      trigger.events = []
+    }
     if (newTrigger === 'schedule') { trigger.cron = '0 8 * * 1-5'; trigger.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' }
     try {
       const f = normalize(await api.createFlow(app.id, { name: newName, trigger, steps: [] }))
@@ -202,6 +208,10 @@
     const t = f.trigger
     if (t.type.startsWith('row_')) return `${triggerInfo(t.type).label} in ${ed.table(t.table)?.name ?? '…'}`
     if (t.type === 'schedule') return `${describeCron(t.cron)} (${t.timezone})`
+    if (t.type === 'integration') {
+      const c = integrations.connections.find((x) => x.id === t.connection)
+      return c ? `${c.name}: ${t.events?.length ? t.events.join(', ') : 'any event'}` : 'Service event'
+    }
     if (t.type === 'webhook') return t.respond ? 'Webhook, answers with the result' : 'Webhook call'
     return `Button · ${(t.parameters ?? []).length} parameter${(t.parameters ?? []).length === 1 ? '' : 's'}`
   }

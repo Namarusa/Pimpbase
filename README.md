@@ -74,6 +74,50 @@ invite people by email, people reset a forgotten password, and, when the
 admin turns it on, sign in with a link. Links work once and expire (7
 days, 1 hour, 15 minutes).
 
+## Integrations
+
+Each app has an **Integrations** tab with a catalog of services: Stripe,
+Slack, GitHub, Twilio SMS, Airtable, Google Sheets and Amazon S3 (or R2,
+MinIO). A connection holds the service's keys, live ones and optional test
+ones; secrets never go back to the browser and are hidden from run logs
+(like secret app variables, they are stored in the database as they are).
+**Test** checks the keys, and **Actions** tries any action by hand with
+the test keys by default.
+
+- **Flow steps**: every action of a connection is a step (Stripe checkout
+  session, payment link, customer, invoice, refund, price, cancel a
+  subscription, get or list objects; Slack messages; GitHub issues and
+  workflow runs; Twilio SMS; Airtable records; Sheets ranges; S3 objects and
+  expiring links). Test runs use the test keys, switched-on flows the live
+  ones. Writes to Stripe carry an idempotency key, so a retried step never
+  charges twice; rate limits (429) and, for safe requests, server errors are
+  retried three times.
+- **Service events**: a connection that receives webhooks (Stripe, Slack,
+  GitHub, Twilio) has its own address. Events are checked with the
+  service's signature scheme, recorded, handled once each even when sent
+  again, and start the flows whose **Service event** trigger lists their
+  type (`invoice.*` matches a family). A failed start answers 503 so the
+  service retries. The **Events** tab lists the last 7 days, refused ones
+  included.
+- **Sync to tables**: Stripe customers, payments, subscriptions and
+  invoices, GitHub issues and Airtable tables are copied into app tables,
+  by hand or every 15 minutes to every day, and Stripe events update the
+  rows at once. Rows the service no longer has are removed.
+- **Payments**: **Make a payment flow** creates a flow that opens a Stripe
+  Checkout page for a price fixed in the flow; a button with the **Take a
+  payment** action runs it and sends the buyer there.
+- **Your own**: `--integrations-dir` (`PIMPBASE_INTEGRATIONS_DIR`) loads more
+  services from JSON manifests: credentials, auth (bearer, basic, header,
+  query), actions, webhook verification and syncs.
+
+The plain **Webhook** trigger can check signatures too: an HMAC of the body
+in a header you name (sha256, sha1 or sha512, hex or base64, optional
+prefix), or the GitHub, Stripe, Slack, Shopify and Standard Webhooks
+(Svix, Resend) schemes, with the secret kept in a secret app variable.
+
+Connections are not part of app export and import yet: after importing an
+app, connect its services again.
+
 ## Deploy and scale
 
 ```sh
@@ -638,6 +682,7 @@ internal/queries/  API and database data sources, queries, variables and the que
 internal/extdb/    PostgreSQL, MySQL, SQL Server and MongoDB drivers, schema, rows, SQL parameters
 internal/exttables/ tables imported from external databases
 internal/flows/    flows, the engine, cron, Send email, PDF documents, AI steps
+internal/integrations/ service manifests (Stripe, Slack, GitHub…), connections, calls, webhook checks, syncs
 internal/email/    mail delivery (SMTP, provider APIs, log), email templates, versions, system emails
 internal/ai/       the assistant: providers (Anthropic, OpenAI, Gemini, Azure, Mistral, xAI, DeepSeek, Groq, OpenRouter, TypeSafe, OpenAI-compatible), drafts, formulas, questions, flow AI steps
 internal/cluster/  servers sharing a database: heartbeats and job claims

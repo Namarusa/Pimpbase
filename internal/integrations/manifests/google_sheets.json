@@ -1,0 +1,51 @@
+{
+  "id": "google_sheets",
+  "name": "Google Sheets",
+  "category": "Data",
+  "description": "Append rows to a spreadsheet, read ranges as rows, and update cells, with a Google service account.",
+  "color": "#0F9D58",
+  "icon": "table",
+  "docs": "https://developers.google.com/sheets/api/reference/rest",
+  "baseUrl": "https://sheets.googleapis.com/v4/spreadsheets",
+  "credentials": [
+    {"key": "serviceAccount", "label": "Service account key (JSON)", "secret": true, "required": true, "long": true, "placeholder": "{\"type\": \"service_account\", \"client_email\": …}", "help": "Google Cloud → IAM → Service accounts → Keys → Add key (JSON). Share each spreadsheet with the account's client_email."},
+    {"key": "spreadsheetId", "label": "Default spreadsheet", "required": true, "placeholder": "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms", "help": "The long id in the spreadsheet's address."},
+    {"key": "baseUrl", "label": "API address", "advanced": true, "placeholder": "https://sheets.googleapis.com/v4/spreadsheets"}
+  ],
+  "auth": {"type": "google_service_account", "credential": "serviceAccount", "scopes": ["https://www.googleapis.com/auth/spreadsheets"]},
+  "test": {"method": "GET", "path": "/{spreadsheetId}", "query": {"fields": "properties.title"}},
+  "testShows": ["properties.title"],
+  "errors": {"message": "error.message"},
+  "guide": "Turn on the Google Sheets API in the service account's Google Cloud project, paste its JSON key, and share each spreadsheet with its client_email as an editor.",
+  "actions": [
+    {
+      "key": "append_row", "label": "Append row", "writes": true, "description": "Add a row below a table in a sheet.",
+      "method": "POST", "path": "/{spreadsheetId}/values/{range}:append", "query": {"valueInputOption": "USER_ENTERED", "insertDataOption": "INSERT_ROWS"},
+      "inputs": [
+        {"key": "spreadsheetId", "label": "Spreadsheet", "in": "path", "setting": "spreadsheetId"},
+        {"key": "range", "label": "Sheet", "in": "path", "required": true, "default": "Sheet1", "placeholder": "Sheet1 or Orders!A:F"},
+        {"key": "values", "label": "Cells", "kind": "list", "required": true, "transform": "row", "placeholder": "{{ trigger.row.Name }}, {{ trigger.row.Email }}, {{ trigger.row.Amount }}", "help": "Comma separated, or a list binding. Text is read as if typed, so numbers and dates stay numbers and dates."}
+      ],
+      "outputs": [{"path": "updates.updatedRange", "hint": "where it went"}, {"path": "updates.updatedRows"}]
+    },
+    {
+      "key": "read_range", "label": "Read rows", "handler": "sheets.read_range", "description": "Read a range; with a header row, each row comes as named values.",
+      "inputs": [
+        {"key": "spreadsheetId", "label": "Spreadsheet", "setting": "spreadsheetId"},
+        {"key": "range", "label": "Range", "required": true, "default": "Sheet1", "placeholder": "Sheet1!A1:F200"},
+        {"key": "headers", "label": "First row holds the names", "kind": "boolean", "default": true}
+      ],
+      "outputs": [{"path": "rows", "hint": "rows"}, {"path": "count"}, {"path": "values", "hint": "cells"}]
+    },
+    {
+      "key": "update_range", "label": "Update cells", "writes": true, "description": "Write values into a row of cells.",
+      "method": "PUT", "path": "/{spreadsheetId}/values/{range}", "query": {"valueInputOption": "USER_ENTERED"},
+      "inputs": [
+        {"key": "spreadsheetId", "label": "Spreadsheet", "in": "path", "setting": "spreadsheetId"},
+        {"key": "range", "label": "Range", "in": "path", "required": true, "placeholder": "Sheet1!B7:D7"},
+        {"key": "values", "label": "Cells", "kind": "list", "required": true, "transform": "row"}
+      ],
+      "outputs": [{"path": "updatedRange"}, {"path": "updatedCells"}]
+    }
+  ]
+}

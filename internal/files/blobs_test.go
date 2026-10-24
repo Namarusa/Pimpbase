@@ -32,6 +32,20 @@ func TestSigV4Example(t *testing.T) {
 	}
 }
 
+// The presigned URL example from AWS's documentation ("Authenticating
+// Requests: Using Query Parameters").
+func TestPresignExample(t *testing.T) {
+	b, err := NewS3("https://s3.amazonaws.com", "examplebucket", "us-east-1", "AKIAIOSFODNN7EXAMPLE", "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.now = func() time.Time { return time.Date(2013, 5, 24, 0, 0, 0, 0, time.UTC) }
+	got := b.Presign("GET", "test.txt", 86400*time.Second)
+	if !strings.HasSuffix(got, "X-Amz-Signature=aeeed9bbccd4d02ee5c0109b86d86835f995330da4c265957d157751f604d404") || !strings.HasPrefix(got, "https://examplebucket.s3.amazonaws.com/test.txt?") {
+		t.Errorf("presigned %s", got)
+	}
+}
+
 // fakeS3 keeps objects in memory and insists on signed requests.
 func fakeS3(t *testing.T) (*httptest.Server, map[string][]byte) {
 	var mu sync.Mutex

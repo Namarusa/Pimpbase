@@ -22,6 +22,7 @@ import (
 	"github.com/pimpbase/pimpbase/internal/cluster"
 	"github.com/pimpbase/pimpbase/internal/email"
 	"github.com/pimpbase/pimpbase/internal/files"
+	"github.com/pimpbase/pimpbase/internal/integrations"
 	"github.com/pimpbase/pimpbase/internal/sso/ssotest"
 	"github.com/pimpbase/pimpbase/internal/store"
 	"github.com/pimpbase/pimpbase/web"
@@ -200,6 +201,7 @@ func serve(args []string) error {
 	backupDir := fs.String("backup-dir", env("PIMPBASE_BACKUP_DIR", ""), "with SQLite, write a backup zip into this folder every --backup-every (PIMPBASE_BACKUP_DIR)")
 	backupEvery := fs.Duration("backup-every", envDuration("PIMPBASE_BACKUP_EVERY", 24*time.Hour), "how often to back up into --backup-dir (PIMPBASE_BACKUP_EVERY)")
 	backupKeep := fs.Int("backup-keep", int(envFloat("PIMPBASE_BACKUP_KEEP", 7)), "backups to keep in --backup-dir (PIMPBASE_BACKUP_KEEP)")
+	integrationsDir := fs.String("integrations-dir", env("PIMPBASE_INTEGRATIONS_DIR", ""), "folder of extra integration manifests (*.json) to offer next to the built-in ones (PIMPBASE_INTEGRATIONS_DIR)")
 	aiFlags := aiFlags(fs)
 	fs.Parse(args)
 
@@ -231,6 +233,14 @@ func serve(args []string) error {
 	srv.Bundles.Server = version
 	srv.Node = cluster.New(st, version, log)
 	srv.Engine.Node = srv.Node
+	srv.Integrations.Node = srv.Node
+	if *integrationsDir != "" {
+		cat, err := integrations.LoadCatalog(*integrationsDir)
+		if err != nil {
+			return fmt.Errorf("--integrations-dir: %w", err)
+		}
+		srv.Integrations.Catalog = cat
+	}
 	if err := srv.Node.Start(ctx); err != nil {
 		return fmt.Errorf("register server: %w", err)
 	}
@@ -254,6 +264,8 @@ func serve(args []string) error {
 		defer cancel()
 		srv.Engine.Stop(stopCtx)
 	}()
+	srv.Integrations.Start()
+	defer srv.Integrations.Stop()
 	httpSrv := &http.Server{
 		Addr:              *addr,
 		Handler:           srv.Handler(),

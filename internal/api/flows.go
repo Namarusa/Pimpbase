@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"mime"
 	"net/http"
@@ -11,6 +12,9 @@ import (
 	"time"
 
 	"github.com/pimpbase/pimpbase/internal/flows"
+	"github.com/pimpbase/pimpbase/internal/integrations"
+	"github.com/pimpbase/pimpbase/internal/interp"
+	"github.com/pimpbase/pimpbase/internal/queries"
 	"github.com/pimpbase/pimpbase/internal/rbac"
 	"github.com/pimpbase/pimpbase/internal/tables"
 )
@@ -226,7 +230,17 @@ func (s *Server) sampleTrigger(r *http.Request, f *flows.Flow) (map[string]any, 
 		now := time.Now().In(loc).Truncate(time.Minute)
 		return map[string]any{"time": now.Format(time.RFC3339), "date": now.Format("2006-01-02"), "timezone": loc.String()}, nil
 	case flows.OnWebhook:
-		return map[string]any{"method": "POST", "body": map[string]any{}, "query": map[string]any{}, "headers": map[string]any{}}, nil
+		return map[string]any{"method": "POST", "body": map[string]any{}, "query": map[string]any{}, "headers": map[string]any{}, "verified": f.Trigger.Signature != nil}, nil
+	case flows.OnIntegration:
+		c, err := s.Integrations.Connection(ctx, f.AppID, f.Trigger.Connection)
+		if err != nil {
+			return nil, errStatus(400, "the trigger's connection does not exist")
+		}
+		ev, err := s.Integrations.Sample(ctx, c, f.Trigger.Events)
+		if err != nil {
+			return nil, errStatus(400, err.Error())
+		}
+		return ev.Data(c), nil
 	}
 	return map[string]any{"params": map[string]any{}}, nil
 }
@@ -294,6 +308,13 @@ func (s *Server) webhook(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return errStatus(413, "the body is larger than 1 MB")
 	}
+	verified := false
+	if sg := f.Trigger.Signature; sg != nil {
+		if err := s.checkSignature(r, f.AppID, sg, raw); err != nil {
+			return writeJSON(w, 401, map[string]any{"error": err.Error()})
+		}
+		verified = true
+	}
 	var body any
 	ct, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	switch {
@@ -320,7 +341,7 @@ func (s *Server) webhook(w http.ResponseWriter, r *http.Request) error {
 		}
 		headers[k] = strings.Join(v, ", ")
 	}
-	data := map[string]any{"method": r.Method, "body": body, "query": flat(r.URL.Query()), "headers": headers}
+	data := map[string]any{"method": r.Method, "body": body, "query": flat(r.URL.Query()), "headers": headers, "verified": verified}
 	in := flows.StartInput{Kind: flows.OnWebhook, Data: data}
 	if !f.Trigger.Respond {
 		run, _, err := s.Engine.Begin(r.Context(), f, in)
@@ -340,6 +361,24 @@ func (s *Server) webhook(w http.ResponseWriter, r *http.Request) error {
 		return writeJSON(w, 500, map[string]any{"error": run.Error, "runId": run.ID})
 	}
 	return writeJSON(w, 202, map[string]any{"ok": true, "runId": run.ID, "status": run.Status})
+}
+
+// checkSignature checks a webhook call against the secret in an app
+// variable (its production value).
+func (s *Server) checkSignature(r *http.Request, appID string, sg *flows.Signature, raw []byte) error {
+	vars, _, err := s.Queries.Values(r.Context(), appID, queries.Production)
+	if err != nil {
+		return err
+	}
+	secret := interp.ToText(vars[sg.Secret])
+	v := integrations.Verify{Scheme: sg.Scheme, Header: sg.Header, Algorithm: sg.Algorithm, Encoding: sg.Encoding, Prefix: sg.Prefix}
+	if sg.Scheme == "shopify" {
+		v = integrations.Verify{Scheme: "hmac", Header: "X-Shopify-Hmac-Sha256", Algorithm: "sha256", Encoding: "base64"}
+	}
+	if secret == "" {
+		return errors.New("the signing secret (app variable " + sg.Secret + ") has no production value, so calls cannot be checked")
+	}
+	return integrations.Check(v, secret, integrations.Signed{Header: r.Header, Body: raw})
 }
 
 func flat(v url.Values) map[string]any {

@@ -143,11 +143,13 @@ export interface QueryResult {
 }
 
 // Flows.
-export type TriggerType = 'row_created' | 'row_updated' | 'row_deleted' | 'schedule' | 'webhook' | 'manual'
+export type TriggerType = 'row_created' | 'row_updated' | 'row_deleted' | 'schedule' | 'webhook' | 'manual' | 'integration'
+export interface Signature { scheme: 'hmac' | 'github' | 'stripe' | 'slack' | 'shopify' | 'standard'; secret: string; header?: string; algorithm?: string; encoding?: string; prefix?: string }
 export interface FlowParam { name: string; type: ParamType; default: string }
 export interface Trigger {
   type: TriggerType; table?: string; fields?: string[]; cron?: string; timezone?: string
   parameters?: FlowParam[]; role: Role; respond?: boolean
+  signature?: Signature | null; connection?: string; events?: string[]
 }
 export interface FlowStep {
   id: string; name: string; type: string; inputs: Record<string, any>
@@ -167,6 +169,45 @@ export interface EmailLog {
   from?: string; to: string[]; cc?: string[]; bcc?: string[]; replyTo?: string; subject: string; html?: string; text?: string
   attachments?: string[]; template?: string; version?: number; warnings?: string[]; dryRun?: boolean; cut?: boolean
 }
+
+// Integrations: a catalog of services (manifests) and an app's
+// connections to them.
+export interface IntegrationOption { value: string; label: string }
+export interface IntegrationInput {
+  key: string; label: string; kind: 'text' | 'long' | 'number' | 'boolean' | 'select' | 'json' | 'pairs' | 'list' | 'items'
+  required?: boolean; placeholder?: string; help?: string; default?: any; options?: IntegrationOption[]; fields?: IntegrationInput[]; setting?: string; advanced?: boolean
+}
+export interface IntegrationAction {
+  key: string; label: string; description: string; inputs: IntegrationInput[]; outputs: { path: string; hint?: string }[]; items?: string; writes?: boolean
+}
+export interface IntegrationCredential {
+  key: string; label: string; secret?: boolean; required?: boolean; long?: boolean; placeholder?: string; help?: string; default?: string; advanced?: boolean
+}
+export interface IntegrationSync {
+  key: string; label: string; description?: string; table: string; inputs?: IntegrationInput[]; events?: string[]; deleted?: string[]
+  fields: { name: string; path: string; type?: string; key?: boolean }[]; detect?: string
+}
+export interface Manifest {
+  id: string; name: string; category: string; description: string; color: string; icon: string; docs?: string; official: boolean
+  credentials: IntegrationCredential[]; actions: IntegrationAction[]; guide?: string
+  webhook?: { events: IntegrationOption[]; setup?: string; verify: { scheme: string; secret?: string }; object?: string; sample?: Record<string, any> }
+  syncs?: IntegrationSync[]
+}
+export interface SyncConfig {
+  key: string; enabled: boolean; table: string; every: number; live: boolean; params: Record<string, string>
+  lastRun?: string; lastOk?: boolean; lastError?: string; lastCount?: number; created?: number; updated?: number; deleted?: number
+}
+export interface Connection {
+  id: string; appId: string; kind: string; name: string
+  settings: Record<string, string>; testSettings: Record<string, string>
+  secrets: Record<string, { live: boolean; test: boolean }>; hints: Record<string, { live?: string; test?: string }>
+  syncs: SyncConfig[]; hookToken: string; hookUrl?: string; createdAt: string; updatedAt: string
+}
+export interface ConnectionInput {
+  kind?: string; name?: string; settings?: Record<string, string>; testSettings?: Record<string, string>
+  secrets?: Record<string, string>; testSecrets?: Record<string, string>; syncs?: SyncConfig[]
+}
+export interface IntegrationEvent { id: string; event: string; status: 'handled' | 'failed' | 'rejected' | 'received'; detail: string; receivedAt: string }
 
 // Email templates.
 export type EmailBlockType = 'heading' | 'text' | 'button' | 'image' | 'divider' | 'spacer' | 'table' | 'html'
@@ -373,6 +414,19 @@ export const api = {
   restoreEmailVersion: (app: string, id: string, v: number) => call<EmailTemplate>('POST', `/apps/${enc(app)}/email-templates/${enc(id)}/versions/${v}/restore`),
   previewEmail: (app: string, template: Partial<EmailTemplate>, opts: { data?: Record<string, any>; send?: boolean; mark?: boolean } = {}) =>
     call<RenderedEmail>('POST', `/apps/${enc(app)}/email-templates/preview`, { template, ...opts }),
+  integrationCatalog: () => call<Manifest[]>('GET', '/integrations'),
+  connections: (app: string) => call<Connection[]>('GET', `/apps/${enc(app)}/integrations`),
+  connection: (app: string, id: string) => call<Connection>('GET', `/apps/${enc(app)}/integrations/${enc(id)}`),
+  createConnection: (app: string, c: ConnectionInput) => call<Connection>('POST', `/apps/${enc(app)}/integrations`, c),
+  updateConnection: (app: string, id: string, c: ConnectionInput) => call<Connection>('PATCH', `/apps/${enc(app)}/integrations/${enc(id)}`, c),
+  deleteConnection: (app: string, id: string, force = false) => call('DELETE', `/apps/${enc(app)}/integrations/${enc(id)}${force ? '?force=true' : ''}`),
+  testConnection2: (app: string, id: string, env: 'test' | 'live') => call<Record<string, any>>('POST', `/apps/${enc(app)}/integrations/${enc(id)}/test`, { env }),
+  newConnectionHook: (app: string, id: string) => call<Connection>('POST', `/apps/${enc(app)}/integrations/${enc(id)}/hook`),
+  connectionEvents: (app: string, id: string) => call<IntegrationEvent[]>('GET', `/apps/${enc(app)}/integrations/${enc(id)}/events`),
+  tryAction: (app: string, id: string, action: string, inputs: Record<string, any>, env: 'test' | 'live' = 'test') =>
+    call<{ output: any; request: string }>('POST', `/apps/${enc(app)}/integrations/${enc(id)}/run`, { action, inputs, env }),
+  runSync: (app: string, id: string, sync: string) => call<SyncConfig>('POST', `/apps/${enc(app)}/integrations/${enc(id)}/syncs/${enc(sync)}/run`),
+  paymentFlow: (app: string, id: string, p: { product: string; amount: number; currency: string; name?: string }) => call<Flow>('POST', `/apps/${enc(app)}/integrations/${enc(id)}/payment-flow`, p),
   runFlow: (app: string, id: string, params: Record<string, any>, test = false) =>
     call<{ id: string; status: FlowRun['status']; output: any; error: string }>('POST', `/apps/${enc(app)}/flows/${enc(id)}/run`, { params, test }),
   flowRuns: (app: string, id: string) => call<FlowRun[]>('GET', `/apps/${enc(app)}/flows/${id}/runs`),

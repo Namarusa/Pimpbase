@@ -50,7 +50,9 @@ type Definition struct {
 }
 
 // Unattended reports whether the trigger starts runs without a user.
-func (t Trigger) Unattended() bool { return t.Type == OnSchedule || t.Type == OnWebhook }
+func (t Trigger) Unattended() bool {
+	return t.Type == OnSchedule || t.Type == OnWebhook || t.Type == OnIntegration
+}
 
 // Run-as modes.
 const (
@@ -66,6 +68,9 @@ const (
 	OnSchedule = "schedule"
 	OnWebhook  = "webhook"
 	OnManual   = "manual"
+	// OnIntegration starts on a webhook event of a connection, such as a
+	// Stripe payment; the connection checks the event's signature.
+	OnIntegration = "integration"
 )
 
 // Trigger starts a flow.
@@ -87,6 +92,31 @@ type Trigger struct {
 	// Respond makes a webhook wait for the flow and answer with its
 	// result, instead of answering at once.
 	Respond bool `json:"respond,omitempty"`
+	// Signature, when set, makes a webhook refuse calls that are not
+	// signed with the secret.
+	Signature *Signature `json:"signature,omitempty"`
+	// Connection and Events start an integration flow: events of that
+	// connection whose type is listed ("invoice.*" for all invoice
+	// events; none for every event).
+	Connection string   `json:"connection,omitempty"`
+	Events     []string `json:"events,omitempty"`
+}
+
+// Signature is how a webhook flow checks who called it.
+type Signature struct {
+	// Scheme is hmac (the signature of the body in a header), github,
+	// stripe, slack, shopify or standard (Standard Webhooks, as Svix and
+	// Resend send).
+	Scheme string `json:"scheme"`
+	// Secret is the name of the app variable holding the signing secret
+	// (its production value; test runs skip the check).
+	Secret string `json:"secret"`
+	// Header, Algorithm (sha256, sha1, sha512), Encoding (hex, base64) and
+	// Prefix (such as "sha256=") configure the hmac scheme.
+	Header    string `json:"header,omitempty"`
+	Algorithm string `json:"algorithm,omitempty"`
+	Encoding  string `json:"encoding,omitempty"`
+	Prefix    string `json:"prefix,omitempty"`
 }
 
 // Param is a value a manual flow takes.
@@ -119,7 +149,7 @@ type Step struct {
 var StepTypes = []string{
 	"create_row", "update_row", "delete_row", "find_rows", "run_query",
 	"condition", "loop", "delay", "send_email", "http_request",
-	"set_variable", "generate_pdf", "ai", "return",
+	"set_variable", "generate_pdf", "ai", "integration", "return",
 }
 
 const (
@@ -173,7 +203,7 @@ func (f *Flow) Check() error {
 	if f.RunAs != RunAsUser {
 		f.RunRole = ""
 	} else if f.RunRole == "" && f.Trigger.Unattended() {
-		return invalid("runAs", "a %s has no user to act as; choose the role its runs act as", map[string]string{OnSchedule: "schedule", OnWebhook: "webhook"}[f.Trigger.Type])
+		return invalid("runAs", "a %s has no user to act as; choose the role its runs act as", map[string]string{OnSchedule: "schedule", OnWebhook: "webhook", OnIntegration: "integration event"}[f.Trigger.Type])
 	}
 	if f.Steps == nil {
 		f.Steps = []*Step{}
@@ -205,6 +235,10 @@ func (t *Trigger) check() error {
 			return invalid("trigger", "the time zone %q is unknown", t.Timezone)
 		}
 	case OnWebhook, OnManual:
+	case OnIntegration:
+		if t.Connection == "" {
+			return invalid("trigger", "choose the connection whose events start the flow")
+		}
 	case "":
 		t.Type = OnManual
 	default:
@@ -218,6 +252,35 @@ func (t *Trigger) check() error {
 	}
 	if t.Type != OnWebhook {
 		t.Respond = false
+		t.Signature = nil
+	}
+	if t.Type != OnIntegration {
+		t.Connection, t.Events = "", nil
+	}
+	if sg := t.Signature; sg != nil {
+		switch sg.Scheme {
+		case "", "none":
+			t.Signature = nil
+		case "hmac", "github", "stripe", "slack", "shopify", "standard":
+			if !identRe.MatchString(sg.Secret) {
+				return invalid("trigger", "name the app variable that holds the signing secret")
+			}
+			if sg.Scheme == "hmac" {
+				if sg.Header == "" {
+					sg.Header = "X-Signature"
+				}
+				if sg.Algorithm != "" && sg.Algorithm != "sha256" && sg.Algorithm != "sha1" && sg.Algorithm != "sha512" {
+					return invalid("trigger", "the signature algorithm is sha256, sha1 or sha512")
+				}
+				if sg.Encoding != "" && sg.Encoding != "hex" && sg.Encoding != "base64" {
+					return invalid("trigger", "the signature is hex or base64")
+				}
+			} else {
+				sg.Header, sg.Algorithm, sg.Encoding, sg.Prefix = "", "", "", ""
+			}
+		default:
+			return invalid("trigger", "the signature check %q is unknown", sg.Scheme)
+		}
 	}
 	if t.Parameters == nil {
 		t.Parameters = []Param{}
@@ -292,6 +355,9 @@ func (c *checker) steps(list []*Step, depth int) error {
 		}
 		if err := checkInputs(s.Inputs); err != nil {
 			return invalid(s.ID, "%s: %s", s.Name, err)
+		}
+		if s.Type == "integration" && (str(s.Inputs, "connection") == "" || str(s.Inputs, "action") == "") {
+			return invalid(s.ID, "%s: choose the connection and what it does", s.Name)
 		}
 		if s.Type == "find_rows" || s.Type == "update_row" || s.Type == "delete_row" || s.Type == "create_row" {
 			if str(s.Inputs, "table") == "" {

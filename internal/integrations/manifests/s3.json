@@ -1,0 +1,59 @@
+{
+  "id": "s3",
+  "name": "Amazon S3",
+  "category": "Storage",
+  "description": "Store files and text in a bucket, read them back, list them and make expiring download links. Works with S3-compatible stores (R2, MinIO, B2).",
+  "color": "#E25444",
+  "icon": "hard-drive",
+  "docs": "https://docs.aws.amazon.com/AmazonS3/latest/API/Welcome.html",
+  "baseUrl": "",
+  "credentials": [
+    {"key": "accessKeyId", "label": "Access key id", "required": true, "placeholder": "AKIA…"},
+    {"key": "secretAccessKey", "label": "Secret access key", "secret": true, "required": true},
+    {"key": "region", "label": "Region", "default": "us-east-1", "placeholder": "eu-west-3"},
+    {"key": "bucket", "label": "Default bucket"},
+    {"key": "endpoint", "label": "Endpoint", "advanced": true, "placeholder": "https://<account>.r2.cloudflarestorage.com", "help": "For S3-compatible stores; empty is AWS."},
+    {"key": "pathStyle", "label": "Path-style addresses", "advanced": true, "placeholder": "true", "help": "true for MinIO and most self-hosted stores."}
+  ],
+  "auth": {"type": "aws_sigv4"},
+  "errors": {},
+  "guide": "Make an IAM user (or an R2/MinIO key) limited to the bucket, with s3:PutObject, s3:GetObject, s3:DeleteObject and s3:ListBucket.",
+  "actions": [
+    {
+      "key": "put_object", "label": "Upload file", "writes": true, "handler": "s3.put_object", "description": "Store a Pimpbase file (such as a generated PDF) or text in the bucket.",
+      "inputs": [
+        {"key": "key", "label": "Key (path)", "required": true, "placeholder": "invoices/{{ trigger.row._id }}.pdf", "help": "Ending with / keeps the file's own name."},
+        {"key": "file", "label": "File", "placeholder": "{{ steps.Pdf.file }}"},
+        {"key": "content", "label": "Or text", "kind": "long"},
+        {"key": "contentType", "label": "Content type", "advanced": true},
+        {"key": "bucket", "label": "Bucket", "advanced": true, "help": "Empty uses the connection's."}
+      ],
+      "outputs": [{"path": "key"}, {"path": "size"}, {"path": "etag"}]
+    },
+    {
+      "key": "presign", "label": "Make download link", "handler": "s3.presign", "description": "An address that opens the object until it expires, without making the bucket public.",
+      "inputs": [
+        {"key": "key", "label": "Key", "required": true},
+        {"key": "minutes", "label": "Lasts (minutes)", "kind": "number", "default": 60},
+        {"key": "method", "label": "For", "kind": "select", "default": "GET", "options": [{"value": "GET", "label": "Downloading"}, {"value": "PUT", "label": "Uploading"}]},
+        {"key": "bucket", "label": "Bucket", "advanced": true}
+      ],
+      "outputs": [{"path": "url", "hint": "the link"}, {"path": "expires"}]
+    },
+    {
+      "key": "get_object", "label": "Read object", "handler": "s3.get_object", "description": "Read an object; text comes as text, JSON as data.",
+      "inputs": [{"key": "key", "label": "Key", "required": true}, {"key": "bucket", "label": "Bucket", "advanced": true}],
+      "outputs": [{"path": "text"}, {"path": "data", "hint": "parsed JSON"}, {"path": "size"}, {"path": "contentType"}]
+    },
+    {
+      "key": "list_objects", "label": "List objects", "handler": "s3.list_objects", "description": "List keys under a prefix.",
+      "inputs": [{"key": "prefix", "label": "Prefix", "placeholder": "invoices/"}, {"key": "max", "label": "At most", "kind": "number", "default": 100}, {"key": "bucket", "label": "Bucket", "advanced": true}],
+      "outputs": [{"path": "rows", "hint": "objects"}, {"path": "rows.0.key"}, {"path": "count"}, {"path": "truncated"}]
+    },
+    {
+      "key": "delete_object", "label": "Delete object", "writes": true, "handler": "s3.delete_object", "description": "Remove an object.",
+      "inputs": [{"key": "key", "label": "Key", "required": true}, {"key": "bucket", "label": "Bucket", "advanced": true}],
+      "outputs": [{"path": "deleted"}]
+    }
+  ]
+}

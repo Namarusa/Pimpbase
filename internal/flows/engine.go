@@ -11,6 +11,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -23,6 +24,7 @@ import (
 	"github.com/pimpbase/pimpbase/internal/exttables"
 	"github.com/pimpbase/pimpbase/internal/files"
 	"github.com/pimpbase/pimpbase/internal/ids"
+	"github.com/pimpbase/pimpbase/internal/integrations"
 	"github.com/pimpbase/pimpbase/internal/interp"
 	"github.com/pimpbase/pimpbase/internal/metrics"
 	"github.com/pimpbase/pimpbase/internal/queries"
@@ -64,6 +66,9 @@ type Engine struct {
 	Client *http.Client
 	// AI answers AI steps; nil makes them fail.
 	AI Generator
+	// Integrations runs integration steps (Stripe, Slack…); nil makes
+	// them fail.
+	Integrations *integrations.Service
 	// Node, when set, shares the work with other servers on the same
 	// database: each scheduled run is claimed by one server, and runs of
 	// servers that died are marked failed. Without it the engine assumes
@@ -406,6 +411,16 @@ func (e *Engine) Begin(ctx context.Context, f *Flow, in StartInput) (*Run, <-cha
 	vars, secrets, err := e.Queries.Values(ctx, f.AppID, env)
 	if err != nil {
 		return nil, nil, err
+	}
+	if e.Integrations != nil {
+		more, err := e.Integrations.Secrets(ctx, f.AppID)
+		if err != nil {
+			return nil, nil, err
+		}
+		if len(more) > 0 {
+			secrets = append(append([]string{}, secrets...), more...)
+			sort.Slice(secrets, func(i, j int) bool { return len(secrets[i]) > len(secrets[j]) })
+		}
 	}
 	if in.Data == nil {
 		in.Data = map[string]any{}
@@ -1032,8 +1047,103 @@ func (x *exec) step(s *Step, in *inputs, depth, item int) (any, error) {
 		return x.generatePDF(in)
 	case "ai":
 		return x.aiStep(in)
+	case "integration":
+		return x.integrationStep(s, in, item)
 	}
 	return nil, fmt.Errorf("the step type %q is unknown", s.Type)
+}
+
+// integrationStep runs an action of a connection. Its params are filled
+// like other inputs, inside lists and objects too (line items).
+func (x *exec) integrationStep(s *Step, in *inputs, item int) (any, error) {
+	if x.e.Integrations == nil {
+		return nil, errors.New("this server has no integrations")
+	}
+	params := map[string]any{}
+	raw, _ := in.raw["params"].(map[string]any)
+	for k, v := range raw {
+		filled, err := fillAny(v, in.sc)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", k, err)
+		}
+		params[k] = filled
+	}
+	in.values["action"] = in.str("action")
+	if len(params) > 0 {
+		in.values["params"] = plain(params)
+	}
+	env := integrations.Live
+	if x.env == queries.Development {
+		env = integrations.Test
+	}
+	res, err := x.e.Integrations.Run(x.ctx, integrations.Call{
+		AppID: x.flow.AppID, Connection: in.str("connection"), Action: in.str("action"), Inputs: params, Env: env,
+		Key: fmt.Sprintf("%s|%s|%d", x.run.ID, s.ID, item),
+	})
+	if err != nil {
+		return nil, err
+	}
+	if res.Request != "" {
+		in.values["request"] = res.Request
+	}
+	return res.Output, nil
+}
+
+// fillAny fills the bindings of a value: texts, and the texts inside
+// lists and objects.
+func fillAny(v any, sc interp.Scope) (any, error) {
+	switch t := v.(type) {
+	case string:
+		return value(t, sc)
+	case []any:
+		out := make([]any, len(t))
+		for i, y := range t {
+			f, err := fillAny(y, sc)
+			if err != nil {
+				return nil, err
+			}
+			out[i] = plain(f)
+		}
+		return out, nil
+	case map[string]any:
+		out := make(map[string]any, len(t))
+		for k, y := range t {
+			f, err := fillAny(y, sc)
+			if err != nil {
+				return nil, err
+			}
+			out[k] = plain(f)
+		}
+		return out, nil
+	}
+	return v, nil
+}
+
+// StartEvent starts the switched-on flows of a connection's app that
+// listen for the event, and says how many started.
+func (e *Engine) StartEvent(ctx context.Context, c *integrations.Connection, ev *integrations.Event) (int, error) {
+	list, err := e.Flows.Flows(ctx, c.AppID)
+	if err != nil {
+		return 0, err
+	}
+	n, failed := 0, []error{}
+	for _, f := range list {
+		if !f.Enabled || f.Trigger.Type != OnIntegration || f.Trigger.Connection != c.ID || !integrations.MatchEvent(f.Trigger.Events, ev.Type) {
+			continue
+		}
+		if _, _, err := e.Begin(ctx, f, StartInput{Kind: OnIntegration, Data: ev.Data(c)}); err != nil {
+			failed = append(failed, fmt.Errorf("%s: %w", f.Name, err))
+			continue
+		}
+		n++
+	}
+	if n == 0 && len(failed) > 0 {
+		return 0, errors.Join(failed...)
+	}
+	for _, err := range failed {
+		e.Log.Warn("an integration flow did not start", "connection", c.Name, "event", ev.Type, "err", err)
+	}
+	return n, nil
 }
 
 func rowErr(err error) error {

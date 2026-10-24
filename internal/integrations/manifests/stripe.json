@@ -1,0 +1,304 @@
+{
+  "id": "stripe",
+  "name": "Stripe",
+  "category": "Payments",
+  "description": "Take payments with Checkout and payment links, bill with invoices, refund, and start flows when Stripe tells you something happened.",
+  "color": "#635BFF",
+  "icon": "credit-card",
+  "docs": "https://docs.stripe.com/api",
+  "baseUrl": "https://api.stripe.com",
+  "credentials": [
+    {"key": "secretKey", "label": "Secret key", "secret": true, "required": true, "placeholder": "sk_live_… or rk_live_…", "pattern": "^(sk|rk)_(test|live)_[A-Za-z0-9]+$", "help": "Developers → API keys. A restricted key (rk_…) with only the rights your flows need is safer."},
+    {"key": "webhookSecret", "label": "Webhook signing secret", "secret": true, "placeholder": "whsec_…", "pattern": "^whsec_[A-Za-z0-9+/=]+$", "help": "Shown when you add this connection's webhook address as an endpoint in Stripe. Events signed with anything else are refused."},
+    {"key": "apiVersion", "label": "API version", "advanced": true, "placeholder": "2025-01-27.acacia", "help": "Empty uses your account's version."},
+    {"key": "baseUrl", "label": "API address", "advanced": true, "placeholder": "https://api.stripe.com", "help": "Only for a Stripe mock or proxy."}
+  ],
+  "auth": {"type": "bearer", "credential": "secretKey"},
+  "headers": {"Stripe-Version": "{apiVersion}"},
+  "test": {"method": "GET", "path": "/v1/balance"},
+  "testShows": ["livemode"],
+  "errors": {"message": "error.message"},
+  "idempotency": "Idempotency-Key",
+  "guide": "Put your live key under the key, and a test-mode key (sk_test_…) under Test runs: test runs from the flow editor then never touch real money.\nAdd the webhook address below as an endpoint in Stripe (Developers → Webhooks), pick the events, and paste its signing secret here. Each event starts a flow at most once, even when Stripe sends it again.",
+  "actions": [
+    {
+      "key": "create_checkout_session", "label": "Create checkout session", "writes": true,
+      "description": "Make a Stripe-hosted payment page; send the person to its url.",
+      "method": "POST", "path": "/v1/checkout/sessions", "body": "form",
+      "inputs": [
+        {"key": "mode", "label": "Mode", "kind": "select", "default": "payment", "options": [{"value": "payment", "label": "One-time payment"}, {"value": "subscription", "label": "Subscription"}, {"value": "setup", "label": "Save a card for later"}]},
+        {"key": "lineItems", "label": "Line items", "kind": "items", "to": "line_items", "help": "A price id from Stripe, or a name, amount and currency for a one-off price.", "fields": [
+          {"key": "price", "label": "Price id", "placeholder": "price_…"},
+          {"key": "name", "label": "Name", "to": "price_data.product_data.name", "placeholder": "Workshop ticket"},
+          {"key": "amount", "label": "Amount", "kind": "number", "to": "price_data.unit_amount", "transform": "cents", "placeholder": "49.00"},
+          {"key": "currency", "label": "Currency", "to": "price_data.currency", "placeholder": "eur"},
+          {"key": "quantity", "label": "Quantity", "kind": "number", "default": 1}
+        ]},
+        {"key": "successUrl", "label": "After paying, go to", "to": "success_url", "placeholder": "https://apps.example.com/app/shop/thanks?session={CHECKOUT_SESSION_ID}", "help": "Stripe puts the session id where {CHECKOUT_SESSION_ID} is."},
+        {"key": "cancelUrl", "label": "When cancelled, go to", "to": "cancel_url"},
+        {"key": "customerEmail", "label": "Customer email", "to": "customer_email", "help": "Fills in the email; leave empty when you give a customer."},
+        {"key": "customer", "label": "Customer id", "placeholder": "cus_…"},
+        {"key": "reference", "label": "Your reference", "to": "client_reference_id", "placeholder": "{{ trigger.params.orderId }}", "help": "Comes back in the checkout.session.completed event, to find your row."},
+        {"key": "metadata", "label": "Metadata", "kind": "pairs"},
+        {"key": "promotionCodes", "label": "Allow promotion codes", "kind": "boolean", "to": "allow_promotion_codes", "advanced": true},
+        {"key": "expiresAt", "label": "Expires at", "kind": "text", "to": "expires_at", "transform": "unix", "advanced": true, "help": "Between 30 minutes and 24 hours from now."}
+      ],
+      "outputs": [{"path": "url", "hint": "payment page"}, {"path": "id", "hint": "cs_…"}, {"path": "status"}, {"path": "payment_status"}, {"path": "amount_total", "hint": "in cents"}]
+    },
+    {
+      "key": "create_payment_link", "label": "Create payment link", "writes": true,
+      "description": "A reusable link to pay for prices, to share by email or chat.",
+      "method": "POST", "path": "/v1/payment_links", "body": "form",
+      "inputs": [
+        {"key": "lineItems", "label": "Line items", "kind": "items", "to": "line_items", "required": true, "fields": [
+          {"key": "price", "label": "Price id", "required": true, "placeholder": "price_…"},
+          {"key": "quantity", "label": "Quantity", "kind": "number", "default": 1}
+        ]},
+        {"key": "redirectUrl", "label": "After paying, go to", "to": "after_completion.redirect.url"},
+        {"key": "metadata", "label": "Metadata", "kind": "pairs"}
+      ],
+      "outputs": [{"path": "url", "hint": "the link"}, {"path": "id", "hint": "plink_…"}, {"path": "active"}]
+    },
+    {
+      "key": "create_customer", "label": "Create customer", "writes": true,
+      "description": "Add a customer, to bill or to remember a card.",
+      "method": "POST", "path": "/v1/customers", "body": "form",
+      "inputs": [
+        {"key": "email", "label": "Email", "placeholder": "{{ trigger.row.Email }}"},
+        {"key": "name", "label": "Name"},
+        {"key": "phone", "label": "Phone"},
+        {"key": "description", "label": "Description"},
+        {"key": "metadata", "label": "Metadata", "kind": "pairs", "help": "Keep your row id here to find it again."}
+      ],
+      "outputs": [{"path": "id", "hint": "cus_…"}, {"path": "email"}, {"path": "name"}]
+    },
+    {
+      "key": "update_customer", "label": "Update customer", "writes": true,
+      "description": "Change a customer's details.",
+      "method": "POST", "path": "/v1/customers/{id}", "body": "form",
+      "inputs": [
+        {"key": "id", "label": "Customer id", "in": "path", "required": true, "placeholder": "cus_…"},
+        {"key": "email", "label": "Email"},
+        {"key": "name", "label": "Name"},
+        {"key": "phone", "label": "Phone"},
+        {"key": "metadata", "label": "Metadata", "kind": "pairs"}
+      ],
+      "outputs": [{"path": "id"}, {"path": "email"}]
+    },
+    {
+      "key": "find_customers", "label": "Find customers", "description": "Search customers, such as by email.",
+      "method": "GET", "path": "/v1/customers/search", "items": "data",
+      "inputs": [
+        {"key": "query", "label": "Search", "required": true, "placeholder": "email:'{{ trigger.row.Email }}'", "help": "Stripe's search syntax: email:'a@b.com', name~'Jane', metadata['row']:'12'."},
+        {"key": "limit", "label": "At most", "kind": "number", "default": 10}
+      ],
+      "outputs": [{"path": "rows", "hint": "customers"}, {"path": "rows.0.id", "hint": "first match"}, {"path": "has_more"}]
+    },
+    {
+      "key": "create_invoice", "label": "Create invoice", "writes": true, "handler": "stripe.create_invoice",
+      "description": "Bill a customer for lines, and send the invoice by email.",
+      "inputs": [
+        {"key": "customer", "label": "Customer id", "required": true, "placeholder": "cus_…"},
+        {"key": "lines", "label": "Lines", "kind": "items", "required": true, "fields": [
+          {"key": "description", "label": "Description"},
+          {"key": "amount", "label": "Amount", "kind": "number", "transform": "cents", "placeholder": "120.00"},
+          {"key": "currency", "label": "Currency", "placeholder": "eur"},
+          {"key": "price", "label": "Or a price id", "placeholder": "price_…"},
+          {"key": "quantity", "label": "Quantity", "kind": "number"}
+        ]},
+        {"key": "collection", "label": "How it is paid", "kind": "select", "default": "send_invoice", "options": [{"value": "send_invoice", "label": "Email the invoice; they pay it"}, {"value": "charge_automatically", "label": "Charge their saved card"}]},
+        {"key": "daysUntilDue", "label": "Days to pay", "kind": "number", "default": 30},
+        {"key": "description", "label": "Memo"},
+        {"key": "currency", "label": "Currency", "advanced": true},
+        {"key": "metadata", "label": "Metadata", "kind": "pairs"},
+        {"key": "finalize", "label": "Finalize it", "kind": "boolean", "default": true},
+        {"key": "send", "label": "Email it to the customer", "kind": "boolean", "default": false}
+      ],
+      "outputs": [{"path": "id", "hint": "in_…"}, {"path": "number"}, {"path": "status"}, {"path": "hosted_invoice_url", "hint": "page to pay"}, {"path": "invoice_pdf", "hint": "PDF"}, {"path": "total", "hint": "in cents"}]
+    },
+    {
+      "key": "create_refund", "label": "Refund a payment", "writes": true,
+      "description": "Give back all or part of a payment.",
+      "method": "POST", "path": "/v1/refunds", "body": "form",
+      "inputs": [
+        {"key": "paymentIntent", "label": "Payment intent", "to": "payment_intent", "placeholder": "pi_…", "help": "Or give the charge below."},
+        {"key": "charge", "label": "Charge", "placeholder": "ch_…", "advanced": true},
+        {"key": "amount", "label": "Amount", "kind": "number", "transform": "cents", "help": "Empty refunds it all."},
+        {"key": "reason", "label": "Reason", "kind": "select", "options": [{"value": "requested_by_customer", "label": "Asked by the customer"}, {"value": "duplicate", "label": "Duplicate"}, {"value": "fraudulent", "label": "Fraudulent"}]},
+        {"key": "metadata", "label": "Metadata", "kind": "pairs"}
+      ],
+      "outputs": [{"path": "id", "hint": "re_…"}, {"path": "status"}, {"path": "amount", "hint": "in cents"}]
+    },
+    {
+      "key": "create_price", "label": "Create price", "writes": true,
+      "description": "A product with a price, one-off or recurring, for checkout and links.",
+      "method": "POST", "path": "/v1/prices", "body": "form",
+      "inputs": [
+        {"key": "product", "label": "Product name", "to": "product_data.name", "required": true},
+        {"key": "amount", "label": "Amount", "kind": "number", "to": "unit_amount", "transform": "cents", "required": true},
+        {"key": "currency", "label": "Currency", "required": true, "placeholder": "eur"},
+        {"key": "interval", "label": "Repeats", "kind": "select", "to": "recurring.interval", "options": [{"value": "day", "label": "Daily"}, {"value": "week", "label": "Weekly"}, {"value": "month", "label": "Monthly"}, {"value": "year", "label": "Yearly"}], "help": "Empty is a one-off price."},
+        {"key": "lookupKey", "label": "Lookup key", "to": "lookup_key", "advanced": true}
+      ],
+      "outputs": [{"path": "id", "hint": "price_…"}, {"path": "product", "hint": "prod_…"}]
+    },
+    {
+      "key": "cancel_subscription", "label": "Cancel subscription", "writes": true,
+      "description": "End a subscription now.",
+      "method": "DELETE", "path": "/v1/subscriptions/{id}",
+      "inputs": [
+        {"key": "id", "label": "Subscription id", "in": "path", "required": true, "placeholder": "sub_…"},
+        {"key": "prorate", "label": "Credit unused time", "kind": "boolean", "in": "query"}
+      ],
+      "outputs": [{"path": "id"}, {"path": "status"}]
+    },
+    {
+      "key": "retrieve", "label": "Get an object", "description": "Read a customer, payment, invoice, subscription and more by id.",
+      "method": "GET", "path": "/v1/{object}/{id}",
+      "inputs": [
+        {"key": "object", "label": "What", "kind": "select", "in": "path", "required": true, "default": "payment_intents", "options": [
+          {"value": "customers", "label": "Customer"}, {"value": "payment_intents", "label": "Payment intent"}, {"value": "charges", "label": "Charge"},
+          {"value": "checkout/sessions", "label": "Checkout session"}, {"value": "invoices", "label": "Invoice"}, {"value": "subscriptions", "label": "Subscription"},
+          {"value": "refunds", "label": "Refund"}, {"value": "products", "label": "Product"}, {"value": "prices", "label": "Price"}, {"value": "payment_links", "label": "Payment link"}
+        ]},
+        {"key": "id", "label": "Id", "in": "path", "required": true, "placeholder": "{{ trigger.object.payment_intent }}"},
+        {"key": "expand", "label": "Expand", "kind": "list", "to": "expand", "advanced": true, "placeholder": "customer, latest_charge"}
+      ],
+      "outputs": [{"path": "id"}, {"path": "status"}, {"path": "amount", "hint": "in cents"}, {"path": "customer"}, {"path": "metadata"}]
+    },
+    {
+      "key": "list", "label": "List objects", "description": "Read the newest customers, payments, invoices or subscriptions.",
+      "method": "GET", "path": "/v1/{object}", "items": "data",
+      "inputs": [
+        {"key": "object", "label": "What", "kind": "select", "in": "path", "required": true, "default": "payment_intents", "options": [
+          {"value": "customers", "label": "Customers"}, {"value": "payment_intents", "label": "Payment intents"}, {"value": "charges", "label": "Charges"},
+          {"value": "checkout/sessions", "label": "Checkout sessions"}, {"value": "invoices", "label": "Invoices"}, {"value": "subscriptions", "label": "Subscriptions"},
+          {"value": "refunds", "label": "Refunds"}, {"value": "products", "label": "Products"}, {"value": "prices", "label": "Prices"}
+        ]},
+        {"key": "customer", "label": "Of the customer", "placeholder": "cus_…"},
+        {"key": "status", "label": "Status", "help": "For invoices and subscriptions, such as open or active."},
+        {"key": "createdAfter", "label": "Created after", "to": "created.gte", "transform": "unix"},
+        {"key": "limit", "label": "At most", "kind": "number", "default": 25, "help": "Up to 100."},
+        {"key": "after", "label": "After id", "to": "starting_after", "advanced": true, "help": "For the next page: the last id of this one."}
+      ],
+      "outputs": [{"path": "rows", "hint": "list"}, {"path": "rows.0.id"}, {"path": "has_more"}]
+    }
+  ],
+  "webhook": {
+    "verify": {"scheme": "stripe", "secret": "webhookSecret", "tolerance": 300},
+    "event": "type", "id": "id", "object": "data.object",
+    "setup": "In Stripe, open Developers → Webhooks → Add endpoint, paste this address, choose the events, then copy the signing secret (whsec_…) into this connection.",
+    "events": [
+      {"value": "checkout.session.completed", "label": "Checkout completed"},
+      {"value": "checkout.session.expired", "label": "Checkout expired"},
+      {"value": "payment_intent.succeeded", "label": "Payment succeeded"},
+      {"value": "payment_intent.payment_failed", "label": "Payment failed"},
+      {"value": "charge.refunded", "label": "Charge refunded"},
+      {"value": "charge.dispute.created", "label": "Dispute opened"},
+      {"value": "invoice.paid", "label": "Invoice paid"},
+      {"value": "invoice.payment_failed", "label": "Invoice payment failed"},
+      {"value": "invoice.finalized", "label": "Invoice finalized"},
+      {"value": "customer.created", "label": "Customer created"},
+      {"value": "customer.updated", "label": "Customer updated"},
+      {"value": "customer.deleted", "label": "Customer deleted"},
+      {"value": "customer.subscription.created", "label": "Subscription started"},
+      {"value": "customer.subscription.updated", "label": "Subscription changed"},
+      {"value": "customer.subscription.deleted", "label": "Subscription ended"},
+      {"value": "payment_intent.*", "label": "Every payment intent event"},
+      {"value": "invoice.*", "label": "Every invoice event"},
+      {"value": "*", "label": "Every event"}
+    ],
+    "sample": {
+      "id": "evt_sample", "object": "event", "livemode": false, "created": 1761300000,
+      "data": {"object": {
+        "id": "cs_test_sample", "object": "checkout.session", "mode": "payment", "status": "complete", "payment_status": "paid",
+        "amount_total": 4900, "currency": "eur", "customer": "cus_sample", "client_reference_id": "12",
+        "customer_details": {"email": "jane@example.com", "name": "Jane Doe"},
+        "payment_intent": "pi_sample", "metadata": {}
+      }}
+    }
+  },
+  "syncs": [
+    {
+      "key": "customers", "label": "Customers", "table": "Stripe customers",
+      "description": "Every customer, kept up to date by customer events.",
+      "method": "GET", "path": "/v1/customers", "query": {"limit": "100"}, "items": "data",
+      "page": {"type": "cursor", "param": "starting_after", "lastId": "id", "more": "has_more"},
+      "events": ["customer.created", "customer.updated"], "deleted": ["customer.deleted"],
+      "fields": [
+        {"name": "Stripe ID", "path": "id", "key": true},
+        {"name": "Email", "path": "email"},
+        {"name": "Name", "path": "name"},
+        {"name": "Phone", "path": "phone"},
+        {"name": "Description", "path": "description"},
+        {"name": "Balance", "path": "balance", "type": "number", "transform": "cents"},
+        {"name": "Currency", "path": "currency", "transform": "upper"},
+        {"name": "Delinquent", "path": "delinquent", "type": "boolean"},
+        {"name": "Created", "path": "created", "type": "date", "transform": "unix"},
+        {"name": "Live", "path": "livemode", "type": "boolean"},
+        {"name": "Metadata", "path": "metadata", "type": "longtext"}
+      ]
+    },
+    {
+      "key": "payments", "label": "Payments", "table": "Stripe payments",
+      "description": "Payment intents with their amount and status.",
+      "method": "GET", "path": "/v1/payment_intents", "query": {"limit": "100"}, "items": "data",
+      "page": {"type": "cursor", "param": "starting_after", "lastId": "id", "more": "has_more"},
+      "events": ["payment_intent.*"],
+      "fields": [
+        {"name": "Stripe ID", "path": "id", "key": true},
+        {"name": "Amount", "path": "amount", "type": "number", "transform": "cents"},
+        {"name": "Received", "path": "amount_received", "type": "number", "transform": "cents"},
+        {"name": "Currency", "path": "currency", "transform": "upper"},
+        {"name": "Status", "path": "status"},
+        {"name": "Customer", "path": "customer"},
+        {"name": "Description", "path": "description"},
+        {"name": "Receipt email", "path": "receipt_email"},
+        {"name": "Created", "path": "created", "type": "date", "transform": "unix"},
+        {"name": "Live", "path": "livemode", "type": "boolean"},
+        {"name": "Metadata", "path": "metadata", "type": "longtext"}
+      ]
+    },
+    {
+      "key": "subscriptions", "label": "Subscriptions", "table": "Stripe subscriptions",
+      "description": "Every subscription, cancelled ones too.",
+      "method": "GET", "path": "/v1/subscriptions", "query": {"limit": "100", "status": "all"}, "items": "data",
+      "page": {"type": "cursor", "param": "starting_after", "lastId": "id", "more": "has_more"},
+      "events": ["customer.subscription.*"],
+      "fields": [
+        {"name": "Stripe ID", "path": "id", "key": true},
+        {"name": "Customer", "path": "customer"},
+        {"name": "Status", "path": "status"},
+        {"name": "Price", "path": "items.data.0.price.id"},
+        {"name": "Amount", "path": "items.data.0.price.unit_amount", "type": "number", "transform": "cents"},
+        {"name": "Currency", "path": "currency", "transform": "upper"},
+        {"name": "Interval", "path": "items.data.0.price.recurring.interval"},
+        {"name": "Cancels at period end", "path": "cancel_at_period_end", "type": "boolean"},
+        {"name": "Started", "path": "start_date", "type": "date", "transform": "unix"},
+        {"name": "Ended", "path": "ended_at", "type": "date", "transform": "unix"},
+        {"name": "Live", "path": "livemode", "type": "boolean"}
+      ]
+    },
+    {
+      "key": "invoices", "label": "Invoices", "table": "Stripe invoices",
+      "description": "Invoices with their totals, links and status.",
+      "method": "GET", "path": "/v1/invoices", "query": {"limit": "100"}, "items": "data",
+      "page": {"type": "cursor", "param": "starting_after", "lastId": "id", "more": "has_more"},
+      "events": ["invoice.*"],
+      "fields": [
+        {"name": "Stripe ID", "path": "id", "key": true},
+        {"name": "Number", "path": "number"},
+        {"name": "Customer", "path": "customer"},
+        {"name": "Customer email", "path": "customer_email"},
+        {"name": "Status", "path": "status"},
+        {"name": "Total", "path": "total", "type": "number", "transform": "cents"},
+        {"name": "Due", "path": "amount_remaining", "type": "number", "transform": "cents"},
+        {"name": "Currency", "path": "currency", "transform": "upper"},
+        {"name": "Page", "path": "hosted_invoice_url"},
+        {"name": "PDF", "path": "invoice_pdf"},
+        {"name": "Created", "path": "created", "type": "date", "transform": "unix"},
+        {"name": "Due date", "path": "due_date", "type": "date", "transform": "unix"}
+      ]
+    }
+  ]
+}

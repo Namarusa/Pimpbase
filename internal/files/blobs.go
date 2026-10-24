@@ -323,3 +323,74 @@ func uriEncode(s string, slash bool) string {
 	}
 	return b.String()
 }
+
+// NewS3 makes a bucket store from settings, for integrations that reach
+// a bucket of their own.
+func NewS3(endpoint, bucket, region, accessKey, secretKey string, pathStyle bool, client *http.Client) (*S3Blobs, error) {
+	if region == "" {
+		region = "us-east-1"
+	}
+	if endpoint == "" {
+		endpoint = "https://s3." + region + ".amazonaws.com"
+	}
+	u, err := url.Parse(endpoint)
+	if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") {
+		return nil, fmt.Errorf("the S3 endpoint %q is not an address", endpoint)
+	}
+	if bucket == "" {
+		return nil, errors.New("name the bucket")
+	}
+	if client == nil {
+		client = &http.Client{Timeout: 2 * time.Minute}
+	}
+	return &S3Blobs{Endpoint: u, Bucket: bucket, Region: region, PathStyle: pathStyle, AccessKey: accessKey, SecretKey: secretKey, Client: client, now: time.Now}, nil
+}
+
+// Do sends a signed request about key (the bucket itself when key is
+// empty) with query parameters.
+func (b *S3Blobs) Do(ctx context.Context, method, key string, query url.Values, contentType string, body []byte) (*http.Response, error) {
+	u := b.objectURL(key)
+	addr := u.Scheme + "://" + u.Host + u.RawPath
+	if len(query) > 0 {
+		addr += "?" + canonicalQuery(query)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, addr, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+	b.sign(req, body)
+	return b.Client.Do(req)
+}
+
+// Presign makes an address that lets whoever holds it GET or PUT key
+// until it expires (at most 7 days), signed in its query string.
+func (b *S3Blobs) Presign(method, key string, expires time.Duration) string {
+	now := time.Now
+	if b.now != nil {
+		now = b.now
+	}
+	t := now().UTC()
+	amzDate, day := t.Format("20060102T150405Z"), t.Format("20060102")
+	scope := day + "/" + b.Region + "/s3/aws4_request"
+	u := b.objectURL(key)
+	q := url.Values{}
+	q.Set("X-Amz-Algorithm", "AWS4-HMAC-SHA256")
+	q.Set("X-Amz-Credential", b.AccessKey+"/"+scope)
+	q.Set("X-Amz-Date", amzDate)
+	q.Set("X-Amz-Expires", fmt.Sprint(int(expires.Seconds())))
+	q.Set("X-Amz-SignedHeaders", "host")
+	if b.Token != "" {
+		q.Set("X-Amz-Security-Token", b.Token)
+	}
+	canonical := strings.Join([]string{method, u.RawPath, canonicalQuery(q), "host:" + u.Host + "\n", "host", "UNSIGNED-PAYLOAD"}, "\n")
+	h := sha256.Sum256([]byte(canonical))
+	toSign := "AWS4-HMAC-SHA256\n" + amzDate + "\n" + scope + "\n" + hex.EncodeToString(h[:])
+	k := hmacSHA([]byte("AWS4"+b.SecretKey), day)
+	k = hmacSHA(k, b.Region)
+	k = hmacSHA(k, "s3")
+	k = hmacSHA(k, "aws4_request")
+	return u.Scheme + "://" + u.Host + u.RawPath + "?" + canonicalQuery(q) + "&X-Amz-Signature=" + hex.EncodeToString(hmacSHA(k, toSign))
+}

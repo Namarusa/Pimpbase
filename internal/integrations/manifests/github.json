@@ -1,0 +1,132 @@
+{
+  "id": "github",
+  "name": "GitHub",
+  "category": "Developer tools",
+  "description": "Open and update issues, comment, start workflows, sync issues into a table, and react to pushes, issues and pull requests.",
+  "color": "#24292F",
+  "icon": "git-pull-request",
+  "docs": "https://docs.github.com/rest",
+  "baseUrl": "https://api.github.com",
+  "credentials": [
+    {"key": "token", "label": "Access token", "secret": true, "required": true, "placeholder": "github_pat_… or ghp_…", "help": "A fine-grained token with access to the repositories, and Issues (and Actions) read and write."},
+    {"key": "webhookSecret", "label": "Webhook secret", "secret": true, "help": "Any long random text; give the same in the repository's webhook settings."},
+    {"key": "owner", "label": "Default owner", "placeholder": "acme"},
+    {"key": "repo", "label": "Default repository", "placeholder": "website"},
+    {"key": "baseUrl", "label": "API address", "advanced": true, "placeholder": "https://github.example.com/api/v3", "help": "For GitHub Enterprise Server."}
+  ],
+  "auth": {"type": "bearer", "credential": "token"},
+  "headers": {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"},
+  "test": {"method": "GET", "path": "/user"},
+  "testShows": ["login", "name"],
+  "errors": {"message": "message"},
+  "guide": "Make a fine-grained personal access token (Settings → Developer settings) for the repositories your flows use.\nFor events, add a webhook to the repository (Settings → Webhooks): this address, content type application/json, and the secret you set here.",
+  "actions": [
+    {
+      "key": "create_issue", "label": "Create issue", "writes": true, "description": "Open an issue in a repository.",
+      "method": "POST", "path": "/repos/{owner}/{repo}/issues",
+      "inputs": [
+        {"key": "owner", "label": "Owner", "in": "path", "setting": "owner"},
+        {"key": "repo", "label": "Repository", "in": "path", "setting": "repo"},
+        {"key": "title", "label": "Title", "required": true},
+        {"key": "body", "label": "Text", "kind": "long", "help": "Markdown."},
+        {"key": "labels", "label": "Labels", "kind": "list", "placeholder": "bug, from-app"},
+        {"key": "assignees", "label": "Assignees", "kind": "list", "placeholder": "octocat"}
+      ],
+      "outputs": [{"path": "number", "hint": "issue number"}, {"path": "html_url", "hint": "page"}, {"path": "id"}, {"path": "state"}]
+    },
+    {
+      "key": "update_issue", "label": "Update issue", "writes": true, "description": "Close, reopen, retitle or relabel an issue.",
+      "method": "PATCH", "path": "/repos/{owner}/{repo}/issues/{number}",
+      "inputs": [
+        {"key": "owner", "label": "Owner", "in": "path", "setting": "owner"},
+        {"key": "repo", "label": "Repository", "in": "path", "setting": "repo"},
+        {"key": "number", "label": "Issue number", "in": "path", "required": true},
+        {"key": "state", "label": "State", "kind": "select", "options": [{"value": "open", "label": "Open"}, {"value": "closed", "label": "Closed"}]},
+        {"key": "title", "label": "Title"},
+        {"key": "body", "label": "Text", "kind": "long"},
+        {"key": "labels", "label": "Labels (replace)", "kind": "list"}
+      ],
+      "outputs": [{"path": "number"}, {"path": "state"}, {"path": "html_url"}]
+    },
+    {
+      "key": "comment", "label": "Comment on issue or PR", "writes": true, "description": "Add a comment to an issue or pull request.",
+      "method": "POST", "path": "/repos/{owner}/{repo}/issues/{number}/comments",
+      "inputs": [
+        {"key": "owner", "label": "Owner", "in": "path", "setting": "owner"},
+        {"key": "repo", "label": "Repository", "in": "path", "setting": "repo"},
+        {"key": "number", "label": "Number", "in": "path", "required": true, "placeholder": "{{ trigger.body.issue.number }}"},
+        {"key": "body", "label": "Comment", "kind": "long", "required": true}
+      ],
+      "outputs": [{"path": "id"}, {"path": "html_url"}]
+    },
+    {
+      "key": "list_issues", "label": "List issues", "description": "Read a repository's issues and pull requests.",
+      "method": "GET", "path": "/repos/{owner}/{repo}/issues",
+      "inputs": [
+        {"key": "owner", "label": "Owner", "in": "path", "setting": "owner"},
+        {"key": "repo", "label": "Repository", "in": "path", "setting": "repo"},
+        {"key": "state", "label": "State", "kind": "select", "default": "open", "options": [{"value": "open", "label": "Open"}, {"value": "closed", "label": "Closed"}, {"value": "all", "label": "All"}]},
+        {"key": "labels", "label": "With labels", "placeholder": "bug,urgent"},
+        {"key": "perPage", "label": "At most", "kind": "number", "to": "per_page", "default": 30}
+      ],
+      "outputs": [{"path": "rows", "hint": "issues"}, {"path": "rows.0.number"}, {"path": "rows.0.title"}, {"path": "count"}]
+    },
+    {
+      "key": "run_workflow", "label": "Run workflow", "writes": true, "description": "Start a GitHub Actions workflow that has a workflow_dispatch trigger.",
+      "method": "POST", "path": "/repos/{owner}/{repo}/actions/workflows/{workflow}/dispatches",
+      "inputs": [
+        {"key": "owner", "label": "Owner", "in": "path", "setting": "owner"},
+        {"key": "repo", "label": "Repository", "in": "path", "setting": "repo"},
+        {"key": "workflow", "label": "Workflow file", "in": "path", "required": true, "placeholder": "deploy.yml"},
+        {"key": "ref", "label": "Branch or tag", "required": true, "default": "main"},
+        {"key": "inputs", "label": "Inputs", "kind": "pairs"}
+      ],
+      "outputs": [{"path": "ok"}]
+    }
+  ],
+  "webhook": {
+    "verify": {"scheme": "github", "secret": "webhookSecret"},
+    "eventHeader": "X-GitHub-Event", "event": "action", "idHeader": "X-GitHub-Delivery",
+    "setup": "Repository → Settings → Webhooks → Add webhook: this address as Payload URL, application/json, and this connection's webhook secret.",
+    "events": [
+      {"value": "issues.opened", "label": "Issue opened"},
+      {"value": "issues.closed", "label": "Issue closed"},
+      {"value": "issue_comment.created", "label": "Comment added"},
+      {"value": "pull_request.opened", "label": "Pull request opened"},
+      {"value": "pull_request.closed", "label": "Pull request closed or merged"},
+      {"value": "push", "label": "Push"},
+      {"value": "release.published", "label": "Release published"},
+      {"value": "workflow_run.completed", "label": "Workflow finished"},
+      {"value": "issues.*", "label": "Every issue event"},
+      {"value": "*", "label": "Every event"}
+    ],
+    "sample": {"action": "opened", "issue": {"id": 1, "number": 42, "title": "Login page is slow", "state": "open", "html_url": "https://github.com/acme/website/issues/42", "user": {"login": "octocat"}, "labels": [{"name": "bug"}]}, "repository": {"full_name": "acme/website"}, "sender": {"login": "octocat"}}
+  },
+  "syncs": [
+    {
+      "key": "issues", "label": "Issues", "table": "GitHub issues",
+      "description": "A repository's issues and pull requests, kept up to date by issue events.",
+      "method": "GET", "path": "/repos/{owner}/{repo}/issues", "query": {"state": "all", "per_page": "100"}, "items": "",
+      "inputs": [
+        {"key": "owner", "label": "Owner", "in": "path", "setting": "owner"},
+        {"key": "repo", "label": "Repository", "in": "path", "setting": "repo"}
+      ],
+      "page": {"type": "page", "param": "page"},
+      "events": ["issues.*"], "eventItem": "issue", "deleted": ["issues.deleted"],
+      "fields": [
+        {"name": "Issue ID", "path": "id", "type": "number", "key": true},
+        {"name": "Number", "path": "number", "type": "number"},
+        {"name": "Title", "path": "title"},
+        {"name": "State", "path": "state"},
+        {"name": "Author", "path": "user.login"},
+        {"name": "Labels", "path": "labels", "transform": "join"},
+        {"name": "Assignees", "path": "assignees", "transform": "join"},
+        {"name": "Comments", "path": "comments", "type": "number"},
+        {"name": "Address", "path": "html_url"},
+        {"name": "Created", "path": "created_at", "type": "date"},
+        {"name": "Updated", "path": "updated_at", "type": "date"},
+        {"name": "Closed", "path": "closed_at", "type": "date"}
+      ]
+    }
+  ]
+}

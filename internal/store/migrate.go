@@ -230,6 +230,31 @@ var metaMigrations = []string{
 		expires_at TEXT NOT NULL,
 		created_at TEXT NOT NULL
 	);`,
+	// Integrations: an app's connections to services such as Stripe, the
+	// webhook events they received (to drop repeats), and their syncs.
+	`CREATE TABLE app_integrations (
+		id TEXT PRIMARY KEY,
+		app_id TEXT NOT NULL REFERENCES apps(id) ON DELETE CASCADE,
+		kind TEXT NOT NULL,
+		name TEXT NOT NULL,
+		config TEXT NOT NULL,
+		secrets TEXT NOT NULL,
+		hook_token TEXT NOT NULL UNIQUE,
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL,
+		UNIQUE (app_id, name)
+	);
+	CREATE TABLE integration_events (
+		connection_id TEXT NOT NULL REFERENCES app_integrations(id) ON DELETE CASCADE,
+		event_id TEXT NOT NULL,
+		event_type TEXT NOT NULL,
+		status TEXT NOT NULL,
+		detail TEXT NOT NULL,
+		payload TEXT NOT NULL,
+		received_at TEXT NOT NULL,
+		PRIMARY KEY (connection_id, event_id)
+	);
+	CREATE INDEX integration_events_time ON integration_events (connection_id, received_at);`,
 }
 
 func migrateMeta(ctx context.Context, db *DB) error {

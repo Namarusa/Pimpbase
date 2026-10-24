@@ -18,6 +18,9 @@
   import RoleSelect from '../access/RoleSelect.svelte'
   import { getEditor } from './editor.svelte'
   import { describeCron, triggerInfo, triggerTypes } from './steps'
+  import IntegrationIcon from '../integrations/IntegrationIcon.svelte'
+  import { integrations, manifestOf } from '../integrations/state.svelte'
+  import { navigate } from '../router.svelte'
 
   // TriggerSettings edits what starts the flow.
   const ed = getEditor()
@@ -26,7 +29,7 @@
   const table = $derived(ed.table(t.table))
   const info = $derived(triggerInfo(t.type))
   const isRow = $derived(t.type.startsWith('row_'))
-  const unattended = $derived(t.type === 'schedule' || t.type === 'webhook')
+  const unattended = $derived(t.type === 'schedule' || t.type === 'webhook' || t.type === 'integration')
   const hookURL = $derived(`${location.origin}/api/hooks/${flow.hookToken}`)
 
   function setType(type: TriggerType) {
@@ -34,7 +37,8 @@
     if (type.startsWith('row_') && !next.table) next.table = ed.tables[0]?.id
     if (type === 'schedule' && !next.cron) { next.cron = '0 8 * * 1-5'; next.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' }
     flow.trigger = next
-    if ((type === 'schedule' || type === 'webhook') && flow.runAs === 'user' && !flow.runRole) flow.runRole = 'BASIC'
+    if (type === 'integration' && !next.connection) { next.connection = integrations.connections.find((c) => manifestOf(c.kind)?.webhook)?.id; next.events = [] }
+    if ((type === 'schedule' || type === 'webhook' || type === 'integration') && flow.runAs === 'user' && !flow.runRole) flow.runRole = 'BASIC'
     ed.changed()
   }
   function setRunAs(v: 'flow' | 'user') {
@@ -126,6 +130,33 @@
       toast.success('The webhook has a new address; the old one stopped working.')
     } catch (e: any) { toast.error(e.message) }
   }
+  // Service events: a connection that receives webhooks, and which of
+  // its event types start this flow.
+  const hooked = $derived(integrations.connections.filter((c) => manifestOf(c.kind)?.webhook))
+  const conn = $derived(integrations.connections.find((c) => c.id === t.connection))
+  const connManifest = $derived(manifestOf(conn?.kind))
+  const events = $derived((t.events ?? []) as string[])
+  let customEvent = $state('')
+  function toggleEvent(v: string, on: boolean) { set('events', on ? [...events, v] : events.filter((x) => x !== v)) }
+
+  // Webhook signatures: which scheme, and the app variable with the secret.
+  const schemes = [
+    { value: 'none', label: 'Do not check', help: 'Anyone with the address can start the flow.' },
+    { value: 'hmac', label: 'HMAC of the body', help: 'A header carries the HMAC of the raw body, in hex or base64.' },
+    { value: 'github', label: 'GitHub', help: 'X-Hub-Signature-256.' },
+    { value: 'stripe', label: 'Stripe', help: 'Stripe-Signature, with a timestamp no older than 5 minutes.' },
+    { value: 'slack', label: 'Slack', help: 'X-Slack-Signature and X-Slack-Request-Timestamp.' },
+    { value: 'shopify', label: 'Shopify', help: 'X-Shopify-Hmac-Sha256, base64.' },
+    { value: 'standard', label: 'Standard Webhooks (Svix, Resend…)', help: 'webhook-id, webhook-timestamp and webhook-signature; the secret starts with whsec_.' },
+  ] as const
+  const sig = $derived(t.signature)
+  const scheme = $derived(schemes.find((x) => x.value === (sig?.scheme ?? 'none'))!)
+  const secretVars = $derived(ed.variables.filter((v) => v.secret))
+  function setSig(p: Partial<NonNullable<typeof sig>>) {
+    const next = { scheme: 'hmac', secret: secretVars[0]?.name ?? '', ...(sig ?? {}), ...p } as NonNullable<typeof sig>
+    set('signature', (next.scheme as string) === 'none' ? undefined : next)
+  }
+
   const copy = (s: string) => { navigator.clipboard?.writeText(s); toast.success('Copied') }
 </script>
 
@@ -238,6 +269,78 @@
   -H 'Content-Type: application/json' \
   -d '&#123;"name": "Ada"&#125;'</pre>
     <p class="text-muted-foreground text-xs">Steps read the JSON as <code class="font-mono">{'{{ trigger.body.name }}'}</code> and the query string as <code class="font-mono">{'{{ trigger.query.x }}'}</code>.</p>
+    <Separator />
+    <div class="flex flex-col gap-1.5">
+      <Label class="text-xs">Check signatures</Label>
+      <Select.Root type="single" value={sig?.scheme ?? 'none'} onValueChange={(v) => setSig({ scheme: v as any })}>
+        <Select.Trigger size="sm" class="w-full">{scheme.label}</Select.Trigger>
+        <Select.Content>{#each schemes as sc (sc.value)}<Select.Item value={sc.value} label={sc.label}><div><div>{sc.label}</div><div class="text-muted-foreground text-xs">{sc.help}</div></div></Select.Item>{/each}</Select.Content>
+      </Select.Root>
+      {#if sig}
+        <p class="text-muted-foreground text-xs">{scheme.help} Calls with a missing or wrong signature are refused with 401.</p>
+        <Label class="mt-1 text-xs">Signing secret</Label>
+        <Select.Root type="single" value={sig.secret} onValueChange={(v) => setSig({ secret: v })}>
+          <Select.Trigger size="sm" class="w-full font-mono text-xs">{sig.secret || 'Choose a secret app variable'}</Select.Trigger>
+          <Select.Content>
+            {#each secretVars as v (v.name)}<Select.Item value={v.name} label={v.name}><span class="font-mono text-xs">{v.name}</span>{#if !v.hasProduction}<span class="text-destructive ml-2 text-[11px]">no production value</span>{/if}</Select.Item>{/each}
+            {#if !secretVars.length}<div class="text-muted-foreground px-2 py-1.5 text-xs">Add a secret variable in API studio → Variables first.</div>{/if}
+          </Select.Content>
+        </Select.Root>
+        <p class="text-muted-foreground text-xs">The secret's production value is used, for test runs too.</p>
+        {#if sig.scheme === 'hmac'}
+          <div class="grid grid-cols-2 gap-2">
+            <div class="col-span-2 flex flex-col gap-1"><Label class="text-[11px]">Header</Label><Input class="h-7 font-mono text-xs" value={sig.header ?? 'X-Signature'} oninput={(e) => setSig({ header: e.currentTarget.value })} /></div>
+            <div class="flex flex-col gap-1"><Label class="text-[11px]">Algorithm</Label>
+              <Select.Root type="single" value={sig.algorithm || 'sha256'} onValueChange={(v) => setSig({ algorithm: v })}>
+                <Select.Trigger size="sm" class="h-7 w-full text-xs">{sig.algorithm || 'sha256'}</Select.Trigger>
+                <Select.Content>{#each ['sha256', 'sha1', 'sha512'] as a (a)}<Select.Item value={a} label={a}>{a}</Select.Item>{/each}</Select.Content>
+              </Select.Root>
+            </div>
+            <div class="flex flex-col gap-1"><Label class="text-[11px]">Encoding</Label>
+              <Select.Root type="single" value={sig.encoding || 'hex'} onValueChange={(v) => setSig({ encoding: v })}>
+                <Select.Trigger size="sm" class="h-7 w-full text-xs">{sig.encoding || 'hex'}</Select.Trigger>
+                <Select.Content>{#each ['hex', 'base64'] as a (a)}<Select.Item value={a} label={a}>{a}</Select.Item>{/each}</Select.Content>
+              </Select.Root>
+            </div>
+            <div class="col-span-2 flex flex-col gap-1"><Label class="text-[11px]">Prefix</Label><Input class="h-7 font-mono text-xs" value={sig.prefix ?? ''} placeholder="sha256=" oninput={(e) => setSig({ prefix: e.currentTarget.value })} /></div>
+          </div>
+        {/if}
+        <p class="text-muted-foreground text-xs">Checked calls set <code class="font-mono">{'{{ trigger.verified }}'}</code> to true.</p>
+      {/if}
+    </div>
+  {:else if t.type === 'integration'}
+    <div class="flex flex-col gap-1.5">
+      <Label class="text-xs">Connection</Label>
+      <Select.Root type="single" value={t.connection ?? ''} onValueChange={(v) => { flow.trigger.connection = v; flow.trigger.events = []; ed.changed() }}>
+        <Select.Trigger size="sm" class="w-full">
+          {#if conn}<span class="flex items-center gap-2"><IntegrationIcon manifest={connManifest} size="sm" />{conn.name}</span>{:else}Choose a connection{/if}
+        </Select.Trigger>
+        <Select.Content>
+          {#each hooked as c (c.id)}<Select.Item value={c.id} label={c.name}><span class="flex items-center gap-2"><IntegrationIcon manifest={manifestOf(c.kind)} size="sm" />{c.name}</span></Select.Item>{/each}
+          {#if !hooked.length}<div class="text-muted-foreground px-2 py-1.5 text-xs">Connect Stripe, Slack, GitHub or Twilio in the Integrations tab first.</div>{/if}
+        </Select.Content>
+      </Select.Root>
+      {#if ed.app}<Button variant="ghost" size="sm" class="h-7 self-start text-xs" onclick={() => navigate(`/apps/${ed.app!.slug}/integrations${conn ? '/' + conn.id : ''}`)}>{conn ? 'Webhook address and received events' : 'Open Integrations'}</Button>{/if}
+    </div>
+    {#if connManifest?.webhook}
+      <div class="flex flex-col gap-1.5">
+        <Label class="text-xs">Events</Label>
+        <div class="flex max-h-64 flex-col gap-1 overflow-y-auto rounded-md border p-2">
+          {#each connManifest.webhook.events as ev (ev.value)}
+            <label class="flex items-start gap-2 text-xs"><Checkbox class="mt-0.5" checked={events.includes(ev.value)} onCheckedChange={(v) => toggleEvent(ev.value, !!v)} /><span><span class="font-mono">{ev.value}</span>{#if ev.label && ev.label !== ev.value}<span class="text-muted-foreground">&nbsp;· {ev.label}</span>{/if}</span></label>
+          {/each}
+          {#each events.filter((e) => !connManifest.webhook!.events.some((x) => x.value === e)) as ev (ev)}
+            <label class="flex items-center gap-2 text-xs"><Checkbox checked onCheckedChange={() => toggleEvent(ev, false)} /><span class="font-mono">{ev}</span></label>
+          {/each}
+        </div>
+        <div class="flex gap-1.5">
+          <Input class="h-7 font-mono text-xs" value={customEvent} placeholder="invoice.*" oninput={(e) => (customEvent = e.currentTarget.value)} onkeydown={(e) => { if (e.key === 'Enter' && customEvent.trim()) { toggleEvent(customEvent.trim(), true); customEvent = '' } }} />
+          <Button variant="outline" size="sm" class="h-7 text-xs" disabled={!customEvent.trim()} onclick={() => { toggleEvent(customEvent.trim(), true); customEvent = '' }}><PlusIcon />Add</Button>
+        </div>
+        <p class="text-muted-foreground text-xs">{events.length ? 'Other events are ignored.' : 'Nothing ticked: every event starts the flow.'} <code class="font-mono">invoice.*</code> matches every invoice event.</p>
+      </div>
+      <p class="text-muted-foreground text-xs">Events are checked against the connection's signing secret and handled once each, even when the service sends them again. Steps read the event type as <code class="font-mono">{'{{ trigger.event }}'}</code>, what it is about as <code class="font-mono">{'{{ trigger.object.id }}'}</code> and the whole payload as <code class="font-mono">{'{{ trigger.body }}'}</code>.</p>
+    {/if}
   {:else}
     <div class="flex flex-col gap-1.5">
       <Label class="text-xs">Who may run it</Label>
@@ -267,7 +370,7 @@
       <Select.Trigger size="sm" class="w-full">{(flow.runAs ?? 'flow') === 'flow' ? 'Full access to the app' : unattended ? 'The permissions of a role' : 'The permissions of who started it'}</Select.Trigger>
       <Select.Content>
         <Select.Item value="flow" label="Full access"><div><div>Full access to the app</div><div class="text-muted-foreground text-xs">Row steps and queries may use every table and row</div></div></Select.Item>
-        <Select.Item value="user" label="As the user"><div><div>{unattended ? 'The permissions of a role' : 'The permissions of who started it'}</div><div class="text-muted-foreground text-xs">Table permissions, row rules and query roles apply{unattended ? '; nobody starts a ' + (t.type === 'schedule' ? 'schedule' : 'webhook') + ', so runs act as the role you choose' : ''}</div></div></Select.Item>
+        <Select.Item value="user" label="As the user"><div><div>{unattended ? 'The permissions of a role' : 'The permissions of who started it'}</div><div class="text-muted-foreground text-xs">Table permissions, row rules and query roles apply{unattended ? '; nobody starts a ' + (t.type === 'schedule' ? 'schedule' : t.type === 'webhook' ? 'webhook' : 'service event') + ', so runs act as the role you choose' : ''}</div></div></Select.Item>
       </Select.Content>
     </Select.Root>
     {#if flow.runAs === 'user' && unattended}

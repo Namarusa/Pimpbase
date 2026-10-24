@@ -1,0 +1,61 @@
+{
+  "id": "twilio",
+  "name": "Twilio",
+  "category": "Messaging",
+  "description": "Send SMS and WhatsApp messages, and start flows when someone texts your number.",
+  "color": "#F22F46",
+  "icon": "smartphone",
+  "docs": "https://www.twilio.com/docs/messaging/api",
+  "baseUrl": "https://api.twilio.com/2010-04-01/Accounts/{accountSid}",
+  "credentials": [
+    {"key": "accountSid", "label": "Account SID", "required": true, "placeholder": "AC…", "pattern": "^AC[0-9a-fA-F]{32}$"},
+    {"key": "authToken", "label": "Auth token", "secret": true, "required": true, "help": "Console → Account info. It also checks the signature of incoming messages."},
+    {"key": "from", "label": "Default sender", "placeholder": "+15550001111 or whatsapp:+1…", "help": "A Twilio number, or leave empty and give a messaging service."},
+    {"key": "messagingService", "label": "Messaging service SID", "placeholder": "MG…"},
+    {"key": "baseUrl", "label": "API address", "advanced": true, "placeholder": "https://api.twilio.com/2010-04-01/Accounts/AC…"}
+  ],
+  "auth": {"type": "basic", "username": "accountSid", "password": "authToken"},
+  "test": {"method": "GET", "path": ".json"},
+  "testShows": ["friendly_name", "status"],
+  "errors": {"message": "message"},
+  "guide": "Use your Account SID and auth token from the Twilio console. Test runs can use test credentials, which Twilio accepts without sending.\nFor incoming messages, set this address as the number's \"A message comes in\" webhook (HTTP POST). Twilio signs each call with the auth token against the exact address, so Pimpbase must know its public address (--public-url).",
+  "actions": [
+    {
+      "key": "send_sms", "label": "Send SMS", "writes": true, "description": "Text a phone number; prefix both numbers with whatsapp: for WhatsApp.",
+      "method": "POST", "path": "/Messages.json", "body": "form",
+      "inputs": [
+        {"key": "to", "label": "To", "to": "To", "required": true, "placeholder": "+33612345678"},
+        {"key": "body", "label": "Message", "to": "Body", "kind": "long", "required": true},
+        {"key": "from", "label": "From", "to": "From", "setting": "from", "help": "Empty uses the connection's sender."},
+        {"key": "service", "label": "Messaging service", "to": "MessagingServiceSid", "setting": "messagingService", "advanced": true},
+        {"key": "media", "label": "Picture address", "to": "MediaUrl", "advanced": true},
+        {"key": "statusCallback", "label": "Status callback", "to": "StatusCallback", "advanced": true}
+      ],
+      "outputs": [{"path": "sid", "hint": "SM…"}, {"path": "status"}, {"path": "to"}]
+    },
+    {
+      "key": "get_message", "label": "Get message", "description": "Read a message's delivery status.",
+      "method": "GET", "path": "/Messages/{sid}.json",
+      "inputs": [{"key": "sid", "label": "Message SID", "in": "path", "required": true}],
+      "outputs": [{"path": "status"}, {"path": "error_code"}, {"path": "price"}]
+    },
+    {
+      "key": "list_messages", "label": "List messages", "description": "Read recent messages, to or from a number.",
+      "method": "GET", "path": "/Messages.json", "items": "messages",
+      "inputs": [
+        {"key": "to", "label": "To", "to": "To"},
+        {"key": "from", "label": "From", "to": "From"},
+        {"key": "pageSize", "label": "At most", "kind": "number", "to": "PageSize", "default": 20}
+      ],
+      "outputs": [{"path": "rows", "hint": "messages"}, {"path": "rows.0.body"}, {"path": "rows.0.from"}]
+    }
+  ],
+  "webhook": {
+    "verify": {"scheme": "twilio", "secret": "authToken"},
+    "fixedEvent": "message.received", "id": "MessageSid",
+    "respond": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response></Response>", "respondType": "text/xml",
+    "setup": "Twilio console → Phone numbers → your number → Messaging → A message comes in: Webhook, this address, HTTP POST.",
+    "events": [{"value": "message.received", "label": "Message received"}],
+    "sample": {"MessageSid": "SM_sample", "From": "+33612345678", "To": "+15550001111", "Body": "STOP", "NumMedia": "0"}
+  }
+}

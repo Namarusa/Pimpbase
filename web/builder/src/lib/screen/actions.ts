@@ -35,6 +35,10 @@ export const actionTypes: ActionInfo[] = [
     { key: 'params', label: 'Parameters', kind: 'flowparams' },
     { key: 'stateKey', label: 'Keep the result in state (name)', kind: 'text', placeholder: 'quote' },
   ] },
+  { type: 'checkout', label: 'Take a payment', fields: [
+    { key: 'flow', label: 'Payment flow', kind: 'flow' },
+    { key: 'params', label: 'Parameters', kind: 'flowparams' },
+  ] },
   { type: 'open_dialog', label: 'Open dialog', fields: [{ key: 'target', label: 'Dialog', kind: 'dialog' }] },
   { type: 'close_dialog', label: 'Close dialog', fields: [{ key: 'target', label: 'Dialog (blank closes all)', kind: 'dialog' }] },
   { type: 'toast', label: 'Show notification', fields: [
@@ -59,6 +63,7 @@ export function describe(a: Action, rt?: { table: (id?: string) => { name: strin
     if (s) return `Go to ${s.name || s.route}`
     if (a.screen) return 'Go to a deleted screen'
   }
+  if (a.type === 'checkout') return `Take a payment with ${(a.flow && rt?.flows?.find((f) => f.id === a.flow)?.name) || '…'}`
   if (a.type === 'run_flow') return `Run ${(a.flow && rt?.flows?.find((f) => f.id === a.flow)?.name) || 'flow'}`
   if (a.type === 'run_query') return `Run ${(a.query && rt?.table(`query:${a.query}`)?.name) || 'API query'}`
   switch (a.type) {
@@ -168,6 +173,21 @@ export async function runActions(actions: Action[] | undefined, rt: Runtime, bas
           if (a.stateKey) rt.state[a.stateKey] = res.output
           rt.reload()
           break
+        }
+        case 'checkout': {
+          // The flow makes a checkout page (Stripe Checkout, a payment
+          // link) and returns its address; the buyer goes there.
+          const f = rt.flow(a.flow)
+          if (!f) throw new Error('choose the payment flow this action runs')
+          const params: Record<string, any> = {}
+          for (const [k, v] of Object.entries((a.params ?? {}) as Record<string, string>)) if (v !== '' && v !== undefined) params[k] = resolve(v, scope)
+          const res = await api.runFlow(rt.appId, f.id, params)
+          if (res.status === 'failed') throw new Error(res.error || `${f.name} failed`)
+          const out = res.output
+          const url = typeof out === 'string' ? out : out?.url
+          if (typeof url !== 'string' || !/^https:\/\//.test(url)) throw new Error(`${f.name} did not return a payment page address`)
+          location.href = url
+          return false
         }
         case 'open_dialog':
           if (a.target) {

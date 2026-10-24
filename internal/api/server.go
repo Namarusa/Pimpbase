@@ -24,6 +24,7 @@ import (
 	"github.com/pimpbase/pimpbase/internal/exttables"
 	"github.com/pimpbase/pimpbase/internal/files"
 	"github.com/pimpbase/pimpbase/internal/flows"
+	"github.com/pimpbase/pimpbase/internal/integrations"
 	"github.com/pimpbase/pimpbase/internal/metrics"
 	"github.com/pimpbase/pimpbase/internal/queries"
 	"github.com/pimpbase/pimpbase/internal/rbac"
@@ -49,8 +50,10 @@ type Server struct {
 	SSO *sso.Service
 	AI  *ai.Service
 	// Email sends mail and keeps email templates and delivery settings.
-	Email   *email.Service
-	Bundles *bundle.Service
+	Email *email.Service
+	// Integrations keeps apps' connections to Stripe, Slack and others.
+	Integrations *integrations.Service
+	Bundles      *bundle.Service
 	// Engine runs flows; call Engine.Start to begin schedules.
 	Engine *flows.Engine
 	// Node is this server among those sharing the database, if set.
@@ -113,6 +116,12 @@ func New(s *store.Store, ui fs.FS, log *slog.Logger) *Server {
 	srv.Engine.BeforeRun = srv.checkRuns
 	srv.describeMetrics(s)
 	srv.Engine.UseExternal(srv.Ext)
+	cat, err := integrations.LoadCatalog("")
+	if err != nil {
+		panic(err) // the built-in manifests are checked by tests
+	}
+	srv.Integrations = integrations.NewService(s, cat, srv.Tables, srv.Files, log)
+	srv.Engine.Integrations = srv.Integrations
 	return srv
 }
 
@@ -281,6 +290,21 @@ func (s *Server) Handler() http.Handler {
 	h("PUT /api/hooks/{token}", s.webhook)
 	h("GET /api/hooks/{token}", s.webhook)
 
+	h("GET /api/integrations", s.integrationCatalog)
+	h("GET /api/apps/{app}/integrations", s.listConnections)
+	h("POST /api/apps/{app}/integrations", s.createConnection)
+	h("GET /api/apps/{app}/integrations/{conn}", s.getConnection)
+	h("PATCH /api/apps/{app}/integrations/{conn}", s.updateConnection)
+	h("DELETE /api/apps/{app}/integrations/{conn}", s.deleteConnection)
+	h("POST /api/apps/{app}/integrations/{conn}/test", s.testConnectionSettings)
+	h("POST /api/apps/{app}/integrations/{conn}/hook", s.newConnectionHook)
+	h("GET /api/apps/{app}/integrations/{conn}/events", s.connectionEvents)
+	h("POST /api/apps/{app}/integrations/{conn}/run", s.tryAction)
+	h("POST /api/apps/{app}/integrations/{conn}/syncs/{sync}/run", s.runSync)
+	h("POST /api/apps/{app}/integrations/{conn}/payment-flow", s.paymentFlow)
+	h("POST /api/integrations/hooks/{token}", s.integrationHook)
+	h("PUT /api/integrations/hooks/{token}", s.integrationHook)
+
 	h("GET /api/formula/functions", s.functions)
 
 	h("GET /api/ai", s.aiStatus)
@@ -404,7 +428,15 @@ func (s *Server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 	var be *bundle.Error
 	var ei *email.InvalidError
 	var ee *email.Error
+	var ii *integrations.InvalidError
+	var ic *integrations.CallError
 	switch {
+	case errors.As(err, &ii):
+		writeJSON(w, 400, map[string]any{"error": ii.Message})
+	case errors.As(err, &ic):
+		writeJSON(w, 502, map[string]any{"error": ic.Message, "status": ic.Status})
+	case errors.Is(err, integrations.ErrNotFound):
+		writeJSON(w, 404, map[string]any{"error": err.Error()})
 	case errors.Is(err, email.ErrNotSetUp):
 		writeJSON(w, 409, map[string]any{"error": err.Error(), "code": "email_not_configured"})
 	case errors.As(err, &ei):

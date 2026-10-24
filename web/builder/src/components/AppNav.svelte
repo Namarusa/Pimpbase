@@ -9,7 +9,7 @@
   import { route, match } from '../lib/router.svelte'
   import type { DraftKind } from '../lib/api'
 
-  let { app, active }: { app: App; active: 'data' | 'design' | 'apis' | 'flows' | 'emails' | 'access' | 'settings' } = $props()
+  let { app, active }: { app: App; active: 'data' | 'design' | 'apis' | 'flows' | 'emails' | 'integrations' | 'access' | 'settings' } = $props()
   let assistant = $state(false)
   // The assistant starts on what this page edits, and offers to change
   // the screen, query or flow that is open.
@@ -25,7 +25,7 @@
   const go = (e: MouseEvent, path: string) => { e.preventDefault(); navigate(path) }
   const tabs = $derived([
     { key: 'data', label: 'Data', path: `/apps/${app.slug}/data` },
-    ...(isBuilder() ? [{ key: 'design', label: 'Design', path: `/apps/${app.slug}/design` }, { key: 'apis', label: 'APIs', path: `/apps/${app.slug}/apis` }, { key: 'flows', label: 'Flows', path: `/apps/${app.slug}/flows` }, { key: 'emails', label: 'Emails', path: `/apps/${app.slug}/emails` }, { key: 'access', label: 'Access', path: `/apps/${app.slug}/access` }, { key: 'settings', label: 'Settings', path: `/apps/${app.slug}/settings` }] : []),
+    ...(isBuilder() ? [{ key: 'design', label: 'Design', path: `/apps/${app.slug}/design` }, { key: 'apis', label: 'APIs', path: `/apps/${app.slug}/apis` }, { key: 'flows', label: 'Flows', path: `/apps/${app.slug}/flows` }, { key: 'emails', label: 'Emails', path: `/apps/${app.slug}/emails` }, { key: 'integrations', label: 'Integrations', path: `/apps/${app.slug}/integrations` }, { key: 'access', label: 'Access', path: `/apps/${app.slug}/access` }, { key: 'settings', label: 'Settings', path: `/apps/${app.slug}/settings` }] : []),
   ])
 </script>
 

@@ -19,6 +19,9 @@ import TableIcon from '@lucide/svelte/icons/table-2'
 import ClockIcon from '@lucide/svelte/icons/clock'
 import WebhookIcon from '@lucide/svelte/icons/webhook'
 import MousePointerClickIcon from '@lucide/svelte/icons/mouse-pointer-click'
+import CableIcon from '@lucide/svelte/icons/cable'
+import ZapIcon from '@lucide/svelte/icons/zap'
+import { actionOf, connectionOf, manifestOf } from '../integrations/state.svelte'
 import type { Flow, FlowStep, Query, Table, TriggerType, Variable } from '../api'
 import type { BindingGroup } from '../designer/context'
 
@@ -33,7 +36,7 @@ export interface InputSpec {
   when?: (inputs: Record<string, any>) => boolean
 }
 
-export type StepGroup = 'Data' | 'Logic' | 'Actions'
+export type StepGroup = 'Data' | 'Logic' | 'Actions' | 'Integrations'
 
 export interface StepInfo {
   type: string; label: string; group: StepGroup; icon: Component; tone: string
@@ -50,6 +53,7 @@ const tones = {
   action: 'bg-sky-500/12 text-sky-700 dark:text-sky-300',
   doc: 'bg-rose-500/12 text-rose-700 dark:text-rose-300',
   ai: 'bg-violet-500/12 text-violet-700 dark:text-violet-300',
+  integration: 'bg-indigo-500/12 text-indigo-700 dark:text-indigo-300',
 }
 
 const fieldPaths = (prefix: string, t?: Table) => (t?.fields ?? []).map((f) => ({ path: `${prefix}.${f.name}`, hint: f.type }))
@@ -252,6 +256,24 @@ stepTypes.splice(stepTypes.findIndex((s) => s.type === 'generate_pdf') + 1, 0, {
   outputs: aiOutputs,
 })
 
+// Integration steps run an action of a connection (Stripe, Slack…); what
+// they read and give comes from the service's manifest.
+stepTypes.push({
+  type: 'integration', label: 'Integration', group: 'Integrations', icon: CableIcon, tone: tones.integration, name: 'Service',
+  description: 'Run an action of a connected service, such as a Stripe checkout or a Slack message.',
+  inputs: [
+    { key: 'connection', label: 'Connection', kind: 'text', help: 'The connection id from the Integrations tab.' },
+    { key: 'action', label: 'Action', kind: 'text', help: 'The action key, such as create_checkout_session.' },
+    { key: 'params', label: 'Settings', kind: 'params', help: 'The action’s settings by key; each is a template.' },
+  ],
+  outputs: (s) => {
+    const { action } = actionOf(s.inputs)
+    const outs = [...(action?.outputs ?? [])]
+    if (action?.items && !outs.some((o) => o.path === 'rows')) outs.unshift({ path: 'rows', hint: 'list' })
+    return outs
+  },
+})
+
 export const stepInfo = (type: string) => stepTypes.find((s) => s.type === type)
 
 export interface TriggerInfo { type: TriggerType; label: string; icon: Component; description: string }
@@ -262,6 +284,7 @@ export const triggerTypes: TriggerInfo[] = [
   { type: 'schedule', label: 'Schedule', icon: ClockIcon, description: 'At set times, such as every morning' },
   { type: 'webhook', label: 'Webhook', icon: WebhookIcon, description: 'When another service calls the flow’s address' },
   { type: 'manual', label: 'Button', icon: MousePointerClickIcon, description: 'When a screen button runs it' },
+  { type: 'integration', label: 'Service event', icon: ZapIcon, description: 'When Stripe, Slack, GitHub or another connected service sends an event' },
 ]
 export const triggerInfo = (type: string) => triggerTypes.find((t) => t.type === type) ?? triggerTypes[5]
 
@@ -357,7 +380,15 @@ export function triggerBindings(f: Flow, tables: Table[]): BindingGroup {
     case 'schedule':
       return { label: 'Schedule', items: [{ path: 'trigger.time', hint: 'when it fired' }, { path: 'trigger.date', hint: 'day' }] }
     case 'webhook':
-      return { label: 'Webhook call', items: [{ path: 'trigger.body', hint: 'JSON sent' }, { path: 'trigger.query', hint: '?a=b' }, { path: 'trigger.headers' }, { path: 'trigger.method' }] }
+      return { label: 'Webhook call', items: [{ path: 'trigger.body', hint: 'JSON sent' }, { path: 'trigger.query', hint: '?a=b' }, { path: 'trigger.headers' }, { path: 'trigger.method' }, ...(f.trigger.signature ? [{ path: 'trigger.verified', hint: 'signature checked' }] : [])] }
+    case 'integration': {
+      const m = manifestOf(connectionOf(f.trigger.connection)?.kind)
+      const sample = m?.webhook?.sample ?? {}
+      const obj = m?.webhook?.object ? m.webhook.object.split('.').reduce((v: any, k) => v?.[k], sample) : sample
+      const keys = obj && typeof obj === 'object' ? Object.keys(obj).filter((k) => /^[A-Za-z_]\w*$/.test(k)).slice(0, 14) : []
+      return { label: `${m?.name ?? 'Service'} event`, items: [{ path: 'trigger.event', hint: 'type' }, { path: 'trigger.id', hint: 'event id' }, { path: 'trigger.object', hint: 'what it is about' },
+        ...keys.map((k) => ({ path: `trigger.object.${k}` })), { path: 'trigger.body', hint: 'whole event' }, { path: 'trigger.test', hint: 'test secret' }, { path: 'trigger.connection.name' }] }
+    }
   }
   return { label: 'Button', items: (f.trigger.parameters ?? []).filter((p) => p.name).map((p) => ({ path: `trigger.params.${p.name}`, hint: p.type })) }
 }
@@ -422,6 +453,13 @@ export function summary(s: FlowStep, tables: Table[], queries: Query[], template
     case 'send_email': return `To ${i.to || '…'}${i.mode === 'template' ? ` · ${templateName?.(i.template) ?? 'choose a template'}` : i.subject ? ` · ${i.subject}` : ''}`
     case 'http_request': return `${i.method ?? 'POST'} ${i.url || '…'}`
     case 'generate_pdf': return `${i.title || i.fileName || 'Untitled'}${i.field ? ` → ${i.field}` : ''}`
+    case 'integration': {
+      const { conn, manifest, action } = actionOf(i)
+      if (!conn) return 'Choose a connection'
+      const p = (i.params ?? {}) as Record<string, any>
+      const first = action?.inputs.find((x) => x.required && typeof p[x.key] === 'string' && p[x.key])
+      return `${manifest?.name ?? conn.name} · ${action?.label ?? 'choose an action'}${first ? ` · ${String(p[first.key]).slice(0, 60)}` : ''}`
+    }
     case 'ai': {
       const who = i.model || i.provider || 'AI'
       if (systemOneStep(i)) return `${who} asks ${((i.questions ?? []) as AIQuestion[]).map((q) => q.name).filter(Boolean).join(', ') || 'questions'}`

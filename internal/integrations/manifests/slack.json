@@ -1,0 +1,84 @@
+{
+  "id": "slack",
+  "name": "Slack",
+  "category": "Messaging",
+  "description": "Post and update messages, react, look people up, and start flows from messages and mentions.",
+  "color": "#4A154B",
+  "icon": "message-square",
+  "docs": "https://api.slack.com/methods",
+  "baseUrl": "https://slack.com/api",
+  "credentials": [
+    {"key": "botToken", "label": "Bot token", "secret": true, "placeholder": "xoxb-…", "pattern": "^xox[abp]-", "help": "Your Slack app → OAuth & Permissions. Needs chat:write, and users:read.email to look people up."},
+    {"key": "signingSecret", "label": "Signing secret", "secret": true, "help": "Your Slack app → Basic Information. Needed for events."},
+    {"key": "webhookUrl", "label": "Incoming webhook address", "secret": true, "placeholder": "https://hooks.slack.com/services/…", "pattern": "^https?://", "help": "Optional: posts to one channel without a bot token."},
+    {"key": "channel", "label": "Default channel", "placeholder": "#general or C0123…"},
+    {"key": "baseUrl", "label": "API address", "advanced": true, "placeholder": "https://slack.com/api"}
+  ],
+  "auth": {"type": "bearer", "credential": "botToken"},
+  "test": {"method": "POST", "path": "/auth.test", "body": "json"},
+  "testShows": ["team", "user"],
+  "errors": {"message": "error", "ok": "ok"},
+  "guide": "Make a Slack app (api.slack.com/apps), add the bot scopes it needs, install it and paste its bot token. Invite the bot to the channels it posts in.\nFor events, turn on Event Subscriptions, paste the webhook address below as the Request URL (Slack checks it at once) and subscribe to bot events.",
+  "actions": [
+    {
+      "key": "post_message", "label": "Post message", "writes": true, "description": "Send a message to a channel or a person.",
+      "method": "POST", "path": "/chat.postMessage", "body": "json",
+      "inputs": [
+        {"key": "channel", "label": "Channel", "setting": "channel", "placeholder": "#sales, C0123… or a user id", "help": "Empty uses the connection's default channel."},
+        {"key": "text", "label": "Text", "kind": "long", "required": true, "help": "Slack markup: *bold*, _italic_, <https://…|link>, <@U0123> mentions."},
+        {"key": "thread", "label": "Reply in thread (ts)", "to": "thread_ts", "advanced": true},
+        {"key": "blocks", "label": "Blocks (JSON)", "kind": "json", "advanced": true},
+        {"key": "unfurl", "label": "Show link previews", "kind": "boolean", "to": "unfurl_links", "advanced": true}
+      ],
+      "outputs": [{"path": "ts", "hint": "message id"}, {"path": "channel"}]
+    },
+    {
+      "key": "update_message", "label": "Update message", "writes": true, "description": "Change a message the bot posted.",
+      "method": "POST", "path": "/chat.update", "body": "json",
+      "inputs": [
+        {"key": "channel", "label": "Channel", "required": true, "setting": "channel"},
+        {"key": "ts", "label": "Message (ts)", "required": true, "placeholder": "{{ steps.Message.ts }}"},
+        {"key": "text", "label": "Text", "kind": "long", "required": true}
+      ],
+      "outputs": [{"path": "ts"}, {"path": "channel"}]
+    },
+    {
+      "key": "add_reaction", "label": "Add reaction", "writes": true, "description": "React to a message with an emoji.",
+      "method": "POST", "path": "/reactions.add", "body": "json",
+      "inputs": [
+        {"key": "channel", "label": "Channel", "required": true, "setting": "channel"},
+        {"key": "ts", "label": "Message (ts)", "to": "timestamp", "required": true},
+        {"key": "name", "label": "Emoji", "required": true, "placeholder": "white_check_mark"}
+      ],
+      "outputs": []
+    },
+    {
+      "key": "find_user", "label": "Find person by email", "description": "Look up a Slack member, to mention or message them.",
+      "method": "GET", "path": "/users.lookupByEmail",
+      "inputs": [{"key": "email", "label": "Email", "required": true}],
+      "outputs": [{"path": "user.id", "hint": "U0123…"}, {"path": "user.real_name"}, {"path": "user.profile.display_name"}]
+    },
+    {
+      "key": "webhook_message", "label": "Post with incoming webhook", "writes": true, "skipOk": true,
+      "description": "Post to the webhook's channel; needs no bot token.",
+      "method": "POST", "url": "{webhookUrl}", "body": "json",
+      "inputs": [{"key": "text", "label": "Text", "kind": "long", "required": true}, {"key": "blocks", "label": "Blocks (JSON)", "kind": "json", "advanced": true}],
+      "outputs": []
+    }
+  ],
+  "webhook": {
+    "verify": {"scheme": "slack", "secret": "signingSecret", "tolerance": 300},
+    "event": "event.type", "id": "event_id", "object": "event",
+    "challenge": "challenge", "challengeWhen": "type", "challengeValue": "url_verification",
+    "setup": "Your Slack app → Event Subscriptions → Request URL: paste this address. Slack checks it with a signed challenge, which Pimpbase answers.",
+    "events": [
+      {"value": "app_mention", "label": "Bot mentioned"},
+      {"value": "message", "label": "Message in a channel the bot is in"},
+      {"value": "reaction_added", "label": "Reaction added"},
+      {"value": "member_joined_channel", "label": "Someone joined a channel"},
+      {"value": "team_join", "label": "New member in the workspace"},
+      {"value": "*", "label": "Every event"}
+    ],
+    "sample": {"type": "event_callback", "event_id": "Ev_sample", "team_id": "T0001", "event": {"type": "app_mention", "user": "U0001", "text": "<@U0BOT> new lead: Acme", "channel": "C0001", "ts": "1761300000.000100"}}
+  }
+}

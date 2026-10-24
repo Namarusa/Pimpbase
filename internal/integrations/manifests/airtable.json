@@ -1,0 +1,85 @@
+{
+  "id": "airtable",
+  "name": "Airtable",
+  "category": "Data",
+  "description": "Import an Airtable table into Pimpbase and keep it in step, or read and write records from flows.",
+  "color": "#18BFFF",
+  "icon": "sheet",
+  "docs": "https://airtable.com/developers/web/api/introduction",
+  "baseUrl": "https://api.airtable.com/v0",
+  "credentials": [
+    {"key": "token", "label": "Personal access token", "secret": true, "required": true, "placeholder": "pat…", "help": "airtable.com/create/tokens, with data.records:read (and write) on the bases you use."},
+    {"key": "baseId", "label": "Default base", "placeholder": "app…", "help": "The app… part of the base's address."},
+    {"key": "baseUrl", "label": "API address", "advanced": true, "placeholder": "https://api.airtable.com/v0"}
+  ],
+  "auth": {"type": "bearer", "credential": "token"},
+  "test": {"method": "GET", "path": "/meta/whoami"},
+  "testShows": ["id", "email"],
+  "errors": {"message": "error.message"},
+  "guide": "To import a table, open Sync, give the table's name (or tbl… id) and run it: every field Airtable has becomes a field here, and later runs update rows, add new ones and remove deleted ones.",
+  "actions": [
+    {
+      "key": "list_records", "label": "List records", "description": "Read records, filtered by an Airtable formula.",
+      "method": "GET", "path": "/{baseId}/{table}", "items": "records",
+      "inputs": [
+        {"key": "baseId", "label": "Base", "in": "path", "setting": "baseId"},
+        {"key": "table", "label": "Table", "in": "path", "required": true, "placeholder": "Leads or tbl…"},
+        {"key": "formula", "label": "Filter formula", "to": "filterByFormula", "placeholder": "{Status} = 'New'"},
+        {"key": "view", "label": "View"},
+        {"key": "max", "label": "At most", "kind": "number", "to": "maxRecords", "default": 100}
+      ],
+      "outputs": [{"path": "rows", "hint": "records"}, {"path": "rows.0.id"}, {"path": "rows.0.fields", "hint": "values"}]
+    },
+    {
+      "key": "create_record", "label": "Create record", "writes": true, "description": "Add a record.",
+      "method": "POST", "path": "/{baseId}/{table}",
+      "inputs": [
+        {"key": "baseId", "label": "Base", "in": "path", "setting": "baseId"},
+        {"key": "table", "label": "Table", "in": "path", "required": true},
+        {"key": "fields", "label": "Fields", "kind": "pairs", "required": true},
+        {"key": "typecast", "label": "Convert text to the field types", "kind": "boolean", "default": true}
+      ],
+      "outputs": [{"path": "id", "hint": "rec…"}, {"path": "fields"}]
+    },
+    {
+      "key": "update_record", "label": "Update record", "writes": true, "description": "Change some fields of a record.",
+      "method": "PATCH", "path": "/{baseId}/{table}/{record}",
+      "inputs": [
+        {"key": "baseId", "label": "Base", "in": "path", "setting": "baseId"},
+        {"key": "table", "label": "Table", "in": "path", "required": true},
+        {"key": "record", "label": "Record id", "in": "path", "required": true, "placeholder": "rec…"},
+        {"key": "fields", "label": "Fields", "kind": "pairs", "required": true},
+        {"key": "typecast", "label": "Convert text to the field types", "kind": "boolean", "default": true}
+      ],
+      "outputs": [{"path": "id"}, {"path": "fields"}]
+    },
+    {
+      "key": "delete_record", "label": "Delete record", "writes": true, "description": "Delete a record.",
+      "method": "DELETE", "path": "/{baseId}/{table}/{record}",
+      "inputs": [
+        {"key": "baseId", "label": "Base", "in": "path", "setting": "baseId"},
+        {"key": "table", "label": "Table", "in": "path", "required": true},
+        {"key": "record", "label": "Record id", "in": "path", "required": true}
+      ],
+      "outputs": [{"path": "deleted"}, {"path": "id"}]
+    }
+  ],
+  "syncs": [
+    {
+      "key": "records", "label": "Import a table", "table": "Airtable records",
+      "description": "Every record of an Airtable table; its fields are found as they come.",
+      "method": "GET", "path": "/{baseId}/{table}", "query": {"pageSize": "100"}, "items": "records",
+      "inputs": [
+        {"key": "baseId", "label": "Base", "in": "path", "setting": "baseId"},
+        {"key": "table", "label": "Table", "in": "path", "required": true, "placeholder": "Leads or tbl…"},
+        {"key": "view", "label": "View", "in": "query"}
+      ],
+      "page": {"type": "cursor", "param": "offset", "next": "offset"},
+      "detect": "fields",
+      "fields": [
+        {"name": "Airtable ID", "path": "id", "key": true},
+        {"name": "Created in Airtable", "path": "createdTime", "type": "date"}
+      ]
+    }
+  ]
+}

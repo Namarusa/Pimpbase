@@ -15,6 +15,7 @@
   import Apis from './pages/Apis.svelte'
   import Flows from './pages/Flows.svelte'
   import Emails from './pages/Emails.svelte'
+  import Integrations from './pages/Integrations.svelte'
   import Reset from './pages/Reset.svelte'
   import Users from './pages/Users.svelte'
   import AppSettings from './pages/AppSettings.svelte'
@@ -48,6 +49,7 @@
   const designRoute = $derived(match('/apps/:app/design/:screen', route.path) ?? match('/apps/:app/design', route.path))
   const apisRoute = $derived(match('/apps/:app/apis/:item', route.path) ?? match('/apps/:app/apis', route.path))
   const flowsRoute = $derived(match('/apps/:app/flows/:item', route.path) ?? match('/apps/:app/flows', route.path))
+  const integrationsRoute = $derived(match('/apps/:app/integrations/:item', route.path) ?? match('/apps/:app/integrations', route.path))
   const emailsRoute = $derived(match('/apps/:app/emails/:item', route.path) ?? match('/apps/:app/emails', route.path))
   const settingsRoute = $derived(match('/apps/:app/settings', route.path))
   const accessRoute = $derived(match('/apps/:app/access/:tab', route.path) ?? match('/apps/:app/access', route.path))
@@ -105,6 +107,8 @@
         {#key apisRoute.app + ':' + aiReload.n}<Apis app={apisRoute.app} item={apisRoute.item} />{/key}
       {:else if flowsRoute}
         {#key flowsRoute.app + ':' + aiReload.n}<Flows app={flowsRoute.app} item={flowsRoute.item} />{/key}
+      {:else if integrationsRoute}
+        {#key integrationsRoute.app}<Integrations app={integrationsRoute.app} item={integrationsRoute.item} />{/key}
       {:else if emailsRoute}
         {#key emailsRoute.app}<Emails app={emailsRoute.app} item={emailsRoute.item} />{/key}
       {:else if dataRoute}
