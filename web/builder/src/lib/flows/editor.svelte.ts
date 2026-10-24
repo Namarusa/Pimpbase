@@ -1,7 +1,7 @@
 // The flow editor's shared state: the flow being edited, the selection
 // and the edits the canvas and settings panel make.
 import { getContext, setContext } from 'svelte'
-import { api, type App, type Flow, type FlowRun, type FlowStep, type Query, type RoleDef, type Table, type Variable } from '../api'
+import { api, type App, type EmailTemplate, type Flow, type FlowRun, type FlowStep, type Query, type RoleDef, type Table, type Variable } from '../api'
 import { preview } from '../preview'
 import { scopeFor, type Samples } from './sample'
 import { copyStep, locate, newStep, walk } from './steps'
@@ -12,6 +12,8 @@ export class FlowEditor {
   queries = $state<Query[]>([])
   variables = $state<Variable[]>([])
   roles = $state<RoleDef[]>([])
+  // emailTemplates are the app's templates, for Send email steps.
+  emailTemplates = $state<EmailTemplate[]>([])
   // selected is "trigger" or a step id.
   selected = $state<string>('trigger')
   // errorStep is the step the last save refused.
@@ -73,6 +75,8 @@ export class FlowEditor {
   insert(list: FlowStep[], index: number, type: string) {
     if (!this.flow) return
     const s = newStep(type, this.flow.steps, this.tables)
+    // With templates around, a new email starts from the first one.
+    if (type === 'send_email' && this.emailTemplates[0]) Object.assign(s.inputs, { mode: 'template', template: this.emailTemplates[0].id, data: {} })
     list.splice(index, 0, s)
     this.selected = s.id
     this.changed()

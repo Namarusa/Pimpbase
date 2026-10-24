@@ -24,7 +24,7 @@ import type { BindingGroup } from '../designer/context'
 
 export type InputKind =
   | 'text' | 'long' | 'template' | 'formula' | 'table' | 'field' | 'attachment_field' | 'values' | 'pairs'
-  | 'select' | 'boolean' | 'query' | 'params' | 'ai_fields'
+  | 'select' | 'boolean' | 'query' | 'params' | 'ai_fields' | 'email_template' | 'email_data'
 
 export interface InputSpec {
   key: string; label: string; kind: InputKind; placeholder?: string; help?: string
@@ -152,17 +152,21 @@ export const stepTypes: StepInfo[] = [
   },
   {
     type: 'send_email', label: 'Send email', group: 'Actions', icon: MailIcon, tone: tones.action, name: 'Email',
-    description: 'Send a mail, with files attached.',
+    description: 'Send a mail from a template or written here, with files attached.',
     inputs: [
-      { key: 'to', label: 'To', kind: 'text', placeholder: '{{ trigger.row.Email }}' },
+      { key: 'mode', label: 'Message', kind: 'select', default: 'write', options: [{ value: 'template', label: 'Use an email template' }, { value: 'write', label: 'Write it here' }] },
+      { key: 'template', label: 'Template', kind: 'email_template', when: (i) => i.mode === 'template' },
+      { key: 'data', label: 'Fill its fields', kind: 'email_data', when: (i) => i.mode === 'template' && !!i.template },
+      { key: 'to', label: 'To', kind: 'text', placeholder: '{{ trigger.row.Email }}', help: 'Addresses separated by commas, or a list of rows or users with an email.' },
       { key: 'cc', label: 'Cc', kind: 'text' },
+      { key: 'bcc', label: 'Bcc', kind: 'text' },
       { key: 'replyTo', label: 'Reply to', kind: 'text' },
-      { key: 'subject', label: 'Subject', kind: 'text', placeholder: 'Your order {{ trigger.row._id }}' },
-      { key: 'format', label: 'Format', kind: 'select', default: 'text', options: [{ value: 'text', label: 'Plain text' }, { value: 'html', label: 'HTML' }] },
-      { key: 'body', label: 'Message', kind: 'template' },
+      { key: 'subject', label: 'Subject', kind: 'text', placeholder: 'Your order {{ trigger.row._id }}', when: (i) => i.mode !== 'template' },
+      { key: 'format', label: 'Format', kind: 'select', default: 'text', options: [{ value: 'text', label: 'Plain text' }, { value: 'html', label: 'HTML' }], when: (i) => i.mode !== 'template' },
+      { key: 'body', label: 'Body', kind: 'template', when: (i) => i.mode !== 'template' },
       { key: 'attachments', label: 'Attachments', kind: 'text', placeholder: '{{ steps.Invoice.file }}' },
     ],
-    outputs: () => [{ path: 'delivery', hint: 'how it went' }],
+    outputs: () => [{ path: 'delivery', hint: 'how it went' }, { path: 'subject' }, { path: 'to', hint: 'list' }, { path: 'via' }, { path: 'messageId' }, { path: 'templateVersion' }],
   },
   {
     type: 'http_request', label: 'HTTP request', group: 'Actions', icon: GlobeIcon, tone: tones.action, name: 'Request',
@@ -401,7 +405,7 @@ export function stepBindings(f: Flow, id: string | null, tables: Table[], querie
 export const flowHelp = 'Pipes: | upper, | number:2, | default:"x", | json, | join:", ". Formulas: {{ = trigger.row.Qty * 2 }}. Repeat: {{#each list}}{{ loop.item.Name }}{{/each}}; branch: {{#if x}}…{{else}}…{{/if}}.'
 
 // summary is a step's one-line description on the canvas.
-export function summary(s: FlowStep, tables: Table[], queries: Query[]): string {
+export function summary(s: FlowStep, tables: Table[], queries: Query[], templateName?: (id: string) => string | undefined): string {
   const i = s.inputs ?? {}
   const t = tables.find((x) => x.id === i.table)?.name
   switch (s.type) {
@@ -415,7 +419,7 @@ export function summary(s: FlowStep, tables: Table[], queries: Query[]): string 
     case 'delay': return `Wait ${i.duration || '…'} ${i.unit ?? 'seconds'}`
     case 'set_variable': return `vars.${i.name || '…'} ${i.mode === 'add' ? '+=' : i.mode === 'append' ? '+= [' : '='} ${i.value ?? ''}${i.mode === 'append' ? ' ]' : ''}`
     case 'return': return `Give back ${i.value || 'nothing'}`
-    case 'send_email': return `To ${i.to || '…'}${i.subject ? ` · ${i.subject}` : ''}`
+    case 'send_email': return `To ${i.to || '…'}${i.mode === 'template' ? ` · ${templateName?.(i.template) ?? 'choose a template'}` : i.subject ? ` · ${i.subject}` : ''}`
     case 'http_request': return `${i.method ?? 'POST'} ${i.url || '…'}`
     case 'generate_pdf': return `${i.title || i.fileName || 'Untitled'}${i.field ? ` → ${i.field}` : ''}`
     case 'ai': {

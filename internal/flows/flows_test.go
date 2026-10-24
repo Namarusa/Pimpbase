@@ -179,23 +179,6 @@ func TestPDF(t *testing.T) {
 	}
 }
 
-func TestMailBytes(t *testing.T) {
-	m := &Mail{From: "Pimpbase <flows@example.com>", To: []string{"bob@example.com"}, Subject: "Votre facture n°7", Text: "Bonjour", Attachments: []Attachment{{Name: "facture 7.pdf", Type: "application/pdf", Data: []byte("%PDF-1.4")}}}
-	raw, err := m.Bytes("example.com")
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := string(raw)
-	for _, want := range []string{"From: \"Pimpbase\" <flows@example.com>", "To: <bob@example.com>", "Subject: =?utf-8?q?Votre_facture_n=C2=B07?=", "multipart/mixed", `filename="facture 7.pdf"`, "JVBERi0xLjQ="} {
-		if !strings.Contains(s, want) {
-			t.Errorf("mail lacks %q:\n%s", want, s)
-		}
-	}
-	if got := addresses([]any{"a@x.com; b@y.com", map[string]any{"email": "c@z.com"}}); strings.Join(got, ",") != "a@x.com,b@y.com,c@z.com" {
-		t.Errorf("addresses = %v", got)
-	}
-}
-
 func TestTrimLog(t *testing.T) {
 	rows := make([]any, 400)
 	for i := range rows {

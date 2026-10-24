@@ -19,6 +19,7 @@ import (
 
 	"github.com/pimpbase/pimpbase/internal/apps"
 	"github.com/pimpbase/pimpbase/internal/cluster"
+	"github.com/pimpbase/pimpbase/internal/email"
 	"github.com/pimpbase/pimpbase/internal/exttables"
 	"github.com/pimpbase/pimpbase/internal/files"
 	"github.com/pimpbase/pimpbase/internal/ids"
@@ -54,8 +55,11 @@ type Engine struct {
 	Runner  *queries.Runner
 	Files   *files.Service
 	Apps    *apps.Service
-	Mailer  Mailer
-	Log     *slog.Logger
+	// Mailer delivers Send email steps; Emails holds the templates they
+	// use. Both may be the same email.Service.
+	Mailer email.Mailer
+	Emails *email.Service
+	Log    *slog.Logger
 	// Client sends HTTP request steps.
 	Client *http.Client
 	// AI answers AI steps; nil makes them fail.
@@ -377,6 +381,8 @@ type StartInput struct {
 	// Actor is who started the run, for flows that run as the user. Nil
 	// means nobody: such runs act as the flow's RunRole.
 	Actor *rbac.Actor
+	// DryRun renders Send email steps into the run log without sending.
+	DryRun bool
 }
 
 // Begin starts a run in the background. The channel closes when it ends.
@@ -408,7 +414,7 @@ func (e *Engine) Begin(ctx context.Context, f *Flow, in StartInput) (*Run, <-cha
 	r := &Run{ID: ids.New("run"), AppID: f.AppID, FlowID: f.ID, Status: Running, Test: in.Test, TriggerKind: in.Kind, Trigger: trig, Steps: []StepLog{}, StartedAt: e.now().UTC()}
 	x := &exec{
 		e: e, flow: f, run: r, env: env, secrets: secrets, chain: in.Chain,
-		steps: map[string]any{}, vars: map[string]any{}, starter: in.Actor,
+		steps: map[string]any{}, vars: map[string]any{}, starter: in.Actor, dryRun: in.DryRun,
 	}
 	user := in.User
 	if f.RunAs == RunAsUser && in.Actor == nil {
@@ -483,6 +489,12 @@ type exec struct {
 	scope interp.Map
 	steps map[string]any
 	vars  map[string]any
+
+	// dryRun keeps emails in the log; mail is the email the current step
+	// made, for its log line, and mails counts emails logged.
+	dryRun bool
+	mail   *EmailLog
+	mails  int
 
 	ctx      context.Context
 	executed int
@@ -623,6 +635,7 @@ func (x *exec) list(steps []*Step, sc interp.Scope, depth, item int) error {
 		out, err := x.step(s, in, depth, item)
 		l.DurationMs = time.Since(start).Milliseconds()
 		l.Inputs = trimLog(in.values, &l.Trimmed)
+		l.Email, x.mail = x.mail, nil
 		if err != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
 			l.Status, l.Error = "failed", "stopped"
 			x.put(at, l)
@@ -938,7 +951,7 @@ func (x *exec) step(s *Step, in *inputs, depth, item int) (any, error) {
 			in.values["firstItem"] = plain(items[0])
 		}
 		for i, it := range items {
-			sc := overlay{names: map[string]any{"loop": map[string]any{"item": plain(it), "index": float64(i), "number": float64(i + 1), "count": float64(len(items))}}, base: in.sc}
+			sc := overlay{Names: map[string]any{"loop": map[string]any{"item": plain(it), "index": float64(i), "number": float64(i + 1), "count": float64(len(items))}}, Base: in.sc}
 			if err := x.list(s.Do, sc, depth+1, i+1); err != nil {
 				return nil, err
 			}
@@ -1262,38 +1275,142 @@ func truthyValue(v any) bool {
 }
 
 func (x *exec) sendEmail(in *inputs) (any, error) {
-	to, err := in.value("to")
+	m, meta, err := x.buildEmail(in, true)
+	if m != nil {
+		x.e.fillSender(x.ctx, m)
+		x.logMail(m, meta)
+	}
 	if err != nil {
 		return nil, err
 	}
-	cc, err := in.value("cc")
-	if err != nil {
+	var rc *email.Receipt
+	if x.dryRun {
+		rc = &email.Receipt{Via: "dry run", Note: "not sent: this test run only previews emails"}
+		if x.mail != nil {
+			x.mail.DryRun = true
+		}
+	} else if rc, err = x.e.Mailer.Send(x.ctx, m); err != nil {
 		return nil, err
 	}
-	m := &Mail{To: addresses(to), Cc: addresses(cc)}
-	if len(m.To) == 0 {
-		return nil, errors.New("there is nobody to send the email to")
+	out := map[string]any{"to": m.To, "subject": m.Subject, "delivery": rc.Note, "via": rc.Via, "attachments": meta.attachments}
+	if len(m.Cc) > 0 {
+		out["cc"] = m.Cc
 	}
+	if len(m.Bcc) > 0 {
+		out["bcc"] = m.Bcc
+	}
+	if rc.ID != "" {
+		out["messageId"] = rc.ID
+	}
+	if meta.template != "" {
+		out["template"], out["templateVersion"] = meta.template, meta.version
+	}
+	if x.dryRun {
+		out["dryRun"] = true
+	}
+	return out, nil
+}
+
+// mailMeta is what the log tells about an email besides the mail.
+type mailMeta struct {
+	template    string
+	version     int
+	attachments []string
+	warnings    []string
+}
+
+// EmailLog is an email as a step made it, kept in the run log so the
+// builder can show it.
+type EmailLog struct {
+	From        string   `json:"from,omitempty"`
+	To          []string `json:"to"`
+	Cc          []string `json:"cc,omitempty"`
+	Bcc         []string `json:"bcc,omitempty"`
+	ReplyTo     string   `json:"replyTo,omitempty"`
+	Subject     string   `json:"subject"`
+	HTML        string   `json:"html,omitempty"`
+	Text        string   `json:"text,omitempty"`
+	Attachments []string `json:"attachments,omitempty"`
+	Template    string   `json:"template,omitempty"`
+	Version     int      `json:"version,omitempty"`
+	Warnings    []string `json:"warnings,omitempty"`
+	DryRun      bool     `json:"dryRun,omitempty"`
+	// Cut is true when the body was too large to keep.
+	Cut bool `json:"cut,omitempty"`
+}
+
+const (
+	maxLoggedMails = 20
+	maxLoggedBody  = 256 << 10
+)
+
+func newEmailLog(m *email.Mail, meta *mailMeta) *EmailLog {
+	l := &EmailLog{From: m.From, To: m.To, Cc: m.Cc, Bcc: m.Bcc, ReplyTo: m.ReplyTo, Subject: m.Subject, HTML: m.HTML, Text: m.Text,
+		Attachments: meta.attachments, Template: meta.template, Version: meta.version, Warnings: meta.warnings}
+	if len(l.HTML)+len(l.Text) > maxLoggedBody {
+		l.HTML, l.Cut = "", true
+		if len(l.Text) > maxLoggedBody {
+			l.Text = l.Text[:maxLoggedBody]
+		}
+	}
+	return l
+}
+
+// logMail keeps the email for the step's log line, for the first emails
+// of a run.
+func (x *exec) logMail(m *email.Mail, meta *mailMeta) {
+	if x.mails >= maxLoggedMails {
+		return
+	}
+	x.mails++
+	l := newEmailLog(m, meta)
+	l.HTML, l.Text = x.hide(l.HTML), x.hide(l.Text)
+	x.mail = l
+}
+
+// buildEmail fills a Send email step's inputs into a mail: from a
+// template, or from the step's own subject and message. With files, it
+// loads the attachments; without, it only names them.
+func (x *exec) buildEmail(in *inputs, files bool) (*email.Mail, *mailMeta, error) {
+	meta := &mailMeta{attachments: []string{}}
+	m := &email.Mail{}
+	for _, f := range []struct {
+		key string
+		to  *[]string
+	}{{"to", &m.To}, {"cc", &m.Cc}, {"bcc", &m.Bcc}} {
+		v, err := in.value(f.key)
+		if err != nil {
+			return nil, meta, err
+		}
+		*f.to = email.Addresses(v)
+	}
+	var err error
 	if m.ReplyTo, err = in.text("replyTo", interp.Text); err != nil {
-		return nil, err
+		return nil, meta, err
 	}
-	if m.Subject, err = in.text("subject", interp.Text); err != nil {
-		return nil, err
-	}
-	body, err := in.text("body", interp.Text)
-	if err != nil {
-		return nil, err
-	}
-	if in.str("format") == "html" {
-		m.HTML = body
+	m.ReplyTo = strings.TrimSpace(m.ReplyTo)
+	if in.str("mode") == "template" {
+		if err := x.fillTemplate(in, m, meta); err != nil {
+			return nil, meta, err
+		}
 	} else {
-		m.Text = body
+		if m.Subject, err = in.text("subject", interp.Text); err != nil {
+			return nil, meta, err
+		}
+		m.Subject = email.OneLine(m.Subject)
+		if in.str("format") == "html" {
+			if m.HTML, err = in.text("body", interp.HTML); err != nil {
+				return nil, meta, err
+			}
+			m.Text = email.HTMLToText(m.HTML)
+		} else if m.Text, err = in.text("body", interp.Text); err != nil {
+			return nil, meta, err
+		}
 	}
 	av, err := in.value("attachments")
 	if err != nil {
-		return nil, err
+		return m, meta, err
 	}
-	var names []string
 	for _, a := range asList(av) {
 		ref, ok := fileRef(a)
 		if !ok {
@@ -1301,20 +1418,61 @@ func (x *exec) sendEmail(in *inputs) (any, error) {
 		}
 		f, data, err := x.e.Files.Get(x.ctx, x.flow.AppID, ref)
 		if err != nil {
-			return nil, fmt.Errorf("the attachment %s was not found", ref)
+			return m, meta, fmt.Errorf("the attachment %s was not found", ref)
 		}
-		m.Attachments = append(m.Attachments, Attachment{Name: f.Name, Type: f.Type, Data: data})
-		names = append(names, f.Name)
+		if files {
+			m.Attachments = append(m.Attachments, email.Attachment{Name: f.Name, Type: f.Type, Data: data})
+		}
+		meta.attachments = append(meta.attachments, f.Name)
 	}
-	note, err := x.e.Mailer.Send(x.ctx, m)
+	if err := m.Check(); err != nil {
+		return m, meta, err
+	}
+	return m, meta, nil
+}
+
+// fillTemplate renders the step's template with its field values.
+func (x *exec) fillTemplate(in *inputs, m *email.Mail, meta *mailMeta) error {
+	if x.e.Emails == nil {
+		return errors.New("email templates are not available on this server")
+	}
+	id := in.str("template")
+	if id == "" {
+		return errors.New("choose an email template")
+	}
+	t, err := x.e.Emails.Template(x.ctx, x.flow.AppID, id)
 	if err != nil {
-		return nil, err
+		if errors.Is(err, email.ErrNotFound) {
+			return fmt.Errorf("the email template %s no longer exists", id)
+		}
+		return err
 	}
-	out := map[string]any{"to": m.To, "subject": m.Subject, "delivery": note, "attachments": names}
-	if len(m.Cc) > 0 {
-		out["cc"] = m.Cc
+	meta.template, meta.version = t.Name, t.Version
+	data := map[string]any{}
+	given, _ := in.raw["data"].(map[string]any)
+	logged := map[string]any{}
+	for _, p := range t.Params {
+		src, _ := given[p.Name].(string)
+		if strings.TrimSpace(src) == "" {
+			continue
+		}
+		v, err := value(src, in.sc)
+		if err != nil {
+			return fmt.Errorf("%s: %w", p.Name, err)
+		}
+		data[p.Name] = plain(v)
+		logged[p.Name] = data[p.Name]
 	}
-	return out, nil
+	if len(logged) > 0 {
+		in.values["data"] = logged
+	}
+	app, _ := x.scope["app"].(map[string]any)
+	r, err := t.Render(data, app)
+	if err != nil {
+		return fmt.Errorf("the template %s: %w", t.Name, err)
+	}
+	m.Subject, m.HTML, m.Text, meta.warnings = r.Subject, r.HTML, r.Text, r.Warnings
+	return nil
 }
 
 // fileRef reads a file id from a file object, a list of them or text.
@@ -1556,4 +1714,40 @@ func shorten(v any, items, text int) any {
 		}
 	}
 	return v
+}
+
+// PreviewEmail fills a Send email step's inputs over a sample scope (what
+// the builder shows for the step: trigger, steps, vars…) as a run would,
+// without sending. files loads the attachments too, for a test send.
+func (e *Engine) PreviewEmail(ctx context.Context, appID string, stepInputs, scope map[string]any, files bool) (*email.Mail, *EmailLog, error) {
+	app, err := e.Apps.Get(ctx, appID)
+	if err != nil {
+		return nil, nil, err
+	}
+	sc := interp.Map{}
+	for k, v := range scope {
+		sc[k] = v
+	}
+	sc["app"] = map[string]any{"id": app.ID, "name": app.Name, "slug": app.Slug}
+	for _, k := range []string{"trigger", "steps", "vars", "env", "user"} {
+		if _, ok := sc[k]; !ok {
+			sc[k] = map[string]any{}
+		}
+	}
+	x := &exec{e: e, flow: &Flow{AppID: appID}, ctx: ctx, scope: sc, steps: map[string]any{}, vars: map[string]any{}}
+	in := &inputs{x: x, sc: sc, values: map[string]any{}, raw: stepInputs}
+	m, meta, err := x.buildEmail(in, files)
+	if m == nil {
+		return nil, nil, err
+	}
+	e.fillSender(ctx, m)
+	return m, newEmailLog(m, meta), err
+}
+
+// fillSender gives a mail without a sender the workspace's, so logs and
+// previews show who it comes from.
+func (e *Engine) fillSender(ctx context.Context, m *email.Mail) {
+	if m.From == "" && e.Emails != nil {
+		m.From = e.Emails.Sender(ctx)
+	}
 }

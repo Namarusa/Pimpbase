@@ -38,7 +38,9 @@ To use Postgres instead, pass a connection string:
 Each app then gets its own Postgres schema. Every flag also reads an
 environment variable: `PIMPBASE_ADDR`, `PIMPBASE_DATA`, `PIMPBASE_POSTGRES`,
 `PIMPBASE_SECURE_COOKIES` (set it to `true` behind HTTPS), `PIMPBASE_SMTP`
-and `PIMPBASE_MAIL_FROM` for the flows' Send email step:
+and `PIMPBASE_MAIL_FROM`. Mail is usually set up by an admin in
+**Users → Email** (SMTP, SendGrid, Mailgun, Postmark, Resend, or log only);
+`--smtp` sets it on the server instead, and wins:
 
 ```sh
 ./pimpbase serve --smtp "smtp://user:pass@mail.example:587" --mail-from "Orders <orders@example.com>"
@@ -46,6 +48,31 @@ and `PIMPBASE_MAIL_FROM` for the flows' Send email step:
 
 `smtp://` upgrades with STARTTLS when the server offers it, `smtps://` uses
 TLS from the start, and `--smtp log` only writes the mails to the log.
+
+## Email templates
+
+Each app has an **Emails** tab: templates with a subject, a preview line,
+blocks (heading, text with bold, links and lists, button, image, a table
+with a row per list item, divider, space, your own HTML) or a whole HTML
+body, and a look (brand colour, font, logo, footer). A template declares
+the fields it reads, such as `customer`, `order` and `lines`, with sample
+values that fill the live preview, at desktop or phone width or as the
+plain text sent alongside. Bound values are HTML-escaped, links only take
+http, https, mailto and tel, and a block can have a Show when. Each save
+keeps a version (the last 50); flows send the newest, and any version can
+be restored. Templates travel with app export and import.
+
+The flows' **Send email** step sends a template, filling each field from
+the flow (`{{ trigger.row }}`, `{{ steps.Lines.rows }}`), or a message
+written in the step. **Preview** shows the email with the flow's sample
+data and **Send me a test** mails it to you only; a test run can only
+preview its emails, and each run's log keeps the emails it sent.
+
+The workspace's own emails (invitation, password reset, sign-in link) are
+templates too, edited in **Users → Email**. With mail set up, admins
+invite people by email, people reset a forgotten password, and, when the
+admin turns it on, sign in with a link. Links work once and expire (7
+days, 1 hour, 15 minutes).
 
 ## Deploy and scale
 
@@ -404,7 +431,7 @@ A flow is a trigger and a list of steps, edited on a canvas in the
   lowest app role allowed to run it.
 - **Steps**: create, update, delete and find rows, run an API studio query,
   condition (Yes and No branches), loop over a list, delay (up to an hour),
-  set variable, send email (with attached files), HTTP request, generate
+  set variable, send email (a template or a written message, with attached files), HTTP request, generate
   PDF and return result. A step can be switched off, or let the flow go on
   when it fails.
 - **Bindings**: every input is a `{{ }}` template that reads
@@ -610,7 +637,8 @@ internal/xmltree/  XML to JSON-like data and back
 internal/queries/  API and database data sources, queries, variables and the query runner
 internal/extdb/    PostgreSQL, MySQL, SQL Server and MongoDB drivers, schema, rows, SQL parameters
 internal/exttables/ tables imported from external databases
-internal/flows/    flows, the engine, cron, email, PDF documents, AI steps
+internal/flows/    flows, the engine, cron, Send email, PDF documents, AI steps
+internal/email/    mail delivery (SMTP, provider APIs, log), email templates, versions, system emails
 internal/ai/       the assistant: providers (Anthropic, OpenAI, Gemini, Azure, Mistral, xAI, DeepSeek, Groq, OpenRouter, TypeSafe, OpenAI-compatible), drafts, formulas, questions, flow AI steps
 internal/cluster/  servers sharing a database: heartbeats and job claims
 internal/bundle/   .bubiapp export and import

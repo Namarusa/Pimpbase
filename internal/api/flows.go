@@ -162,6 +162,8 @@ func (s *Server) testFlow(w http.ResponseWriter, r *http.Request) error {
 	}
 	var in struct {
 		Trigger map[string]any `json:"trigger"`
+		// DryRun previews emails in the log instead of sending them.
+		DryRun bool `json:"dryRun"`
 	}
 	if data, _ := io.ReadAll(http.MaxBytesReader(nil, r.Body, 1<<20)); len(strings.TrimSpace(string(data))) > 0 {
 		if err := json.Unmarshal(data, &in); err != nil {
@@ -182,7 +184,7 @@ func (s *Server) testFlow(w http.ResponseWriter, r *http.Request) error {
 		}
 		data["params"] = p
 	}
-	in2 := flows.StartInput{Kind: f.Trigger.Type, Data: data, User: s.userOf(r, act), Test: true, Actor: &act}
+	in2 := flows.StartInput{Kind: f.Trigger.Type, Data: data, User: s.userOf(r, act), Test: true, Actor: &act, DryRun: in.DryRun}
 	if f.Trigger.Unattended() {
 		// Test as the real runs will go: with nobody, so as the run-as role.
 		in2.User, in2.Actor = nil, nil

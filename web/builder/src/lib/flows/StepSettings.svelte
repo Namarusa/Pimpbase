@@ -18,6 +18,10 @@
   import LoopItemPanel from './LoopItemPanel.svelte'
   import SampleBox from './SampleBox.svelte'
   import AIStepSettings from './AIStepSettings.svelte'
+  import EmailStepPanel from './EmailStepPanel.svelte'
+  import PencilIcon from '@lucide/svelte/icons/pencil'
+  import WandIcon from '@lucide/svelte/icons/wand-sparkles'
+  import { navigate } from '../router.svelte'
   import { flowHelp, stepBindings, stepInfo, type InputSpec } from './steps'
 
   // StepSettings edits the selected step's name and inputs.
@@ -55,6 +59,26 @@
   }
   const val = (i: InputSpec) => step.inputs[i.key] ?? i.default ?? ''
   const values = $derived((step.inputs.values ?? []) as { field: string; value: string }[])
+  const emailTpl = $derived(ed.emailTemplates.find((t) => t.id === step.inputs.template))
+  const emailData = $derived((step.inputs.data ?? {}) as Record<string, string>)
+  // suggestData fills empty template fields from what the flow has: the
+  // trigger row for an object, the last found rows for a list, and
+  // trigger fields with the same name.
+  function suggestData() {
+    if (!emailTpl || !ed.flow) return
+    const out = { ...emailData }
+    const rowTrigger = ed.flow.trigger.type.startsWith('row_')
+    const fields = ed.table(ed.flow.trigger.table)?.fields ?? []
+    const found = groups.flatMap((g) => g.items).map((i) => i.path).filter((p) => /^steps\.\w+\.rows$/.test(p)).pop()
+    for (const p of emailTpl.params) {
+      if (out[p.name]?.trim()) continue
+      const f = fields.find((x) => x.name.toLowerCase() === p.name.toLowerCase())
+      if (p.type === 'object' && rowTrigger) out[p.name] = '{{ trigger.row }}'
+      else if (p.type === 'list' && found) out[p.name] = `{{ ${found} }}`
+      else if (f && rowTrigger) out[p.name] = `{{ trigger.row.${f.name} }}`
+    }
+    set('data', out)
+  }
 </script>
 
 {#if info}
@@ -128,6 +152,30 @@
             {:else}
               <span class="text-muted-foreground text-xs">{query ? 'This query takes no parameters.' : 'Choose a query first.'}</span>
             {/each}
+          {:else if i.kind === 'email_template'}
+            <div class="flex items-center gap-1.5">
+              <Select.Root type="single" value={step.inputs.template ?? ''} onValueChange={(v) => { const keep = emailData; const t = ed.emailTemplates.find((x) => x.id === v); step.inputs.template = v; step.inputs.data = Object.fromEntries(Object.entries(keep).filter(([k]) => t?.params.some((p) => p.name === k))); ed.changed() }}>
+                <Select.Trigger size="sm" class="min-w-0 flex-1">{emailTpl?.name ?? (step.inputs.template ? 'Missing template' : 'Choose a template')}</Select.Trigger>
+                <Select.Content>
+                  {#each ed.emailTemplates as t (t.id)}<Select.Item value={t.id} label={t.name}>{t.name}<span class="text-muted-foreground ml-auto text-[10px]">v{t.version}</span></Select.Item>{/each}
+                  {#if !ed.emailTemplates.length}<div class="text-muted-foreground px-2 py-1.5 text-xs">Make a template in the Emails tab first.</div>{/if}
+                </Select.Content>
+              </Select.Root>
+              {#if ed.app}<Button variant="outline" size="sm" class="h-8 shrink-0 text-xs" onclick={() => navigate(`/apps/${ed.app!.slug}/emails${emailTpl ? '/' + emailTpl.id : ''}`)}><PencilIcon />{emailTpl ? 'Edit' : 'New'}</Button>{/if}
+            </div>
+            {#if emailTpl}<p class="text-muted-foreground text-xs">Sends the newest saved version (now v{emailTpl.version}){emailTpl.subject ? `, subject “${emailTpl.subject}”` : ''}.</p>{/if}
+          {:else if i.kind === 'email_data'}
+            {#each emailTpl?.params ?? [] as p (p.name)}
+              <div class="flex flex-col gap-1">
+                <div class="flex items-baseline gap-1.5"><span class="font-mono text-xs">{p.name}</span><span class="text-muted-foreground text-[10px]">{p.type}{p.description ? ` · ${p.description}` : ''}</span></div>
+                <BindingInput value={emailData[p.name] ?? ''} mono {groups} {scope} help={flowHelp} placeholder={p.type === 'object' ? '{{ trigger.row }}' : p.type === 'list' ? '{{ steps.Found.rows }}' : ''} onChange={(v) => set('data', { ...emailData, [p.name]: v })} />
+              </div>
+            {:else}
+              <span class="text-muted-foreground text-xs">This template reads no fields.</span>
+            {/each}
+            {#if emailTpl?.params.some((p) => !emailData[p.name]?.trim())}
+              <Button variant="ghost" size="sm" class="h-7 self-start text-xs" onclick={suggestData}><WandIcon />Fill what fits from the flow</Button>
+            {/if}
           {:else if i.kind === 'pairs'}
             <KeyValueEditor value={(step.inputs[i.key] ?? []) as Pair[]} {groups} {scope} addLabel="Add header" keyPlaceholder="X-Api-Key" onChange={(v) => set(i.key, v)} />
           {:else if i.kind === 'values'}
@@ -156,6 +204,7 @@
     {/each}
 
     {#if step.type === 'run_query' || step.type === 'find_rows'}<SampleBox {step} />{/if}
+    {#if step.type === 'send_email'}<EmailStepPanel {step} />{/if}
     <Separator />
     <div class="flex items-center gap-2">
       <Switch id="step-continue" checked={!!step.continueOnError} onCheckedChange={(v) => { step.continueOnError = v || undefined; ed.changed() }} />

@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pimpbase/pimpbase/internal/flows"
+	"github.com/pimpbase/pimpbase/internal/email"
 	"github.com/pimpbase/pimpbase/internal/store"
 	"github.com/pimpbase/pimpbase/internal/store/storetest"
 )
@@ -69,7 +69,7 @@ func TestFlows(t *testing.T) {
 		defer hook.Close()
 
 		api := New(s, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
-		mailer := &flows.LogMailer{From: "shop@example.com"}
+		mailer := &email.LogMailer{From: "shop@example.com"}
 		api.Engine.Mailer = mailer
 		srv := httptest.NewServer(api.Handler())
 		defer srv.Close()

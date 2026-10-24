@@ -171,7 +171,7 @@ func (f *file) lines(name string, fn func([]byte) error) error {
 	return sc.Err()
 }
 
-var idRe = regexp.MustCompile(`^(app|tbl|scr|ds|qry|flw|ext)_[a-z2-7]{16}$`)
+var idRe = regexp.MustCompile(`^(app|tbl|scr|ds|qry|flw|ext|eml)_[a-z2-7]{16}$`)
 
 // packageIDs lists the ids a package brings, from its rows' "id" columns.
 func packageIDs(p *Package) []string {
@@ -190,13 +190,14 @@ func packageIDs(p *Package) []string {
 	add(p.Queries)
 	add(p.Flows)
 	add(p.ExtTables)
+	add(p.EmailTemplates)
 	return out
 }
 
 // taken reports which ids already exist on this server.
 func (s *Service) taken(ctx context.Context, list []string) (map[string]bool, error) {
 	out := map[string]bool{}
-	for _, t := range []string{"apps", "app_tables", "app_screens", "app_datasources", "app_queries", "app_flows", "app_ext_tables"} {
+	for _, t := range []string{"apps", "app_tables", "app_screens", "app_datasources", "app_queries", "app_flows", "app_ext_tables", "email_templates"} {
 		for start := 0; start < len(list); start += 500 {
 			chunk := list[start:min(start+500, len(list))]
 			args := make([]any, len(chunk))
@@ -343,6 +344,9 @@ func (s *Service) create(ctx context.Context, f *file, p *Package, opts ImportOp
 		}
 		plan.add("flow", str(r["name"]), "add", detail+"; webhooks get a new address")
 	}
+	for _, r := range p.EmailTemplates {
+		plan.add("email template", str(r["name"]), "add", "")
+	}
 	if f.manifest.Data {
 		plan.Rows, plan.Files = f.manifest.Rows, f.manifest.Files
 	}
@@ -477,6 +481,15 @@ func (s *Service) insertMeta(ctx context.Context, appID string, p *Package, opts
 			return err
 		}
 	}
+	for _, r := range p.EmailTemplates {
+		if err := ins(emailCols.table, emailCols.cols, r, nil); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO email_template_versions (template_id, version, definition, saved_at, saved_by) VALUES (?, ?, ?, ?, ?)`,
+			r["id"], plain(r["version"]), r["definition"], r["updated_at"], r["updated_by"]); err != nil {
+			return err
+		}
+	}
 	return tx.Commit()
 }
 
@@ -601,7 +614,7 @@ func (s *Service) update(ctx context.Context, f *file, p *Package, opts ImportOp
 	}
 
 	cur := map[string][]Row{}
-	for _, mt := range []metaTable{tableCols, screenCols, dsCols, queryCols, flowCols, roleCols, varCols, extCols} {
+	for _, mt := range []metaTable{tableCols, screenCols, dsCols, queryCols, flowCols, roleCols, varCols, extCols, emailCols} {
 		if cur[mt.table], err = s.readRows(ctx, mt, "app_id = ?", target.ID); err != nil {
 			return nil, err
 		}
@@ -635,6 +648,7 @@ func (s *Service) update(ctx context.Context, f *file, p *Package, opts ImportOp
 	match(p.Queries, cur["app_queries"], "name")
 	match(p.Flows, cur["app_flows"], "name")
 	match(p.ExtTables, cur["app_ext_tables"], "name")
+	match(p.EmailTemplates, cur["email_templates"], "name")
 	// Things the app lacks keep their ids unless another app has them.
 	var rest []string
 	for _, id := range packageIDs(p) {
@@ -764,6 +778,7 @@ func (s *Service) update(ctx context.Context, f *file, p *Package, opts ImportOp
 	planRows("query", p.Queries, cur["app_queries"], "name", "datasource_id", "definition")
 	planRows("flow", p.Flows, cur["app_flows"], "name", "definition")
 	planRows("external table", p.ExtTables, cur["app_ext_tables"], "name", "datasource_id", "definition")
+	planRows("email template", p.EmailTemplates, cur["email_templates"], "name", "definition")
 	haveVars := map[string]bool{}
 	for _, r := range cur["app_variables"] {
 		haveVars[str(r["name"])] = true
@@ -1130,11 +1145,47 @@ func (s *Service) applyMeta(ctx context.Context, plan *Plan, appID string, p *Pa
 			return err
 		}
 	}
+	haveT := map[string]Row{}
+	for _, r := range cur["email_templates"] {
+		haveT[str(r["id"])] = r
+	}
+	for _, r := range p.EmailTemplates {
+		h, ok := haveT[str(r["id"])]
+		if !ok {
+			if err := exec(`INSERT INTO email_templates (app_id, id, name, definition, version, created_at, updated_at, updated_by) VALUES (?, ?, ?, ?, 1, ?, ?, ?)`, appID, r["id"], r["name"], r["definition"], now, now, r["updated_by"]); err != nil {
+				return err
+			}
+			if err := exec(`INSERT INTO email_template_versions (template_id, version, definition, saved_at, saved_by) VALUES (?, 1, ?, ?, ?)`, r["id"], r["definition"], now, r["updated_by"]); err != nil {
+				return err
+			}
+			continue
+		}
+		version := toInt(plain(h["version"]))
+		if str(h["definition"]) != str(r["definition"]) {
+			version++
+			if err := exec(`INSERT INTO email_template_versions (template_id, version, definition, saved_at, saved_by) VALUES (?, ?, ?, ?, ?)`, r["id"], version, r["definition"], now, "app import"); err != nil {
+				return err
+			}
+		}
+		if err := exec(`UPDATE email_templates SET name = ?, definition = ?, version = ?, updated_at = ? WHERE app_id = ? AND id = ?`, r["name"], r["definition"], version, now, appID, r["id"]); err != nil {
+			return err
+		}
+	}
 	if opts.Prune {
 		inFile := map[string]bool{}
-		for _, list := range [][]Row{p.Datasources, p.Queries, p.Flows, p.ExtTables} {
+		for _, list := range [][]Row{p.Datasources, p.Queries, p.Flows, p.ExtTables, p.EmailTemplates} {
 			for _, r := range list {
 				inFile[str(r["id"])] = true
+			}
+		}
+		for _, h := range cur["email_templates"] {
+			if !inFile[str(h["id"])] {
+				if err := exec(`DELETE FROM email_template_versions WHERE template_id = ?`, h["id"]); err != nil {
+					return err
+				}
+				if err := exec(`DELETE FROM email_templates WHERE app_id = ? AND id = ?`, appID, h["id"]); err != nil {
+					return err
+				}
 			}
 		}
 		for table, rows := range map[string][]Row{"app_queries": cur["app_queries"], "app_flows": cur["app_flows"], "app_ext_tables": cur["app_ext_tables"]} {

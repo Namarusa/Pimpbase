@@ -594,7 +594,9 @@ type StepLog struct {
 	Inputs any    `json:"inputs,omitempty"`
 	Output any    `json:"output,omitempty"`
 	// Trimmed is true when long lists and texts were cut for the log.
-	Trimmed    bool      `json:"trimmed,omitempty"`
+	Trimmed bool `json:"trimmed,omitempty"`
+	// Email is the email a Send email step made, to preview it.
+	Email      *EmailLog `json:"email,omitempty"`
 	Error      string    `json:"error,omitempty"`
 	StartedAt  time.Time `json:"startedAt"`
 	DurationMs int64     `json:"durationMs"`

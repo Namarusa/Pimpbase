@@ -14,6 +14,8 @@
   import Design from './pages/Design.svelte'
   import Apis from './pages/Apis.svelte'
   import Flows from './pages/Flows.svelte'
+  import Emails from './pages/Emails.svelte'
+  import Reset from './pages/Reset.svelte'
   import Users from './pages/Users.svelte'
   import AppSettings from './pages/AppSettings.svelte'
   import Access from './pages/Access.svelte'
@@ -46,6 +48,7 @@
   const designRoute = $derived(match('/apps/:app/design/:screen', route.path) ?? match('/apps/:app/design', route.path))
   const apisRoute = $derived(match('/apps/:app/apis/:item', route.path) ?? match('/apps/:app/apis', route.path))
   const flowsRoute = $derived(match('/apps/:app/flows/:item', route.path) ?? match('/apps/:app/flows', route.path))
+  const emailsRoute = $derived(match('/apps/:app/emails/:item', route.path) ?? match('/apps/:app/emails', route.path))
   const settingsRoute = $derived(match('/apps/:app/settings', route.path))
   const accessRoute = $derived(match('/apps/:app/access/:tab', route.path) ?? match('/apps/:app/access', route.path))
   const initials = $derived((session.user?.name || session.user?.email || '?').split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase()).join(''))
@@ -55,7 +58,9 @@
 <ModeWatcher defaultMode="system" disableTransitions />
 <Toaster richColors position="top-right" />
 
-{#if runtimeSlug}
+{#if route.path === '/reset'}
+  <Reset />
+{:else if runtimeSlug}
   {#key runtimeSlug}<Runtime slug={decodeURIComponent(runtimeSlug)} />{/key}
 {:else if !session.ready}
   <div class="text-muted-foreground grid h-screen place-items-center text-sm">Loading…</div>
@@ -100,6 +105,8 @@
         {#key apisRoute.app + ':' + aiReload.n}<Apis app={apisRoute.app} item={apisRoute.item} />{/key}
       {:else if flowsRoute}
         {#key flowsRoute.app + ':' + aiReload.n}<Flows app={flowsRoute.app} item={flowsRoute.item} />{/key}
+      {:else if emailsRoute}
+        {#key emailsRoute.app}<Emails app={emailsRoute.app} item={emailsRoute.item} />{/key}
       {:else if dataRoute}
         <div class="studio h-full">{#key dataRoute.app + ':' + aiReload.n}<Data app={dataRoute.app} tableId={dataRoute.table} />{/key}</div>
       {:else if accessRoute}
@@ -110,7 +117,7 @@
         <Account />
       {:else if settingsRoute}
         <div class="studio h-full"><AppSettings app={settingsRoute.app} /></div>
-      {:else if route.path === '/users' || route.path === '/users/sso' || route.path === '/users/ai'}
+      {:else if route.path === '/users' || route.path === '/users/sso' || route.path === '/users/ai' || route.path === '/users/email'}
         <Users />
       {:else}
         <div class="studio h-full"><Apps /></div>

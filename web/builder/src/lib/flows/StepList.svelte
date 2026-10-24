@@ -34,7 +34,7 @@
             {#if ed.errorStep === s.id}<CircleAlertIcon class="text-destructive size-3.5" />{/if}
           </span>
           <span class="text-muted-foreground truncate font-mono text-[11px]">{s.name}{s.disabled ? ' · off' : ''}{s.continueOnError ? ' · goes on if it fails' : ''}</span>
-          <span class="text-foreground/80 mt-0.5 line-clamp-2 text-xs [overflow-wrap:anywhere]">{summary(s, ed.tables, ed.queries)}</span>
+          <span class="text-foreground/80 mt-0.5 line-clamp-2 text-xs [overflow-wrap:anywhere]">{summary(s, ed.tables, ed.queries, (id) => ed.emailTemplates.find((t) => t.id === id)?.name)}</span>
         </span>
       </button>
       <DropdownMenu.Root>

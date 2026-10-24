@@ -318,6 +318,7 @@ const (
 	Header             // a header value: no line breaks
 	JSON               // a JSON document
 	XML                // an XML document
+	HTML               // HTML text or attribute values: escaped like XML
 )
 
 // raw marks a value the raw, json or xml pipes produced, which the
@@ -343,7 +344,7 @@ func (t *Template) Render(mode Mode, s Scope) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		if r, ok := v.(raw); ok && (r.mode == Text || r.mode == mode) && !(mode == JSON && inString && r.mode == JSON) {
+		if r, ok := v.(raw); ok && (r.mode == Text || r.mode == mode || (r.mode == XML && mode == HTML)) && !(mode == JSON && inString && r.mode == JSON) {
 			if mode == Header {
 				b.WriteString(stripBreaks(r.s))
 			} else {
@@ -378,7 +379,7 @@ func (t *Template) Render(mode Mode, s Scope) (string, error) {
 				}
 				b.Write(js)
 			}
-		case XML:
+		case XML, HTML:
 			b.WriteString(escapeXML(ToText(v)))
 		}
 	}

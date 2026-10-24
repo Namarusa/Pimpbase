@@ -29,6 +29,8 @@
   import { session } from '../lib/session.svelte'
   import { route } from '../lib/router.svelte'
   import AISettings from '../lib/ai/AISettings.svelte'
+  import EmailSettings from '../lib/users/EmailSettings.svelte'
+  import MailIcon from '@lucide/svelte/icons/mail'
   import { timeAgo } from '../lib/format'
   import UserSheet from '../lib/users/UserSheet.svelte'
   import ProviderSheet from '../lib/users/ProviderSheet.svelte'
@@ -42,7 +44,9 @@
   let redirectUrl = $state('')
   let search = $state('')
   let roleFilter = $state('all')
-  let tab = $state(route.path.endsWith('/sso') ? 'sso' : route.path.endsWith('/ai') ? 'ai' : 'people')
+  let tab = $state(route.path.endsWith('/sso') ? 'sso' : route.path.endsWith('/ai') ? 'ai' : route.path.endsWith('/email') ? 'email' : 'people')
+  let mailReady = $state(false)
+  api.authOptions().then((o) => (mailReady = o.passwordReset)).catch(() => {})
   let editing = $state<UserRow | null>(null)
   let sheetOpen = $state(false)
   let adding = $state(false)
@@ -93,14 +97,21 @@
     addError = ''
     busy = true
     try {
-      await api.createUser({ ...form, ssoOnly: form.method === 'sso' } as any)
+      const u = await api.createUser({ ...form, ssoOnly: form.method === 'sso', invite: form.method === 'invite' } as any)
       adding = false
-      toast.success(`Added ${form.email}`)
+      if (u.inviteError) toast.error(`Added ${form.email}, but the invitation was not sent`, { description: u.inviteError })
+      else toast.success(form.method === 'invite' ? `Invitation sent to ${form.email}` : `Added ${form.email}`)
       await load()
     } catch (err: any) { addError = err.message } finally { busy = false }
   }
+  async function invite(u: UserRow) {
+    try {
+      const r = await api.inviteUser(u.id)
+      toast.success(r.kind === 'invite' ? `Invitation sent to ${r.to}` : `Password reset link sent to ${r.to}`)
+    } catch (e: any) { toast.error(e.message) }
+  }
   function openAdd() {
-    form = { email: '', name: '', password: '', role: 'member', method: 'password' }
+    form = { email: '', name: '', password: '', role: 'member', method: mailReady ? 'invite' : 'password' }
     addError = ''
     adding = true
   }
@@ -130,6 +141,7 @@
     <Tabs.List>
       <Tabs.Trigger value="people">People <Badge variant="secondary" class="ml-1 h-5 px-1.5">{users.length}</Badge></Tabs.Trigger>
       <Tabs.Trigger value="sso">Single sign-on <Badge variant="secondary" class="ml-1 h-5 px-1.5">{providers.filter((p) => p.enabled).length}</Badge></Tabs.Trigger>
+      <Tabs.Trigger value="email">Email</Tabs.Trigger>
       <Tabs.Trigger value="ai">AI assistant</Tabs.Trigger>
     </Tabs.List>
 
@@ -198,6 +210,9 @@
                     <DropdownMenu.Trigger>{#snippet child({ props })}<Button {...props} variant="ghost" size="icon" class="size-8" aria-label="Actions"><EllipsisIcon /></Button>{/snippet}</DropdownMenu.Trigger>
                     <DropdownMenu.Content align="end">
                       <DropdownMenu.Item onclick={() => { editing = u; sheetOpen = true }}><PencilIcon />Edit</DropdownMenu.Item>
+                      {#if mailReady && !u.disabled && (u.id !== session.user?.id)}
+                        <DropdownMenu.Item onclick={() => invite(u)}><MailIcon />{u.signIn.includes('password') || u.lastLoginAt ? 'Email a password reset link' : 'Send the invitation again'}</DropdownMenu.Item>
+                      {/if}
                       {#if u.id !== session.user?.id}
                         <DropdownMenu.Item onclick={() => toggle(u)}><PowerIcon />{u.disabled ? 'Switch on' : 'Switch off'}</DropdownMenu.Item>
                         <DropdownMenu.Separator />
@@ -264,6 +279,7 @@
       </div>
     </Tabs.Content>
 
+    <Tabs.Content value="email" class="mt-3"><EmailSettings onChanged={(ok) => (mailReady = ok)} /></Tabs.Content>
     <Tabs.Content value="ai" class="mt-3"><AISettings /></Tabs.Content>
   </Tabs.Root>
 </div>
@@ -286,7 +302,8 @@
           <Select.Trigger class="w-full">{roleLabel(form.role)}</Select.Trigger>
           <Select.Content>{#each workspaceRoles as r (r.value)}<Select.Item value={r.value} label={r.label}><div><div>{r.label}</div><div class="text-muted-foreground text-xs">{r.help}</div></div></Select.Item>{/each}</Select.Content>
         </Select.Root></div>
-      <RadioGroup.Root bind:value={form.method} class="grid gap-2 sm:grid-cols-2">
+      <RadioGroup.Root bind:value={form.method} class="grid gap-2 sm:grid-cols-3">
+        <Label class={['has-[[data-state=checked]]:border-primary flex cursor-pointer items-start gap-2 rounded-lg border p-3 font-normal', !mailReady && 'opacity-50']}><RadioGroup.Item value="invite" disabled={!mailReady} class="mt-0.5" /><div><div class="font-medium">Invite by email</div><div class="text-muted-foreground text-xs">{mailReady ? 'They choose a password' : 'Set up email first'}</div></div></Label>
         <Label class="has-[[data-state=checked]]:border-primary flex cursor-pointer items-start gap-2 rounded-lg border p-3 font-normal"><RadioGroup.Item value="password" class="mt-0.5" /><div><div class="font-medium">Password</div><div class="text-muted-foreground text-xs">You set a first password</div></div></Label>
         <Label class={['has-[[data-state=checked]]:border-primary flex cursor-pointer items-start gap-2 rounded-lg border p-3 font-normal', providers.length === 0 && 'opacity-50']}><RadioGroup.Item value="sso" disabled={providers.length === 0} class="mt-0.5" /><div><div class="font-medium">Single sign-on only</div><div class="text-muted-foreground text-xs">{providers.length ? 'They sign in with a provider' : 'Add a provider first'}</div></div></Label>
       </RadioGroup.Root>

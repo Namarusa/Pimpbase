@@ -72,6 +72,9 @@ type Package struct {
 	// ExtTables are tables read from a database data source; their rows
 	// stay in that database.
 	ExtTables []Row `json:"extTables,omitempty"`
+	// EmailTemplates are the templates Send email steps use; only their
+	// newest version travels.
+	EmailTemplates []Row `json:"emailTemplates,omitempty"`
 }
 
 // metaTable names a settings table and the columns a bundle carries.
@@ -90,6 +93,7 @@ var (
 	varCols     = metaTable{"app_variables", []string{"name", "secret", "dev_value", "prod_value"}}
 	flowCols    = metaTable{"app_flows", []string{"id", "name", "enabled", "definition", "created_at", "updated_at"}}
 	extCols     = metaTable{"app_ext_tables", []string{"id", "datasource_id", "name", "definition", "created_at", "updated_at"}}
+	emailCols   = metaTable{"email_templates", []string{"id", "name", "definition", "version", "created_at", "updated_at", "updated_by"}}
 	orderBy     = map[string]string{"app_roles": "position, id", "app_screens": "position, id", "app_variables": "name"}
 	errNotAZip  = &Error{"this is not a Pimpbase app file"}
 	maxAppJSON  = int64(64 << 20)
@@ -175,7 +179,7 @@ func (s *Service) Export(ctx context.Context, appID string, opts ExportOptions, 
 	for _, part := range []struct {
 		dst *[]Row
 		m   metaTable
-	}{{&p.Roles, roleCols}, {&p.Tables, tableCols}, {&p.Screens, screenCols}, {&p.Datasources, dsCols}, {&p.Queries, queryCols}, {&p.Variables, varCols}, {&p.Flows, flowCols}, {&p.ExtTables, extCols}} {
+	}{{&p.Roles, roleCols}, {&p.Tables, tableCols}, {&p.Screens, screenCols}, {&p.Datasources, dsCols}, {&p.Queries, queryCols}, {&p.Variables, varCols}, {&p.Flows, flowCols}, {&p.ExtTables, extCols}, {&p.EmailTemplates, emailCols}} {
 		if *part.dst, err = s.readRows(ctx, part.m, "app_id = ?", a.ID); err != nil {
 			return nil, err
 		}

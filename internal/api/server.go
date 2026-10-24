@@ -20,6 +20,7 @@ import (
 	"github.com/pimpbase/pimpbase/internal/auth"
 	"github.com/pimpbase/pimpbase/internal/bundle"
 	"github.com/pimpbase/pimpbase/internal/cluster"
+	"github.com/pimpbase/pimpbase/internal/email"
 	"github.com/pimpbase/pimpbase/internal/exttables"
 	"github.com/pimpbase/pimpbase/internal/files"
 	"github.com/pimpbase/pimpbase/internal/flows"
@@ -44,9 +45,11 @@ type Server struct {
 	Runner  *queries.Runner
 	Flows   *flows.Service
 	// Ext serves tables imported from external databases.
-	Ext     *exttables.Service
-	SSO     *sso.Service
-	AI      *ai.Service
+	Ext *exttables.Service
+	SSO *sso.Service
+	AI  *ai.Service
+	// Email sends mail and keeps email templates and delivery settings.
+	Email   *email.Service
 	Bundles *bundle.Service
 	// Engine runs flows; call Engine.Start to begin schedules.
 	Engine *flows.Engine
@@ -103,6 +106,8 @@ func New(s *store.Store, ui fs.FS, log *slog.Logger) *Server {
 	srv.Bundles = bundle.NewService(s, srv.Apps, srv.Tables, srv.Files, srv.Flows)
 	srv.Engine = flows.NewEngine(srv.Flows, srv.Tables, srv.Queries, srv.Runner, srv.Files, srv.Apps, log)
 	srv.Engine.AI = srv.AI
+	srv.Email = email.NewService(s)
+	srv.Engine.Mailer, srv.Engine.Emails = srv.Email, srv.Email
 	srv.Tables.BeforeInsert = srv.checkRows
 	srv.Files.BeforeSave = srv.checkFiles
 	srv.Engine.BeforeRun = srv.checkRuns
@@ -156,6 +161,19 @@ func (s *Server) Handler() http.Handler {
 	h("POST /api/auth/keys", s.createKey)
 	h("DELETE /api/auth/keys/{id}", s.deleteKey)
 	h("GET /api/auth/providers", s.listProvidersPublic)
+	h("GET /api/auth/options", s.authOptions)
+	h("POST /api/auth/forgot", s.forgotPassword)
+	h("POST /api/auth/email-link", s.requestSignInLink)
+	h("GET /api/auth/link", s.signInWithLink)
+	h("GET /api/auth/reset", s.linkInfo)
+	h("POST /api/auth/reset", s.resetPassword)
+	h("GET /api/email/settings", s.emailSettings)
+	h("PUT /api/email/settings", s.updateEmailSettings)
+	h("POST /api/email/test", s.testEmail)
+	h("GET /api/email/system", s.systemEmails)
+	h("PUT /api/email/system/{key}", s.saveSystemEmail)
+	h("DELETE /api/email/system/{key}", s.resetSystemEmail)
+	h("POST /api/email/system/{key}/preview", s.previewSystemEmail)
 	h("GET /api/sso/{id}/start", s.ssoStart)
 	h("GET /api/sso/callback", s.ssoCallback)
 	h("GET /api/sso/providers", s.listProviders)
@@ -168,6 +186,7 @@ func (s *Server) Handler() http.Handler {
 	h("POST /api/users", s.createUser)
 	h("PATCH /api/users/{id}", s.updateUser)
 	h("DELETE /api/users/{id}", s.deleteUser)
+	h("POST /api/users/{id}/invite", s.inviteUser)
 
 	h("GET /api/apps", s.listApps)
 	h("POST /api/apps", s.createApp)
@@ -244,6 +263,16 @@ func (s *Server) Handler() http.Handler {
 	h("DELETE /api/apps/{app}/flows/{flow}", s.deleteFlow)
 	h("POST /api/apps/{app}/flows/{flow}/hook", s.newHook)
 	h("POST /api/apps/{app}/flows/{flow}/test", s.testFlow)
+	h("POST /api/apps/{app}/flows/{flow}/email-preview", s.previewFlowEmail)
+	h("GET /api/apps/{app}/email-templates", s.listEmailTemplates)
+	h("POST /api/apps/{app}/email-templates", s.createEmailTemplate)
+	h("POST /api/apps/{app}/email-templates/preview", s.previewEmailTemplate)
+	h("GET /api/apps/{app}/email-templates/{tpl}", s.getEmailTemplate)
+	h("PUT /api/apps/{app}/email-templates/{tpl}", s.updateEmailTemplate)
+	h("DELETE /api/apps/{app}/email-templates/{tpl}", s.deleteEmailTemplate)
+	h("GET /api/apps/{app}/email-templates/{tpl}/versions", s.emailTemplateVersions)
+	h("GET /api/apps/{app}/email-templates/{tpl}/versions/{version}", s.emailTemplateVersion)
+	h("POST /api/apps/{app}/email-templates/{tpl}/versions/{version}/restore", s.restoreEmailTemplate)
 	h("POST /api/apps/{app}/flows/{flow}/run", s.runFlow)
 	h("GET /api/apps/{app}/flows/{flow}/runs", s.flowRuns)
 	h("GET /api/apps/{app}/runs/{run}", s.flowRun)
@@ -373,7 +402,17 @@ func (s *Server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 	var aiErr *ai.Error
 	var quota *apps.QuotaError
 	var be *bundle.Error
+	var ei *email.InvalidError
+	var ee *email.Error
 	switch {
+	case errors.Is(err, email.ErrNotSetUp):
+		writeJSON(w, 409, map[string]any{"error": err.Error(), "code": "email_not_configured"})
+	case errors.As(err, &ei):
+		writeJSON(w, 400, map[string]any{"error": ei.Message})
+	case errors.As(err, &ee):
+		writeJSON(w, 400, map[string]any{"error": ee.Message})
+	case errors.Is(err, auth.ErrBadToken):
+		writeJSON(w, 410, map[string]any{"error": err.Error()})
 	case errors.As(err, &be):
 		writeJSON(w, 400, map[string]any{"error": be.Message})
 	case errors.As(err, &quota):
@@ -421,7 +460,7 @@ func (s *Server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 			return
 		}
 		writeJSON(w, 403, map[string]any{"error": "you do not have access: " + strings.TrimPrefix(err.Error(), "forbidden: ")})
-	case errors.Is(err, tables.ErrNotFound), errors.Is(err, apps.ErrNotFound), errors.Is(err, auth.ErrNotFound), errors.Is(err, screens.ErrNotFound), errors.Is(err, queries.ErrNotFound), errors.Is(err, files.ErrNotFound), errors.Is(err, flows.ErrNotFound), errors.Is(err, apps.ErrRoleNotFound), errors.Is(err, sso.ErrNotFound):
+	case errors.Is(err, tables.ErrNotFound), errors.Is(err, apps.ErrNotFound), errors.Is(err, auth.ErrNotFound), errors.Is(err, screens.ErrNotFound), errors.Is(err, queries.ErrNotFound), errors.Is(err, files.ErrNotFound), errors.Is(err, flows.ErrNotFound), errors.Is(err, apps.ErrRoleNotFound), errors.Is(err, sso.ErrNotFound), errors.Is(err, email.ErrNotFound):
 		writeJSON(w, 404, map[string]any{"error": err.Error()})
 	case errors.Is(err, auth.ErrBadCredentials):
 		writeJSON(w, 401, map[string]any{"error": err.Error()})

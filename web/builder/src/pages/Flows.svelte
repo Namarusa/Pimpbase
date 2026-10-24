@@ -51,8 +51,9 @@
       if (!res.builder) { error = 'Only builders can manage flows.'; return }
       app = res.app
       ed.app = res.app
-      const [list, tables, queries, variables, roles] = await Promise.all([api.flows(app.id), api.tables(app.id), api.queries(app.id), api.variables(app.id), api.roles(app.id)])
+      const [list, tables, queries, variables, roles, templates] = await Promise.all([api.flows(app.id), api.tables(app.id), api.queries(app.id), api.variables(app.id), api.roles(app.id), api.emailTemplates(app.id)])
       ed.roles = roles
+      ed.emailTemplates = templates
       flows = list.map(normalize)
       ed.tables = tables
       ed.queries = queries
@@ -164,6 +165,9 @@
   let testOpen = $state(false)
   let testData = $state('')
   let testError = $state('')
+  // dryRun previews emails in the run log instead of sending them.
+  let dryRun = $state(true)
+  const sendsEmail = $derived.by(() => { let any = false; const w = (l: any[]) => l?.forEach((x) => { if (x.type === 'send_email' && !x.disabled) any = true; w(x.then); w(x.else); w(x.do) }); w(flow?.steps ?? []); return any })
   function openTest() {
     if (!flow) return
     testError = ''
@@ -183,7 +187,7 @@
     if (saving === 'error') { testError = 'Fix the flow first: ' + saveError; return }
     testing = true
     try {
-      const run = await api.testFlow(app.id, flow.id, data)
+      const run = await api.testFlow(app.id, flow.id, data, sendsEmail && dryRun)
       ed.useRun(run)
       testOpen = false
       shownRun = run.id
@@ -331,9 +335,18 @@
     <Dialog.Header>
       <Dialog.Title>Test {flow?.name}</Dialog.Title>
       <Dialog.Description>
-        The test runs the flow now, even when it is off, with the development values of app variables. Its steps really happen: rows change and emails go out.
+        The test runs the flow now, even when it is off, with the development values of app variables. Its steps really happen: rows change{sendsEmail && dryRun ? '' : ' and emails go out'}.
       </Dialog.Description>
     </Dialog.Header>
+    {#if sendsEmail}
+      <div class="bg-muted/40 flex items-start gap-2.5 rounded-lg border p-3">
+        <Switch id="dry-run" checked={dryRun} onCheckedChange={(v) => (dryRun = v)} class="mt-0.5" />
+        <Label for="dry-run" class="flex flex-col items-start gap-0.5 text-sm font-normal">
+          <span class="font-medium">Only preview emails</span>
+          <span class="text-muted-foreground text-xs">Send email steps fill in their email and show it in the run log, without sending it.</span>
+        </Label>
+      </div>
+    {/if}
     <div class="flex flex-col gap-1.5">
       <Label for="test-data">Trigger data (JSON)</Label>
       <Textarea id="test-data" rows={9} class="font-mono text-xs" bind:value={testData}

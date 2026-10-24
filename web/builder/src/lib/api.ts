@@ -160,7 +160,42 @@ export interface Flow {
 export interface StepLog {
   stepId: string; name: string; type: string; depth: number; item?: number
   status: 'ok' | 'failed' | 'skipped'; inputs?: any; output?: any; trimmed?: boolean; error?: string; startedAt: string; durationMs: number
+  email?: EmailLog
 }
+// EmailLog is an email as a Send email step made it.
+export interface EmailLog {
+  from?: string; to: string[]; cc?: string[]; bcc?: string[]; replyTo?: string; subject: string; html?: string; text?: string
+  attachments?: string[]; template?: string; version?: number; warnings?: string[]; dryRun?: boolean; cut?: boolean
+}
+
+// Email templates.
+export type EmailBlockType = 'heading' | 'text' | 'button' | 'image' | 'divider' | 'spacer' | 'table' | 'html'
+export interface EmailColumn { label: string; value: string; align?: string }
+export interface EmailBlock {
+  id: string; type: EmailBlockType; text?: string; level?: number; url?: string; link?: string; alt?: string; width?: number
+  align?: string; color?: string; height?: number; items?: string; columns?: EmailColumn[]; showWhen?: string
+}
+export interface EmailStyle {
+  brand?: string; background?: string; panel?: string; textColor?: string; font?: string; logo?: string; logoWidth?: number; footer?: string; radius?: number
+}
+export interface EmailParam { name: string; type: 'text' | 'number' | 'boolean' | 'list' | 'object'; description?: string; sample?: any }
+export interface EmailTemplate {
+  id: string; appId: string; name: string; key?: string; description: string; subject: string; preheader: string
+  mode: 'blocks' | 'html'; blocks: EmailBlock[]; style: EmailStyle; html: string; text: string; params: EmailParam[]
+  version: number; createdAt?: string; updatedAt?: string; updatedBy?: string
+  usedBy?: { flowId: string; flowName: string; step: string }[]
+}
+export interface EmailVersion { version: number; subject: string; savedAt: string; savedBy: string }
+export interface EmailReceipt { via: string; id?: string; note: string }
+export interface RenderedEmail { subject: string; preheader?: string; html: string; text: string; warnings?: string[]; sent?: { to: string; receipt: EmailReceipt } }
+export interface EmailSettings {
+  method: '' | 'smtp' | 'sendgrid' | 'mailgun' | 'postmark' | 'resend' | 'log'
+  fromEmail: string; fromName: string; replyTo: string
+  smtpHost: string; smtpPort: string; smtpSecurity: '' | 'starttls' | 'tls' | 'none'; smtpUser: string; smtpPassword?: string
+  apiKey?: string; domain: string; region: string; emailLinks: boolean
+  passwordSet?: boolean; apiKeySet?: boolean; configured?: boolean; server?: string
+}
+export interface SystemEmail { key: string; name: string; custom: boolean; template: EmailTemplate }
 export interface FlowRun {
   id: string; appId: string; flowId: string; status: 'running' | 'succeeded' | 'failed'; test: boolean
   triggerKind: string; trigger: any; steps: StepLog[]; output: any; error: string
@@ -208,7 +243,7 @@ export const api = {
   deleteKey: (id: string) => call('DELETE', `/auth/keys/${id}`),
 
   users: () => call<UserRow[]>('GET', '/users'),
-  createUser: (u: { email: string; name: string; password: string; role: string; ssoOnly?: boolean }) => call<User>('POST', '/users', u),
+  createUser: (u: { email: string; name: string; password: string; role: string; ssoOnly?: boolean; invite?: boolean }) => call<User & { inviteError?: string }>('POST', '/users', u),
   updateUser: (id: string, p: Partial<{ name: string; role: string; password: string; disabled: boolean }>) => call<User>('PATCH', `/users/${id}`, p),
   ssoProviders: () => call<{ providers: Provider[]; redirectUrl: string }>('GET', '/sso/providers'),
   createProvider: (p: Partial<Provider> & { clientSecret?: string }) => call<Provider>('POST', '/sso/providers', p),
@@ -217,6 +252,20 @@ export const api = {
   testMapping: (id: string, t: { email: string; groups: string[] }) =>
     call<{ workspace: string; apps: Record<string, Role>; matched: number[] }>('POST', `/sso/providers/${id}/test`, t),
   deleteUser: (id: string) => call('DELETE', `/users/${id}`),
+  inviteUser: (id: string) => call<{ kind: 'invite' | 'reset'; to: string }>('POST', `/users/${id}/invite`),
+
+  authOptions: () => call<{ passwordReset: boolean; emailLinks: boolean }>('GET', '/auth/options'),
+  forgotPassword: (email: string, next?: string) => call('POST', '/auth/forgot', { email, next }),
+  emailLink: (email: string, next?: string) => call('POST', '/auth/email-link', { email, next }),
+  linkInfo: (token: string) => call<{ email: string; name: string; kind: 'invite' | 'reset' }>('GET', `/auth/reset?token=${enc(token)}`),
+  resetPassword: (token: string, password: string) => call<User>('POST', '/auth/reset', { token, password }),
+  emailSettings: () => call<EmailSettings>('GET', '/email/settings'),
+  saveEmailSettings: (s: Partial<EmailSettings>) => call<EmailSettings>('PUT', '/email/settings', s),
+  testEmailSettings: (to?: string) => call<{ to: string; receipt: EmailReceipt }>('POST', '/email/test', { to }),
+  systemEmails: () => call<SystemEmail[]>('GET', '/email/system'),
+  saveSystemEmail: (key: string, t: Partial<EmailTemplate>) => call<SystemEmail>('PUT', `/email/system/${key}`, t),
+  resetSystemEmail: (key: string) => call<SystemEmail>('DELETE', `/email/system/${key}`),
+  previewSystemEmail: (key: string, template: Partial<EmailTemplate>, opts: { send?: boolean; mark?: boolean } = {}) => call<RenderedEmail>('POST', `/email/system/${key}/preview`, { template, ...opts }),
 
   apps: () => call<App[]>('GET', '/apps'),
   createApp: (name: string) => call<App>('POST', '/apps', { name }),
@@ -311,7 +360,19 @@ export const api = {
   updateFlow: (app: string, id: string, f: Partial<Flow>) => call<Flow>('PATCH', `/apps/${enc(app)}/flows/${id}`, f),
   deleteFlow: (app: string, id: string) => call('DELETE', `/apps/${enc(app)}/flows/${id}`),
   newHook: (app: string, id: string) => call<Flow>('POST', `/apps/${enc(app)}/flows/${id}/hook`),
-  testFlow: (app: string, id: string, trigger?: Record<string, any>) => call<FlowRun>('POST', `/apps/${enc(app)}/flows/${id}/test`, trigger ? { trigger } : {}),
+  testFlow: (app: string, id: string, trigger?: Record<string, any>, dryRun = false) => call<FlowRun>('POST', `/apps/${enc(app)}/flows/${id}/test`, { ...(trigger ? { trigger } : {}), dryRun }),
+  previewFlowEmail: (app: string, flow: string, inputs: Record<string, any>, scope: Record<string, any>, send = false) =>
+    call<{ email: EmailLog | null; error?: string; sent?: { to: string; receipt: EmailReceipt } }>('POST', `/apps/${enc(app)}/flows/${flow}/email-preview`, { inputs, scope, send }),
+  emailTemplates: (app: string) => call<EmailTemplate[]>('GET', `/apps/${enc(app)}/email-templates`),
+  emailTemplate: (app: string, id: string) => call<EmailTemplate>('GET', `/apps/${enc(app)}/email-templates/${enc(id)}`),
+  createEmailTemplate: (app: string, t: Partial<EmailTemplate>) => call<EmailTemplate>('POST', `/apps/${enc(app)}/email-templates`, t),
+  updateEmailTemplate: (app: string, id: string, t: Partial<EmailTemplate>) => call<EmailTemplate>('PUT', `/apps/${enc(app)}/email-templates/${enc(id)}`, t),
+  deleteEmailTemplate: (app: string, id: string) => call('DELETE', `/apps/${enc(app)}/email-templates/${enc(id)}`),
+  emailVersions: (app: string, id: string) => call<EmailVersion[]>('GET', `/apps/${enc(app)}/email-templates/${enc(id)}/versions`),
+  emailVersion: (app: string, id: string, v: number) => call<EmailTemplate>('GET', `/apps/${enc(app)}/email-templates/${enc(id)}/versions/${v}`),
+  restoreEmailVersion: (app: string, id: string, v: number) => call<EmailTemplate>('POST', `/apps/${enc(app)}/email-templates/${enc(id)}/versions/${v}/restore`),
+  previewEmail: (app: string, template: Partial<EmailTemplate>, opts: { data?: Record<string, any>; send?: boolean; mark?: boolean } = {}) =>
+    call<RenderedEmail>('POST', `/apps/${enc(app)}/email-templates/preview`, { template, ...opts }),
   runFlow: (app: string, id: string, params: Record<string, any>, test = false) =>
     call<{ id: string; status: FlowRun['status']; output: any; error: string }>('POST', `/apps/${enc(app)}/flows/${enc(id)}/run`, { params, test }),
   flowRuns: (app: string, id: string) => call<FlowRun[]>('GET', `/apps/${enc(app)}/flows/${id}/runs`),

@@ -202,6 +202,34 @@ var metaMigrations = []string{
 	CREATE INDEX app_flow_runs_status ON app_flow_runs (status);
 	CREATE INDEX app_flow_runs_app ON app_flow_runs (app_id, started_at);
 	ALTER TABLE apps ADD COLUMN quotas TEXT NOT NULL DEFAULT '{}';`,
+	// Email templates (app_id is empty for the workspace's system emails),
+	// their saved versions, and one-time sign-in links.
+	`CREATE TABLE email_templates (
+		id TEXT PRIMARY KEY,
+		app_id TEXT NOT NULL,
+		name TEXT NOT NULL,
+		definition TEXT NOT NULL,
+		version INTEGER NOT NULL,
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL,
+		updated_by TEXT NOT NULL,
+		UNIQUE (app_id, name)
+	);
+	CREATE TABLE email_template_versions (
+		template_id TEXT NOT NULL REFERENCES email_templates(id) ON DELETE CASCADE,
+		version INTEGER NOT NULL,
+		definition TEXT NOT NULL,
+		saved_at TEXT NOT NULL,
+		saved_by TEXT NOT NULL,
+		PRIMARY KEY (template_id, version)
+	);
+	CREATE TABLE user_tokens (
+		token_hash TEXT PRIMARY KEY,
+		user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		kind TEXT NOT NULL,
+		expires_at TEXT NOT NULL,
+		created_at TEXT NOT NULL
+	);`,
 }
 
 func migrateMeta(ctx context.Context, db *DB) error {

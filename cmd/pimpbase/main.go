@@ -20,8 +20,8 @@ import (
 	"github.com/pimpbase/pimpbase/internal/api"
 	"github.com/pimpbase/pimpbase/internal/backup"
 	"github.com/pimpbase/pimpbase/internal/cluster"
+	"github.com/pimpbase/pimpbase/internal/email"
 	"github.com/pimpbase/pimpbase/internal/files"
-	"github.com/pimpbase/pimpbase/internal/flows"
 	"github.com/pimpbase/pimpbase/internal/sso/ssotest"
 	"github.com/pimpbase/pimpbase/internal/store"
 	"github.com/pimpbase/pimpbase/web"
@@ -187,8 +187,8 @@ func serve(args []string) error {
 	addr := fs.String("addr", env("PIMPBASE_ADDR", ":8080"), "address to listen on (PIMPBASE_ADDR)")
 	dataDir := fs.String("data", env("PIMPBASE_DATA", "./data"), "folder for SQLite databases and files (PIMPBASE_DATA)")
 	pg := fs.String("postgres", env("PIMPBASE_POSTGRES", ""), "Postgres connection string; SQLite is used when empty (PIMPBASE_POSTGRES)")
-	smtp := fs.String("smtp", env("PIMPBASE_SMTP", ""), "mail server for flow emails: smtp://user:pass@host:587, smtps://…, or log (PIMPBASE_SMTP)")
-	mailFrom := fs.String("mail-from", env("PIMPBASE_MAIL_FROM", ""), "sender address of flow emails (PIMPBASE_MAIL_FROM)")
+	smtp := fs.String("smtp", env("PIMPBASE_SMTP", ""), "mail server for all emails, which wins over the settings in Users → Email: smtp://user:pass@host:587, smtps://…, or log (PIMPBASE_SMTP)")
+	mailFrom := fs.String("mail-from", env("PIMPBASE_MAIL_FROM", ""), "sender address of emails sent through --smtp (PIMPBASE_MAIL_FROM)")
 	secure := fs.Bool("secure-cookies", env("PIMPBASE_SECURE_COOKIES", "") == "true", "mark session cookies HTTPS-only (PIMPBASE_SECURE_COOKIES)")
 	publicURL := fs.String("public-url", env("PIMPBASE_PUBLIC_URL", ""), "address people reach Pimpbase at, e.g. https://apps.example.com; single sign-on sends people back there (PIMPBASE_PUBLIC_URL)")
 	filesSpec := fs.String("files", env("PIMPBASE_FILES", "db"), "where uploaded files go: db (inside the app's database), dir:/path (a folder, which servers may share), or s3://bucket/prefix?region=…&endpoint=… with AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY (PIMPBASE_FILES)")
@@ -241,11 +241,11 @@ func serve(args []string) error {
 		}
 		go backupLoop(ctx, log, *dataDir, *backupDir, *backupEvery, *backupKeep)
 	}
-	mailer, err := flows.NewMailer(*smtp, *mailFrom)
+	mailer, err := email.NewMailer(*smtp, *mailFrom)
 	if err != nil {
 		return err
 	}
-	srv.Engine.Mailer = mailer
+	srv.Email.Server = mailer
 	if err := srv.Engine.Start(ctx); err != nil {
 		return fmt.Errorf("start flows: %w", err)
 	}

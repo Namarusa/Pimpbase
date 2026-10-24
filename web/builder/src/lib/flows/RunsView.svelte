@@ -11,6 +11,7 @@
   import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw'
   import ActivityIcon from '@lucide/svelte/icons/activity'
   import JsonTree from '../apis/JsonTree.svelte'
+  import RunEmail from './RunEmail.svelte'
   import { api, type FlowRun, type StepLog } from '../api'
   import { getEditor } from './editor.svelte'
   import { stepInfo, triggerInfo } from './steps'
@@ -119,6 +120,7 @@
               {#if open[i]}
                 <div class="flex flex-col gap-2 border-t px-3 py-2">
                   {#if s.error}<p class="text-destructive text-xs">{s.error}</p>{/if}
+                  {#if s.email}<RunEmail email={s.email} failed={s.status === 'failed'} />{/if}
                   {#if has(s.inputs)}<div><div class="text-muted-foreground mb-0.5 text-[11px] font-semibold tracking-wide uppercase">Inputs</div><JsonTree value={s.inputs} /></div>{/if}
                   {#if has(s.output)}<div><div class="text-muted-foreground mb-0.5 text-[11px] font-semibold tracking-wide uppercase">Result</div><JsonTree value={s.output} /></div>{/if}
                   {#if !s.error && !has(s.inputs) && !has(s.output)}<p class="text-muted-foreground text-xs">Nothing to show.</p>{/if}

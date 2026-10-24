@@ -310,7 +310,7 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 		return err
 	}
 	defer tx.Rollback()
-	for _, q := range []string{`DELETE FROM app_queries WHERE app_id = ?`, `DELETE FROM app_datasources WHERE app_id = ?`, `DELETE FROM app_variables WHERE app_id = ?`, `DELETE FROM app_screens WHERE app_id = ?`, `DELETE FROM app_tables WHERE app_id = ?`, `DELETE FROM app_users WHERE app_id = ?`, `DELETE FROM app_roles WHERE app_id = ?`, `DELETE FROM app_flow_runs WHERE app_id = ?`, `DELETE FROM app_flows WHERE app_id = ?`, `DELETE FROM apps WHERE id = ?`} {
+	for _, q := range []string{`DELETE FROM app_queries WHERE app_id = ?`, `DELETE FROM app_datasources WHERE app_id = ?`, `DELETE FROM app_variables WHERE app_id = ?`, `DELETE FROM app_screens WHERE app_id = ?`, `DELETE FROM app_tables WHERE app_id = ?`, `DELETE FROM app_users WHERE app_id = ?`, `DELETE FROM app_roles WHERE app_id = ?`, `DELETE FROM app_flow_runs WHERE app_id = ?`, `DELETE FROM app_flows WHERE app_id = ?`, `DELETE FROM email_template_versions WHERE template_id IN (SELECT id FROM email_templates WHERE app_id = ?)`, `DELETE FROM email_templates WHERE app_id = ?`, `DELETE FROM apps WHERE id = ?`} {
 		if _, err := tx.Exec(ctx, q, a.ID); err != nil {
 			return err
 		}
