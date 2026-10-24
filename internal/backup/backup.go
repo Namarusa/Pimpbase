@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pimpbase/pimpbase/internal/store"
 	_ "modernc.org/sqlite"
 )
 
@@ -64,7 +65,7 @@ func Write(ctx context.Context, dataDir string, w io.Writer) (n int, err error) 
 }
 
 func vacuumInto(ctx context.Context, src, dst string) error {
-	db, err := sql.Open("sqlite", "file:"+src+"?mode=ro&_pragma=busy_timeout(10000)")
+	db, err := sql.Open("sqlite", store.SQLiteURI(src)+"?mode=ro&_pragma=busy_timeout(10000)")
 	if err != nil {
 		return err
 	}

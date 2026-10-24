@@ -246,8 +246,21 @@ func Open(ctx context.Context, dataDir, postgresDSN string) (*Store, error) {
 	return s, nil
 }
 
+// SQLiteURI turns a file path into a SQLite "file:" URI. Paths use forward
+// slashes and escape the characters URIs reserve, so Windows paths with
+// backslashes, drive letters, network shares (\\server\share), spaces,
+// '#' or '%' open the right file.
+func SQLiteURI(path string) string {
+	p := strings.NewReplacer("%", "%25", "?", "%3f", "#", "%23").Replace(filepath.ToSlash(path))
+	if strings.HasPrefix(p, "//") {
+		// An empty authority keeps a network share from reading as a host.
+		return "file://" + p
+	}
+	return "file:" + p
+}
+
 func openSQLite(path string) (*DB, error) {
-	dsn := "file:" + path + "?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)&_txlock=immediate"
+	dsn := SQLiteURI(path) + "?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)&_txlock=immediate"
 	sqldb, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
@@ -259,7 +272,7 @@ func openSQLite(path string) (*DB, error) {
 		sqldb.Close()
 		return nil, err
 	}
-	read, err := sql.Open("sqlite", "file:"+path+"?_pragma=query_only(1)&_pragma=busy_timeout(5000)")
+	read, err := sql.Open("sqlite", SQLiteURI(path)+"?_pragma=query_only(1)&_pragma=busy_timeout(5000)")
 	if err != nil {
 		sqldb.Close()
 		return nil, err

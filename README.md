@@ -49,6 +49,22 @@ and `PIMPBASE_MAIL_FROM`. Mail is usually set up by an admin in
 `smtp://` upgrades with STARTTLS when the server offers it, `smtps://` uses
 TLS from the start, and `--smtp log` only writes the mails to the log.
 
+### Release builds and Windows
+
+```sh
+make release VERSION=1.0.0           # dist/: Linux, macOS, Windows, amd64 and arm64
+scripts/release.sh windows/amd64     # only the platforms named
+```
+
+No cgo is needed, so one machine builds every platform. Each archive holds
+the binary and a short README; the Windows zip adds `start-pimpbase.bat`,
+which keeps the data in a `data` folder next to it and opens the browser.
+File paths, the SQLite file names and folder file storage (`--files
+dir:C:\Pimpbase\files`) work with Windows paths, including spaces, and
+Ctrl+C stops the server cleanly. Keep SQLite data on a local disk, not a
+network share or a synced folder. Pimpbase does not install itself as a
+Windows service; the Windows README explains Task Scheduler instead.
+
 ## Email templates
 
 Each app has an **Emails** tab: templates with a subject, a preview line,

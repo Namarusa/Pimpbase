@@ -1,4 +1,4 @@
-.PHONY: build ui test test-pg run
+.PHONY: build ui test test-pg run release
 
 # Build the builder UI, then the single binary that embeds it.
 build: ui
@@ -17,3 +17,8 @@ test-pg:
 
 run: build
 	./pimpbase serve
+
+# Release archives for Linux, macOS and Windows (amd64 and arm64) in dist/,
+# e.g. make release VERSION=1.0.0, or scripts/release.sh windows/amd64.
+release:
+	VERSION=$(VERSION) scripts/release.sh

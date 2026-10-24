@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -60,8 +61,10 @@ type DirBlobs struct{ Root string }
 func (d *DirBlobs) Name() string { return "dir" }
 
 func (d *DirBlobs) path(key string) (string, error) {
-	clean := filepath.Clean("/" + key)
-	if clean != "/"+key || strings.Contains(key, "..") {
+	// Keys always use forward slashes, so check them with package path:
+	// filepath.Clean would turn them into backslashes on Windows.
+	clean := path.Clean("/" + key)
+	if clean != "/"+key || strings.Contains(key, "..") || strings.Contains(key, `\`) {
 		return "", fmt.Errorf("bad file key %q", key)
 	}
 	return filepath.Join(d.Root, filepath.FromSlash(key)), nil
