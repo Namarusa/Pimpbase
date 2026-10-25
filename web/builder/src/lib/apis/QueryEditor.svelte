@@ -127,7 +127,7 @@
       </Select.Root>
       <div class="flex min-w-0 flex-1 items-center rounded-md border shadow-xs">
         {#if ds?.config.baseUrl}<span class="text-muted-foreground bg-muted/50 max-w-[40%] shrink-0 truncate border-r px-2.5 py-1.5 font-mono text-xs" title={ds.config.baseUrl}>{ds.config.baseUrl}</span>{/if}
-        <div class="min-w-0 flex-1"><BindingInput mono value={query.path} {groups} help={apiHelp} placeholder={ds?.config.baseUrl ? '/items/{{ params.id }}' : 'https://api.example.com/items'} onChange={(v) => onChange({ path: v })} class="border-0 shadow-none focus-visible:ring-0" /></div>
+        <div class="min-w-0 flex-1"><BindingInput mono value={query.path} {groups} help={apiHelp} placeholder={ds?.config.baseUrl ? '/items/{{ params.id }}  or a whole address: http://{{ env.HOST }}/items' : 'http://{{ env.HOST }}:8080/items/{{ params.id }}'} onChange={(v) => onChange({ path: v })} class="border-0 shadow-none focus-visible:ring-0" /></div>
       </div>
       <Button onclick={run} disabled={running || !ds} title="Send (Ctrl+Enter)">{#if running}<Spinner />{:else}<SendIcon />{/if}Send</Button>
     </div>

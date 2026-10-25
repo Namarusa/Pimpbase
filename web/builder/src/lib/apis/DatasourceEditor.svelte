@@ -9,7 +9,7 @@
   import GlobeIcon from '@lucide/svelte/icons/globe'
   import BindingInput from '../designer/BindingInput.svelte'
   import type { Auth, Datasource, Query, Variable } from '../api'
-  import { apiHelp } from './bindings'
+  import { apiHelp, queryBindings } from './bindings'
   import KeyValueEditor from './KeyValueEditor.svelte'
 
   // DatasourceEditor edits an API's address, shared headers and sign-in.
@@ -17,10 +17,14 @@
     datasource: Datasource; variables: Variable[]; queries: Query[]
     onChange: (p: Partial<Datasource>) => void; onDelete: () => void; onNewQuery: () => void; onOpen: (q: Query) => void
   } = $props()
-  const groups = $derived([
-    { label: 'Variables', items: variables.map((v) => ({ path: `env.${v.name}`, hint: v.secret ? 'secret' : '' })) },
-    { label: 'Signed-in user', items: [{ path: 'user.email' }, { path: 'user.id' }] },
-  ])
+  // The address and headers run with each query's own values, so they can
+  // read any of its queries' parameters as well as variables and results.
+  const groups = $derived.by(() => {
+    const mine = queries.filter((q) => q.datasourceId === datasource.id)
+    const seen = new Set<string>()
+    const parameters = mine.flatMap((q) => q.parameters).filter((p) => p.name && !seen.has(p.name) && seen.add(p.name))
+    return queryBindings({ name: '', parameters }, variables, queries)
+  })
   const config = $derived(datasource.config)
   const setConfig = (p: Partial<Datasource['config']>) => onChange({ config: { ...config, ...p } })
   const setAuth = (p: Partial<Auth>) => setConfig({ auth: { ...config.auth, ...p } })
@@ -43,9 +47,9 @@
   </div>
 
   <Card.Root>
-    <Card.Header><Card.Title class="text-sm">Address</Card.Title><Card.Description>Queries add their path to it. Use a variable to point development and production at different servers.</Card.Description></Card.Header>
+    <Card.Header><Card.Title class="text-sm">Address</Card.Title><Card.Description>Queries add their path to it. Plain http, IP addresses, localhost and ports all work, and a {'{{ binding }}'} can go anywhere: the scheme, host, port or path.</Card.Description></Card.Header>
     <Card.Content class="flex flex-col gap-4">
-      <BindingInput mono value={config.baseUrl} {groups} help={apiHelp} placeholder={'https://api.example.com/v1  or  {{ env.API_URL }}'} onChange={(v) => setConfig({ baseUrl: v })} />
+      <BindingInput mono value={config.baseUrl} {groups} help={apiHelp} placeholder={'http://192.168.1.10:8080/api  or  http://{{ env.HOST }}:{{ env.PORT }}/v1'} onChange={(v) => setConfig({ baseUrl: v })} />
       <div class="flex items-center gap-2">
         <Label for="ds-timeout" class="text-xs font-normal">Give up after</Label>
         <Input id="ds-timeout" type="number" min="1" max="120" class="h-8 w-20" value={config.timeoutSeconds} oninput={(e) => setConfig({ timeoutSeconds: Number(e.currentTarget.value) || 30 })} />

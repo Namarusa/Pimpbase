@@ -332,6 +332,7 @@ type raw struct {
 func (t *Template) Render(mode Mode, s Scope) (string, error) {
 	var b strings.Builder
 	inString := false // JSON: inside a "…" literal
+	addrEnd := -1     // URL: where the last address binding ended
 	for i, p := range t.parts {
 		if p.expr == nil {
 			b.WriteString(p.lit)
@@ -360,9 +361,13 @@ func (t *Template) Render(mode Mode, s Scope) (string, error) {
 		case URL:
 			sofar := b.String()
 			switch {
-			case i == 0:
-				// A leading binding is a base address, such as {{ env.API_URL }}.
+			case i == 0 || inAuthority(sofar) || (t.parts[i-1].expr != nil && addrEnd == len(sofar)):
+				// A binding before the path is part of the address: a base
+				// address such as {{ env.API_URL }}, a scheme, a host, an IP
+				// or a port, so it goes in as is. So does one right after
+				// such a binding, such as {{ env.API_URL }}{{ env.PREFIX }}.
 				b.WriteString(ToText(v))
+				addrEnd = b.Len()
 			case strings.Contains(sofar, "?"):
 				b.WriteString(url.QueryEscape(ToText(v)))
 			default:
@@ -422,6 +427,16 @@ func (t *Template) Each(s Scope, lit func(text string) error, bind func(e *Expr,
 		}
 	}
 	return nil
+}
+
+// inAuthority reports whether URL text written so far stops before the
+// path starts: in the scheme ("http", "{{ x }}:") or the host and port
+// ("http://", "http://10.0.0.5:").
+func inAuthority(sofar string) bool {
+	if i := strings.Index(sofar, "://"); i >= 0 {
+		return !strings.ContainsAny(sofar[i+3:], "/?#")
+	}
+	return !strings.ContainsAny(sofar, "/?#")
 }
 
 // jsonInString tracks whether text leaves the writer inside a JSON string.

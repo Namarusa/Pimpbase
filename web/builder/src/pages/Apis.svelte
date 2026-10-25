@@ -271,7 +271,7 @@
       </div>
       <div class="flex flex-col gap-1.5"><Label for="ds-name">Name</Label><Input id="ds-name" bind:value={newName} placeholder={newKind === 'rest' ? 'Shop API' : 'Sales database'} required /></div>
       {#if newKind === 'rest'}
-        <div class="flex flex-col gap-1.5"><Label for="ds-url">Address</Label><Input id="ds-url" class="font-mono text-xs" bind:value={newUrl} placeholder={'https://api.example.com/v1  or  {{ env.API_URL }}'} /></div>
+        <div class="flex flex-col gap-1.5"><Label for="ds-url">Address</Label><Input id="ds-url" class="font-mono text-xs" bind:value={newUrl} placeholder={'http://192.168.1.10:8080  or  http://{{ env.HOST }}/v1'} /></div>
       {:else}
         <div class="flex flex-col gap-1.5"><Label for="ds-url">Connection string <span class="text-muted-foreground font-normal">(optional)</span></Label><Input id="ds-url" class="font-mono text-xs" bind:value={newUrl} placeholder={'{{ env.DATABASE_URL }}'} />
           <p class="text-muted-foreground text-xs">Or leave it empty and fill in the host, user and password next.</p></div>

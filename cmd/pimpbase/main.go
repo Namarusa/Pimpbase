@@ -23,6 +23,7 @@ import (
 	"github.com/pimpbase/pimpbase/internal/email"
 	"github.com/pimpbase/pimpbase/internal/files"
 	"github.com/pimpbase/pimpbase/internal/integrations"
+	"github.com/pimpbase/pimpbase/internal/queries"
 	"github.com/pimpbase/pimpbase/internal/sso/ssotest"
 	"github.com/pimpbase/pimpbase/internal/store"
 	"github.com/pimpbase/pimpbase/web"
@@ -196,6 +197,8 @@ func serve(args []string) error {
 	rateLimit := fs.Float64("rate-limit", envFloat("PIMPBASE_RATE_LIMIT", 100), "API requests a second one client may make to this server; 0 turns the limit off (PIMPBASE_RATE_LIMIT)")
 	rateBurst := fs.Int("rate-burst", int(envFloat("PIMPBASE_RATE_BURST", 200)), "requests a client may make at once before the rate limit applies (PIMPBASE_RATE_BURST)")
 	behindProxy := fs.Bool("behind-proxy", env("PIMPBASE_BEHIND_PROXY", "") == "true", "trust the X-Forwarded-For address a load balancer or proxy adds (PIMPBASE_BEHIND_PROXY)")
+	blockPrivate := fs.Bool("block-private-networks", env("PIMPBASE_BLOCK_PRIVATE_NETWORKS", "") == "true", "stop API queries and flow web requests from reaching this machine (localhost) and private networks (10.x, 192.168.x, …); off by default so self-hosted apps can call servers on their own network (PIMPBASE_BLOCK_PRIVATE_NETWORKS)")
+	allowNets := fs.String("allow-networks", env("PIMPBASE_ALLOW_NETWORKS", ""), "IP addresses or ranges that stay reachable with --block-private-networks, e.g. 10.1.0.0/16,192.168.1.20 (PIMPBASE_ALLOW_NETWORKS)")
 	metricsToken := fs.String("metrics-token", env("PIMPBASE_METRICS_TOKEN", ""), "require this Bearer token to read /metrics; empty leaves it open (PIMPBASE_METRICS_TOKEN)")
 	drain := fs.Duration("drain", envDuration("PIMPBASE_DRAIN", 0), "on shutdown, fail /readyz this long before closing, so a load balancer stops sending requests (PIMPBASE_DRAIN)")
 	backupDir := fs.String("backup-dir", env("PIMPBASE_BACKUP_DIR", ""), "with SQLite, write a backup zip into this folder every --backup-every (PIMPBASE_BACKUP_DIR)")
@@ -229,6 +232,12 @@ func serve(args []string) error {
 	srv.RateLimit, srv.RateBurst = *rateLimit, *rateBurst
 	srv.BehindProxy = *behindProxy
 	srv.MetricsToken = *metricsToken
+	netPolicy, err := queries.ParseNetPolicy(*blockPrivate, *allowNets)
+	if err != nil {
+		return fmt.Errorf("--allow-networks: %w", err)
+	}
+	srv.Runner.UseNetPolicy(netPolicy)
+	srv.Engine.Client.Transport = netPolicy.Transport()
 	srv.Version = version
 	srv.Bundles.Server = version
 	srv.Node = cluster.New(st, version, log)

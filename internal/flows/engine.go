@@ -1609,9 +1609,9 @@ func (x *exec) httpRequest(in *inputs) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	u, err := url.Parse(strings.TrimSpace(addr))
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return nil, fmt.Errorf("%q is not a web address", addr)
+	u, err := queries.ParseAddress(addr)
+	if err != nil {
+		return nil, err
 	}
 	bodyType := in.str("bodyType")
 	if bodyType == "" {

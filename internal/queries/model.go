@@ -212,6 +212,34 @@ func checkPairs(field string, ps []Pair) error {
 	return nil
 }
 
+// CheckAddress checks a web address that may hold {{ bindings }}
+// anywhere, scheme, host, IP, port, path or query alike. Only its literal
+// parts can be checked before it runs: a literal scheme is http or https,
+// and an address without bindings needs a host. An address written
+// without a scheme, such as 192.168.1.10:8080, gets http://.
+func CheckAddress(s string) (string, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", nil
+	}
+	head, _, bound := strings.Cut(s, "{{")
+	if i := strings.Index(head, "://"); i >= 0 {
+		if sc := strings.ToLower(head[:i]); sc != "http" && sc != "https" {
+			return "", fmt.Errorf("the address starts with http:// or https://, not %s://", head[:i])
+		}
+	} else if !bound && !strings.HasPrefix(s, "/") {
+		s = "http://" + s
+	}
+	if bound {
+		return s, nil
+	}
+	u, err := url.Parse(s)
+	if err != nil || u.Host == "" {
+		return "", errors.New("the address needs a host, such as http://192.168.1.10:8080 or https://api.example.com")
+	}
+	return s, nil
+}
+
 // Check validates a data source and fills in defaults.
 func (d *Datasource) Check() error {
 	n, err := checkName("data source", d.Name)
@@ -231,12 +259,11 @@ func (d *Datasource) Check() error {
 	if err := checkTemplate("baseUrl", c.BaseURL); err != nil {
 		return err
 	}
-	if c.BaseURL != "" && !strings.HasPrefix(c.BaseURL, "{{") {
-		u, err := url.Parse(c.BaseURL)
-		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-			return invalid("baseUrl", "the address starts with http:// or https://")
-		}
+	addr, err := CheckAddress(c.BaseURL)
+	if err != nil {
+		return invalid("baseUrl", "%s", err)
 	}
+	c.BaseURL = addr
 	if c.Headers == nil {
 		c.Headers = []Pair{}
 	}

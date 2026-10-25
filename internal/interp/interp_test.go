@@ -11,7 +11,7 @@ func scope() Map {
 	calls := 0
 	return Map{
 		"params": map[string]any{"id": "a b/c", "limit": 10.0, "name": `Ada "the" <first>`, "tags": []any{"x", "y"}, "on": true, "blank": ""},
-		"env":    map[string]any{"API_URL": "https://api.example.com/v1", "TOKEN": "s3cret"},
+		"env":    map[string]any{"API_URL": "https://api.example.com/v1", "TOKEN": "s3cret", "HOST": "10.0.0.5", "PORT": "8080", "SCHEME": "http", "PREFIX": "/v2"},
 		"user":   map[string]any{"email": "Ada@Example.com"},
 		"queries": map[string]any{"Login": Lazy(func(rest []string) (any, error) {
 			calls++
@@ -52,6 +52,10 @@ func TestRender(t *testing.T) {
 
 		{URL, "{{ env.API_URL }}/items/{{ params.id }}?q={{ params.name }}&n={{ params.limit }}", "https://api.example.com/v1/items/a%20b%2Fc?q=Ada+%22the%22+%3Cfirst%3E&n=10"},
 		{URL, "/files/{{ params.id | raw }}", "/files/a b/c"},
+		{URL, "http://{{ env.HOST }}:{{ env.PORT }}/x/{{ params.id }}", "http://10.0.0.5:8080/x/a%20b%2Fc"},
+		{URL, "{{ env.SCHEME }}://{{ env.HOST }}/v1", "http://10.0.0.5/v1"},
+		{URL, "{{ env.API_URL }}{{ env.PREFIX }}/items", "https://api.example.com/v1/v2/items"},
+		{URL, "/items/{{ env.PREFIX }}", "/items/%2Fv2"},
 
 		{Header, "Bearer {{ params.evil }}", "Bearer "},
 		{JSON, `{"id": "{{ params.id }}", "name": "{{ params.name }}", "limit": {{ params.limit }}, "tags": {{ params.tags }}, "on": {{ params.on }}, "none": {{ params.missing }}}`,

@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -113,6 +114,9 @@ func NewRunner(svc *Service) *Runner {
 		pool:  extdb.NewPool(),
 	}
 }
+
+// UseNetPolicy sets which servers queries may reach.
+func (r *Runner) UseNetPolicy(p NetPolicy) { r.client.Transport = p.Transport() }
 
 // Close closes the database connections the runner keeps.
 func (r *Runner) Close() { r.pool.Close() }
@@ -368,6 +372,30 @@ func convert(p Param, v any) (any, error) {
 	return interp.ToText(v), nil
 }
 
+var schemeRE = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9+.-]*://`)
+
+func hasScheme(s string) bool { return schemeRE.MatchString(strings.TrimSpace(s)) }
+
+// ParseAddress reads a filled-in web address. Plain http, IP addresses,
+// localhost and ports are all fine; an address without a scheme, such as
+// 10.0.0.5:8080/api, gets http://.
+func ParseAddress(addr string) (*url.URL, error) {
+	addr = strings.TrimSpace(addr)
+	if addr != "" && !hasScheme(addr) && !strings.HasPrefix(addr, "/") && !strings.HasPrefix(addr, "?") {
+		addr = "http://" + addr
+	}
+	u, err := url.Parse(addr)
+	switch {
+	case err != nil:
+		return nil, fmt.Errorf("%q is not a web address: %s", addr, strings.TrimPrefix(err.Error(), fmt.Sprintf("parse %q: ", addr)))
+	case u.Scheme != "http" && u.Scheme != "https":
+		return nil, fmt.Errorf("%q is not a web address; it starts with http:// or https://", addr)
+	case u.Host == "":
+		return nil, fmt.Errorf("%q has no host; set the data source address or start the path with http:// or https://", addr)
+	}
+	return u, nil
+}
+
 // build makes the HTTP request a query describes.
 func build(ctx context.Context, ds *Datasource, q *Query, scope interp.Scope) (*http.Request, *Echo, error) {
 	fill := func(field, src string, mode interp.Mode) (string, error) {
@@ -406,7 +434,9 @@ func build(ctx context.Context, ds *Datasource, q *Query, scope interp.Scope) (*
 		return nil, nil, err
 	}
 	addr := path
-	if base != "" {
+	// A path that is a whole address, such as http://{{ env.HOST }}/x,
+	// stands on its own.
+	if base != "" && !hasScheme(path) {
 		addr = strings.TrimRight(base, "/")
 		if path != "" {
 			if strings.HasPrefix(path, "?") {
@@ -416,9 +446,9 @@ func build(ctx context.Context, ds *Datasource, q *Query, scope interp.Scope) (*
 			}
 		}
 	}
-	u, err := url.Parse(addr)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return nil, nil, &RunError{Message: fmt.Sprintf("%q is not a web address; set the data source address or start the path with https://", addr), Binding: true}
+	u, err := ParseAddress(addr)
+	if err != nil {
+		return nil, nil, &RunError{Message: err.Error(), Binding: true}
 	}
 	qs := u.Query()
 	addPairs := func(field string, ps []Pair, add func(k string, v string)) error {
