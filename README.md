@@ -308,6 +308,29 @@ toast, refresh data, set state, ask for confirmation, export CSV, print or
 save as PDF, sign out. Printing leaves out the app's navigation and any
 component marked "Hide when printing", and prints dark themes light.
 
+Every component also has a **Style** tab with the CSS a builder needs:
+layout (flex or grid, direction, wrap, justify, align, gaps), grid
+(columns, rows, areas, auto flow; `3` means three equal columns),
+placement in its parent (align self, grow, order, grid column such as
+`span 2`), size (width, height, min and max, aspect ratio), margin and
+padding by side, position and layer, typography, background (colour,
+gradient or picture address), border and radius, shadow (`sm` to `xl` or
+CSS), opacity, transform, filter, transition, pointer, hide, and custom
+CSS. Values are set for all devices, then overridden for tablets and
+phones (phones also take the tablet values), and for hover, focus and
+pressed states. Every value can hold a binding or a formula, such as
+`{{ row.Colour }}`, `{{ = IF(device = "phone", 1, 3) }}` or
+`{{ theme.brand }}`; a value that comes out empty is left unset, and
+**Change settings when** can change style values too. Choices, numbers,
+colours and switches in the Settings tab take bindings as well (the
+braces button next to their label). Styles are stored in `props.style`
+as `{ base, tablet, phone, hover, focus, active, css }`.
+
+The **Theme** menu sets the corner roundness, the font and named
+**tokens** (`brand = #0f766e`, `gutter = 20px`) that styles read as
+`{{ theme.brand }}`; the theme's own colours are there too
+(`{{ theme.primary }}`, `{{ theme.muted }}`, …) and follow light and dark.
+
 To pass values from one screen to another, use the **Go to screen** action:
 pick the target screen, fill a value for each `:part` of its route (`:id`
 gets `{{ row._id }}`), and add extra values that go in the query string.

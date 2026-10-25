@@ -14,7 +14,7 @@
       {#if p.description}<Card.Description>{p.description}</Card.Description>{/if}
     </Card.Header>
   {/if}
-  <Card.Content class={['flex flex-col', gapClass[p.gap]]}>
+  <Card.Content class={['flex flex-col', gapClass[p.gap], p.$layout]}>
     <Children {node} />
   </Card.Content>
 </Card.Root>

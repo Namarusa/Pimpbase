@@ -166,7 +166,7 @@ const defs: ComponentDef[] = [
     settings: [{ key: 'columns', label: 'Columns', kind: 'segmented', options: opts(['1', '1'], ['2', '2'], ['3', '3'], ['4', '4'], ['5', '5'], ['6', '6']), section: 'Layout' }, gap],
   },
   {
-    type: 'card', label: 'Card', category: 'Layout', icon: SquareIcon, container: true, component: Card,
+    type: 'card', label: 'Card', category: 'Layout', icon: SquareIcon, container: true, innerLayout: true, component: Card,
     description: 'A bordered panel with a title.',
     defaults: () => ({ title: 'Card title', description: '', gap: 'md' }),
     settings: [{ key: 'title', label: 'Title', kind: 'text' }, { key: 'description', label: 'Description', kind: 'text' }, gap],
@@ -362,7 +362,7 @@ const defs: ComponentDef[] = [
     ],
   },
   {
-    type: 'dialog', label: 'Dialog', category: 'Feedback', icon: AppWindowIcon, container: true, component: Dialog,
+    type: 'dialog', label: 'Dialog', category: 'Feedback', icon: AppWindowIcon, container: true, innerLayout: true, component: Dialog,
     description: 'A window over the screen, opened by a button’s “Open dialog” action.',
     defaults: () => ({ title: 'Dialog', description: '', size: 'md', gap: 'md' }),
     settings: [
@@ -373,7 +373,7 @@ const defs: ComponentDef[] = [
     ],
   },
   {
-    type: 'side_panel', label: 'Side panel', category: 'Feedback', icon: PanelRightIcon, container: true, component: SidePanel,
+    type: 'side_panel', label: 'Side panel', category: 'Feedback', icon: PanelRightIcon, container: true, innerLayout: true, component: SidePanel,
     description: 'A panel that slides in from the side, opened like a dialog.',
     defaults: () => ({ title: 'Details', description: '', side: 'right', gap: 'md' }),
     settings: [
@@ -512,7 +512,7 @@ const defs: ComponentDef[] = [
 
   // Forms
   {
-    type: 'form', label: 'Form', category: 'Form', icon: FormIcon, container: true, component: Form,
+    type: 'form', label: 'Form', category: 'Form', icon: FormIcon, container: true, innerLayout: true, component: Form,
     description: 'Adds or edits a row, checking each field before it saves.',
     defaults: () => ({ table: '', mode: 'create', rowId: '{{ url.id }}', columns: '1', gap: 'md', submitText: 'Save', successMessage: 'Saved', showSubmit: true, showReset: false, resetOnSubmit: true, buttonAlign: 'end', onSubmit: [] }),
     settings: [

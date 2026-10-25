@@ -8,7 +8,7 @@
 import { compile, evaluate, formatLayout, FormulaError, type Checked, type Type, type Value } from '../formula/formula.ts'
 import type { Scope } from './types'
 
-export const scopeNames = ['user', 'app', 'url', 'query', 'state', 'data', 'row', 'index', 'form', 'result', 'device']
+export const scopeNames = ['user', 'app', 'url', 'query', 'state', 'data', 'row', 'index', 'form', 'result', 'device', 'theme']
 
 const known = new Set(scopeNames)
 
@@ -122,7 +122,12 @@ export function applyConditions(props: Record<string, any>, conditions: SettingC
   for (const c of conditions) {
     if (!c?.when || !c.set || !isTrue(c.when, scope)) continue
     out = { ...out }
-    for (const [k, v] of Object.entries(c.set)) if (!fixedSettings.has(k)) out[k] = v
+    for (const [k, v] of Object.entries(c.set)) {
+      if (fixedSettings.has(k)) continue
+      // "style:color" changes one style value of the Normal layer.
+      if (k.startsWith('style:')) out.style = { ...out.style, base: { ...out.style?.base, [k.slice(6)]: v } }
+      else out[k] = v
+    }
   }
   return out
 }

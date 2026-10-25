@@ -6,10 +6,12 @@
   import { Label } from '$lib/components/ui/label'
   import PaletteIcon from '@lucide/svelte/icons/palette'
   import CheckIcon from '@lucide/svelte/icons/check'
+  import PlusIcon from '@lucide/svelte/icons/plus'
+  import XIcon from '@lucide/svelte/icons/x'
   import { api } from '../api'
-  import { accentChoices, chartPalettes, paletteVars, accentVars, styleString } from '../screen/theme'
+  import { accentChoices, chartPalettes, paletteVars, accentVars, styleString, radii, fonts } from '../screen/theme'
   import { getDesigner } from './state.svelte'
-  import type { Design } from '../screen/types'
+  import type { Design, DesignToken } from '../screen/types'
 
   // ThemeMenu sets the published app's theme, colour and navigation.
   const d = getDesigner()
@@ -27,6 +29,28 @@
     save({ chartPalette: 'custom', chartColors: next })
   }
 
+  // Tokens are named values that styles read as {{ theme.<name> }}; they
+  // are saved when a box is left.
+  let tokens = $state<DesignToken[]>((d.app.design.tokens ?? []).map((t) => ({ ...t })))
+  const tokenName = /^[A-Za-z][A-Za-z0-9_]*$/
+  const tokenProblem = $derived.by(() => {
+    const seen = new Set<string>()
+    for (const t of tokens) {
+      if (!t.name && !t.value) continue
+      if (!tokenName.test(t.name)) return `“${t.name}”: a name starts with a letter and has only letters, digits and _.`
+      if (seen.has(t.name.toLowerCase())) return `“${t.name}” is used twice.`
+      if (/[;{}<>\\]/.test(t.value)) return `“${t.name}”: a value cannot hold ; { } < > or \\.`
+      seen.add(t.name.toLowerCase())
+    }
+    return ''
+  })
+  function saveTokens() {
+    if (tokenProblem) return
+    const list = tokens.filter((t) => t.name && t.value).map((t) => ({ name: t.name, value: t.value.trim() }))
+    if (JSON.stringify(list) !== JSON.stringify(d.app.design.tokens ?? [])) save({ tokens: list })
+  }
+  const isHex = (v: string) => /^#[0-9a-f]{6}$/i.test(v)
+
   async function save(p: Partial<Design>) {
     const design = { ...d.app.design, ...p }
     d.app.design = design
@@ -41,7 +65,7 @@
   <Popover.Trigger>
     {#snippet child({ props })}<Button {...props} variant="outline" size="sm"><PaletteIcon />Theme</Button>{/snippet}
   </Popover.Trigger>
-  <Popover.Content class="flex w-80 flex-col gap-4" align="end">
+  <Popover.Content class="flex max-h-[80vh] w-80 flex-col gap-4 overflow-y-auto" align="end">
     <div class="flex flex-col gap-2">
       <Label class="text-xs">Theme</Label>
       <ToggleGroup.Root type="single" variant="outline" size="sm" class="w-full" value={d.app.design.theme} onValueChange={(v) => v && save({ theme: v as Design['theme'] })}>
@@ -83,6 +107,43 @@
           {/each}
         </div>
       {/if}
+    </div>
+    <div class="flex flex-col gap-2">
+      <Label class="text-xs">Corners</Label>
+      <ToggleGroup.Root type="single" variant="outline" size="sm" class="w-full" value={d.app.design.radius || 'md'} onValueChange={(v) => v && save({ radius: v })}>
+        {#each Object.entries(radii) as [k, r] (k)}
+          <ToggleGroup.Item value={k} class="flex-1 text-xs" title={r}><span class="border-foreground/70 size-3.5 border-t-2 border-l-2" style:border-top-left-radius={k === 'none' ? '0' : `calc(${r} * 0.9)`}></span>{k === 'none' ? 'Square' : k.toUpperCase()}</ToggleGroup.Item>
+        {/each}
+      </ToggleGroup.Root>
+    </div>
+    <div class="flex flex-col gap-2">
+      <Label class="text-xs">Font</Label>
+      <div class="grid grid-cols-3 gap-1.5">
+        {#each Object.entries(fonts) as [k, f] (k)}
+          <button type="button" aria-pressed={(d.app.design.font || 'inter') === k} onclick={() => save({ font: k })} style:font-family={f.css}
+            class={['hover:bg-accent rounded-md border px-2 py-1.5 text-left text-xs', (d.app.design.font || 'inter') === k && 'border-primary ring-primary/30 ring-2']}>
+            <span class="block text-base leading-none">Aa</span>{f.label}
+          </button>
+        {/each}
+      </div>
+    </div>
+    <div class="flex flex-col gap-2">
+      <Label class="text-xs">Tokens</Label>
+      <p class="text-muted-foreground -mt-1 text-[11px] leading-snug">Named values for styles: a colour, a size or any CSS. Components use them as <code class="font-mono">{'{{ theme.brand }}'}</code>.</p>
+      {#each tokens as t, i (i)}
+        <div class="flex items-center gap-1.5">
+          {#if isHex(t.value) || !t.value}
+            <Input type="color" class="size-7 shrink-0 cursor-pointer p-0.5" value={isHex(t.value) ? t.value : '#4f46e5'} oninput={(e) => (t.value = e.currentTarget.value)} onchange={saveTokens} aria-label={`Colour of ${t.name || 'the token'}`} />
+          {:else}
+            <span class="bb-checker relative size-7 shrink-0 overflow-hidden rounded-md border"><span class="absolute inset-0" style:background={t.value}></span></span>
+          {/if}
+          <Input class="h-7 w-24 font-mono text-xs" placeholder="brand" bind:value={t.name} onblur={saveTokens} aria-label="Token name" />
+          <Input class="h-7 min-w-0 flex-1 font-mono text-xs" placeholder="#0f766e or 12px" bind:value={t.value} onblur={saveTokens} aria-label="Token value" />
+          <Button variant="ghost" size="icon" class="size-7 shrink-0" aria-label={`Remove ${t.name}`} onclick={() => { tokens.splice(i, 1); saveTokens() }}><XIcon class="size-3.5" /></Button>
+        </div>
+      {/each}
+      {#if tokenProblem}<p class="text-destructive text-[11px]">{tokenProblem}</p>{/if}
+      <Button variant="outline" size="sm" class="h-7 self-start text-xs" onclick={() => tokens.push({ name: '', value: '' })}><PlusIcon />Add a token</Button>
     </div>
     <div class="flex flex-col gap-2">
       <Label class="text-xs">Navigation</Label>

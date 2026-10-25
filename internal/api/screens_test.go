@@ -37,6 +37,16 @@ func TestScreens(t *testing.T) {
 		if d := owner.do("PATCH", base, map[string]any{"design": map[string]any{}}, 200)["design"].(map[string]any); d["chartPalette"] != "theme" {
 			t.Errorf("default palette = %v", d["chartPalette"])
 		}
+		app = owner.do("PATCH", base, map[string]any{"design": map[string]any{"radius": "lg", "font": "serif", "tokens": []map[string]string{{"name": "brand", "value": " #0f766e "}, {"name": "gutter", "value": "clamp(8px, 2cqw, 24px)"}}}}, 200)
+		if d := app["design"].(map[string]any); d["radius"] != "lg" || d["font"] != "serif" || len(d["tokens"].([]any)) != 2 || d["tokens"].([]any)[0].(map[string]any)["value"] != "#0f766e" {
+			t.Errorf("design = %v", d)
+		}
+		owner.do("PATCH", base, map[string]any{"design": map[string]any{"radius": "huge"}}, 400)
+		owner.do("PATCH", base, map[string]any{"design": map[string]any{"font": "comic"}}, 400)
+		for _, bad := range []map[string]string{{"name": "1st", "value": "red"}, {"name": "x", "value": "red; } body { display: none"}, {"name": "x", "value": ""}, {"name": "x", "value": "</style>"}} {
+			owner.do("PATCH", base, map[string]any{"design": map[string]any{"tokens": []map[string]string{bad}}}, 400)
+		}
+		owner.do("PATCH", base, map[string]any{"design": map[string]any{"tokens": []map[string]string{{"name": "a", "value": "1px"}, {"name": "A", "value": "2px"}}}}, 400)
 
 		home := owner.do("POST", base+"/screens", map[string]any{"name": "Home", "route": "home/"}, 201)
 		if home["route"] != "/home" || home["role"] != "BASIC" {

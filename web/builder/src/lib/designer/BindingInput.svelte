@@ -11,9 +11,11 @@
   // BindingInput is a text box with a picker that inserts {{ bindings }}.
   // With sample data (scope), the picker shows values and a line under the
   // box previews what the text gives.
-  let { value, onChange, groups, multiline = false, placeholder = '', mono = false, id, help = pipeHelp, class: className = '', scope = null, showPreview = true }: {
+  let { value, onChange, groups, multiline = false, placeholder = '', mono = false, id, help = pipeHelp, class: className = '', scope = null, showPreview = true, list }: {
     value: string; onChange: (v: string) => void; groups: BindingGroup[]
     multiline?: boolean; placeholder?: string; mono?: boolean; id?: string; help?: string; class?: string; scope?: Record<string, any> | null; showPreview?: boolean
+    // list names a <datalist> of suggestions.
+    list?: string
   } = $props()
   let open = $state(false)
   let el = $state<HTMLInputElement | HTMLTextAreaElement | null>(null)
@@ -33,7 +35,7 @@
   {#if multiline}
     <Textarea {id} bind:ref={el as HTMLTextAreaElement} rows={3} class={['pr-9 text-sm', mono ? 'font-mono text-xs' : '']} {placeholder} value={value ?? ''} oninput={(e) => onChange(e.currentTarget.value)} />
   {:else}
-    <Input {id} bind:ref={el as HTMLInputElement} class={['h-8 pr-9 text-sm', mono ? 'font-mono text-xs' : '', className]} {placeholder} value={value ?? ''} oninput={(e) => onChange(e.currentTarget.value)} />
+    <Input {id} {list} bind:ref={el as HTMLInputElement} class={['h-8 pr-9 text-sm', mono ? 'font-mono text-xs' : '', className]} {placeholder} value={value ?? ''} oninput={(e) => onChange(e.currentTarget.value)} />
   {/if}
   <Popover.Root bind:open>
     <Popover.Trigger class="text-muted-foreground hover:text-primary hover:bg-muted absolute top-1 right-1 grid size-6 place-items-center rounded" title="Insert a binding">

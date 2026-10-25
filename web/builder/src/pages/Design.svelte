@@ -37,7 +37,7 @@
   import { formFields } from '../lib/designer/templates'
   import { newNode, registry } from '../lib/screen/registry'
   import { Runtime } from '../lib/screen/context.svelte'
-  import { themeVars, styleString } from '../lib/screen/theme'
+  import { themeScope, themeVars, styleString } from '../lib/screen/theme'
   import ScreenHost from '../lib/screen/ScreenHost.svelte'
   import ConfirmHost from '../lib/screen/ConfirmHost.svelte'
   import AppFrame from '../lib/screen/AppFrame.svelte'
@@ -318,7 +318,7 @@
         <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
         <div class="bg-muted/50 flex min-h-0 flex-1 justify-center overflow-auto p-4" onclick={() => (d.selected = 'root')} onmouseleave={() => (rt.hovered = null)}>
           {#if d.screen && d.root}
-            <div class={['bb-canvas flex h-full shrink-0 flex-col overflow-hidden rounded-xl border shadow-sm transition-[width]', width, theme]} style={styleString(themeVars(d.app.design))}>
+            <div class={['bb-canvas flex h-full shrink-0 flex-col overflow-hidden rounded-xl border shadow-sm transition-[width]', width, theme]} style={styleString({ ...themeVars(d.app.design), 'font-family': 'var(--font-sans)' })}>
               <AppFrame design={d.app.design} appName={d.app.name} screens={d.screens} current={d.screen.id} compact={d.device !== 'desktop'}
                 user={session.user ? { name: session.user.name || session.user.email, email: session.user.email } : null}
                 onNavigate={(r) => { const s = d.screens.find((x) => x.route === r); if (s) open(s) }}>
@@ -326,6 +326,7 @@
                   <ScreenHost {rt} root={d.root} scope={() => ({
                     user: session.user ? { id: session.user.id, name: session.user.name, email: session.user.email } : null,
                     app: { id: d.app.id, name: d.app.name, slug: d.app.slug }, url: params, query: queryPreview, state: rt.state,
+                    theme: themeScope(d.app.design),
                   })} />
                 {/key}
               </AppFrame>
@@ -344,7 +345,7 @@
       </section>
 
       <!-- Settings -->
-      <aside class="bg-card w-80 shrink-0 border-l">
+      <aside class="bg-card w-[22rem] shrink-0 border-l">
         {#if d.screen}<SettingsPanel />{/if}
       </aside>
     </div>

@@ -2,6 +2,7 @@
 // registries, described for the model, plus example screens made by the
 // builder's templates.
 import { componentList, registry } from '../screen/registry'
+import { styleProps } from '../screen/style'
 import { actionTypes } from '../screen/actions'
 import { stepTypes, triggerTypes } from '../flows/steps'
 import { detailScreen, listScreen } from '../designer/templates'
@@ -20,7 +21,14 @@ export function catalog(kind: DraftKind, tables: Table[]): any {
         defaults: c.defaults(),
         settings: c.settings.map((s) => ({ key: s.key, kind: s.kind, label: s.label, options: options(s.options), help: s.help })),
       })),
-      commonSettings: ['grow', 'span', 'roles', 'showWhen', 'conditions', 'printHide'],
+      commonSettings: ['grow', 'span', 'roles', 'showWhen', 'conditions', 'printHide', 'style'],
+      // props.style holds CSS by layer; values may hold {{ bindings }},
+      // such as {{ theme.primary }}.
+      style: {
+        layers: ['base', 'tablet', 'phone', 'hover', 'focus', 'active'],
+        example: { base: { padding: '16px', 'border-radius': '12px', 'background-color': '{{ theme.muted }}' }, phone: { padding: '8px' }, hover: { 'box-shadow': 'md' } },
+        properties: styleProps.map((p) => p.key),
+      },
       // Drafts go to other screens by address; the editor shows it as the
       // screen it points at.
       actions: actionTypes.map((a) => ({ type: a.type, label: a.label, fields: a.type === 'navigate' ? [{ key: 'route', kind: 'text', label: 'Address' }] : a.fields.map((f) => ({ key: f.key, kind: f.kind, label: f.label })) })),

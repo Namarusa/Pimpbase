@@ -18,6 +18,6 @@
 
 <svelte:window bind:innerWidth={width} />
 
-<div class="@container min-h-full">
+<div class="@container flex min-h-full flex-col">
   <NodeView node={root} />
 </div>

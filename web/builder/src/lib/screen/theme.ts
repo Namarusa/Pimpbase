@@ -42,7 +42,44 @@ export function paletteVars(id: string | undefined, custom?: string[]): Record<s
   return Object.fromEntries(colors.slice(0, 5).map((c, i) => [`--chart-${i + 1}`, c]))
 }
 
+// Corner roundness and typefaces an app may choose.
+export const radii: Record<string, string> = { none: '0rem', sm: '0.375rem', md: '0.625rem', lg: '0.875rem', xl: '1.25rem' }
+export const fonts: Record<string, { label: string; css: string }> = {
+  inter: { label: 'Inter', css: "Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" },
+  system: { label: 'System', css: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" },
+  serif: { label: 'Serif', css: "ui-serif, Georgia, Cambria, 'Times New Roman', serif" },
+  mono: { label: 'Mono', css: "ui-monospace, 'SF Mono', Menlo, Consolas, monospace" },
+  rounded: { label: 'Rounded', css: "ui-rounded, 'SF Pro Rounded', 'Nunito', system-ui, sans-serif" },
+}
+
+interface ThemeDesign { accent?: string; chartPalette?: string; chartColors?: string[]; radius?: string; font?: string; tokens?: { name: string; value: string }[] }
+
+// tokenVar is the CSS variable of a named token.
+export const tokenVar = (name: string) => `--t-${name}`
+
 // themeVars are all the design tokens an app's design sets.
-export function themeVars(design: { accent?: string; chartPalette?: string; chartColors?: string[] }): Record<string, string> {
-  return { ...accentVars(design.accent), ...paletteVars(design.chartPalette, design.chartColors) }
+export function themeVars(design: ThemeDesign): Record<string, string> {
+  const out: Record<string, string> = { ...accentVars(design.accent), ...paletteVars(design.chartPalette, design.chartColors) }
+  if (design.radius && radii[design.radius]) out['--radius'] = radii[design.radius]
+  if (design.font && fonts[design.font]) out['--font-sans'] = fonts[design.font].css
+  for (const t of design.tokens ?? []) if (/^[A-Za-z][A-Za-z0-9_]*$/.test(t.name) && t.value) out[tokenVar(t.name)] = t.value.replace(/[;{}<>\\]/g, '')
+  return out
+}
+
+// themeColors are the theme's own colours, by the name styles use.
+export const themeColors: { name: string; css: string; label: string }[] = [
+  ['primary', 'Accent'], ['primaryForeground', 'Text on accent'], ['background', 'Page'], ['foreground', 'Text'],
+  ['card', 'Card'], ['cardForeground', 'Text on card'], ['muted', 'Muted'], ['mutedForeground', 'Muted text'],
+  ['accent', 'Highlight'], ['border', 'Border'], ['destructive', 'Danger'],
+  ['chart1', 'Chart 1'], ['chart2', 'Chart 2'], ['chart3', 'Chart 3'], ['chart4', 'Chart 4'], ['chart5', 'Chart 5'],
+].map(([name, label]) => ({ name, label, css: `var(--${name.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase()).replace(/(\d)$/, '-$1')})` }))
+
+// themeScope is what {{ theme.x }} reads: CSS that follows the app's
+// theme, light or dark, so styles can use it.
+export function themeScope(design: ThemeDesign): Record<string, string> {
+  const out: Record<string, string> = Object.fromEntries(themeColors.map((c) => [c.name, c.css]))
+  out.radius = 'var(--radius)'
+  out.font = 'var(--font-sans)'
+  for (const t of design.tokens ?? []) if (/^[A-Za-z][A-Za-z0-9_]*$/.test(t.name)) out[t.name] = `var(${tokenVar(t.name)})`
+  return out
 }

@@ -192,3 +192,7 @@
   background: var(--primary); color: var(--primary-foreground); font-size: 11px; font-weight: 500;
   line-height: 1; padding: 3px 6px; border-radius: 4px 4px 0 0; pointer-events: none; white-space: nowrap;
 }
+
+/* Shows through a colour swatch whose colour is see-through or bound. */
+.bb-checker { background: repeating-conic-gradient(var(--muted) 0 25%, var(--background) 0 50%) 0 0 / 8px 8px; }
+.bb-root > :not(style):not(.bb-tag) { flex: 1 0 auto; }

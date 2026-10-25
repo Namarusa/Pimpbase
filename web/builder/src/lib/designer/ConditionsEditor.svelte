@@ -10,6 +10,7 @@
   import { fixedSettings, type SettingCondition } from '../screen/formulas'
   import type { BindingGroup } from './context'
   import type { Setting } from '../screen/types'
+  import { styleProps } from '../screen/style'
 
   // ConditionsEditor edits the settings a component changes while a
   // formula is true, such as a red badge for late orders or a disabled
@@ -20,7 +21,9 @@
   } = $props()
 
   const editable = new Set(['text', 'textarea', 'boolean', 'select', 'segmented', 'number', 'color'])
-  const choices = $derived(settings.filter((s) => editable.has(s.kind) && !fixedSettings.has(s.key)))
+  // Style values can change too, as "style:<property>" (Normal layer).
+  const styleChoices: Setting[] = styleProps.map((p) => ({ key: `style:${p.key}`, label: p.label, kind: 'text', section: `Style · ${p.group}` }))
+  const choices = $derived([...settings.filter((s) => editable.has(s.kind) && !fixedSettings.has(s.key)), ...styleChoices])
   const byKey = $derived(Object.fromEntries(choices.map((s) => [s.key, s])))
 
   function update(i: number, c: SettingCondition | null) {
@@ -64,7 +67,7 @@
           {/if}
         </div>
       {/each}
-      <Select.Root type="single" value="" onValueChange={(key) => key && update(i, { ...c, set: { ...c.set, [key]: props[key] ?? (byKey[key]?.kind === 'boolean' ? true : '') } })}>
+      <Select.Root type="single" value="" onValueChange={(key) => key && update(i, { ...c, set: { ...c.set, [key]: key.startsWith('style:') ? (props.style?.base?.[key.slice(6)] ?? '') : props[key] ?? (byKey[key]?.kind === 'boolean' ? true : '') } })}>
         <Select.Trigger size="sm" class="text-muted-foreground w-full"><PlusIcon />Change a setting</Select.Trigger>
         <Select.Content class="max-h-72">
           {#each choices.filter((s) => !(s.key in c.set)) as s (s.key)}<Select.Item value={s.key} label={s.label}>{label(s)}</Select.Item>{/each}

@@ -4,12 +4,17 @@
   import { getRuntime, getScope } from './context.svelte'
   import { checkCondition, hasBinding, resolve } from './bindings'
   import { applyConditions, isTrue } from './formulas'
+  import { hasStyle, selectorsFor, styleCss } from './style'
   import type { Node } from './types'
 
   let { node }: { node: Node } = $props()
   const rt = getRuntime()
   const scopeFn = getScope()
 
+  // Each copy of a component (one per repeated row) gets its own style
+  // class, since bindings can give every copy different values.
+  const pid = $props.id()
+  const uid = pid.replace(/[^A-Za-z0-9_-]/g, '')
   const def = $derived(registry[node.type])
   const scope = $derived(scopeFn())
   // Settings that keep their bindings for the component to resolve later.
@@ -19,15 +24,39 @@
   const p = $derived.by(() => {
     let out: Record<string, any> = { ...def?.defaults(), ...node.props }
     if (live) out = applyConditions(out, node.props.conditions, scope)
-    for (const s of def?.settings ?? []) if (!raw.has(s.kind) && hasBinding(out[s.key])) out[s.key] = resolve(out[s.key], scope)
+    for (const s of def?.settings ?? []) {
+      if (raw.has(s.kind) || !hasBinding(out[s.key])) continue
+      out[s.key] = coerce(s.kind, resolve(out[s.key], scope))
+    }
+    out.$layout = `bbl-${uid}`
+    out.$surface = `bbf-${uid}`
     return out
+  })
+  // Choices and switches given a binding take the value it gives.
+  function coerce(kind: string, v: any): any {
+    if (kind === 'boolean') return v === true || (typeof v === 'number' && v !== 0) || ['true', 'yes', '1', 'on'].includes(String(v ?? '').trim().toLowerCase())
+    if (kind === 'number') return v === '' || v === null || v === undefined || isNaN(Number(v)) ? '' : Number(v)
+    if (kind === 'segmented' || kind === 'select' || kind === 'color') return String(v ?? '').trim()
+    return v
+  }
+  const styled = $derived(hasStyle(p.style))
+  const css = $derived.by(() => {
+    if (!styled) return ''
+    const css = styleCss(p.style, selectorsFor(uid, !!def?.innerLayout), {
+      device: scope.device, editing: rt.editing,
+      resolve: (v) => { try { return resolve(v, scope) } catch { return '' } },
+    })
+    return css ? `<style>${css}</style>` : ''
   })
   const visible = $derived(!live || (checkCondition(node.props.visibleIf, scope) && isTrue(node.props.showWhen, scope)))
   const wrap = $derived([
     'bb-node relative min-w-0',
+    // The screen fills the page, so its background reaches the bottom.
+    node.id === 'root' ? 'bb-root flex flex-1 flex-col' : '',
     p.grow ? 'flex-1' : '',
     spanClass[p.span] ?? '',
     p.printHide ? 'print:hidden' : '',
+    styled ? `bbs-${uid}` : '',
     def?.wrapperClass?.(p) ?? '',
     rt.editing ? 'bb-edit-node' : '',
     rt.editing && rt.selected === node.id && node.id !== 'root' ? 'bb-selected' : '',
@@ -54,10 +83,11 @@
       {#if rt.selected === node.id && node.id !== 'root'}
         <span class="bb-tag">{node.name || def.label}</span>
       {/if}
+      {@html css}
       <def.component {node} {p} />
     </div>
   {:else}
-    <div class={wrap} data-node={node.id}><def.component {node} {p} /></div>
+    <div class={wrap} data-node={node.id}>{@html css}<def.component {node} {p} /></div>
   {/if}
 {:else if !def}
   <div class="text-destructive text-sm">Unknown component “{node.type}”</div>

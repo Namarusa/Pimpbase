@@ -6,6 +6,7 @@ import { all } from './tree'
 import type { Query, Table } from '../api'
 import type { Node } from '../screen/types'
 import { queryTable } from '../apis/bindings'
+import { themeColors } from '../screen/theme'
 
 // queryTables describes API queries as tables ("query:<id>"), so field
 // pickers offer their columns.
@@ -93,6 +94,19 @@ export function bindingsFor(root: Node, id: string, tables: Table[], route: stri
   groups.push({ label: 'Signed-in user', items: [{ path: 'user.name' }, { path: 'user.email' }, { path: 'user.id' }] })
   groups.push({ label: 'App', items: [{ path: 'app.name' }] })
   return groups
+}
+
+// themeGroup lists the app's theme colours and tokens. They give CSS that
+// follows the light or dark theme, so they suit Style values.
+export function themeGroup(tokens: { name: string; value: string }[] = []): BindingGroup {
+  return {
+    label: 'Theme', note: 'CSS values that follow the app theme, light or dark. Use them in styles.',
+    items: [
+      ...tokens.filter((t) => /^[A-Za-z][A-Za-z0-9_]*$/.test(t.name)).map((t) => ({ path: `theme.${t.name}`, hint: t.value.length > 18 ? 'token' : t.value })),
+      ...themeColors.map((c) => ({ path: `theme.${c.name}`, hint: c.label })),
+      { path: 'theme.radius', hint: 'corners' }, { path: 'theme.font', hint: 'typeface' },
+    ],
+  }
 }
 
 function providerTable(path: Node[], tables: Table[]): Table | undefined {

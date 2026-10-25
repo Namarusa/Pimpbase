@@ -10,6 +10,11 @@
   import TrashIcon from '@lucide/svelte/icons/trash'
   import WandIcon from '@lucide/svelte/icons/wand-sparkles'
   import PlugIcon from '@lucide/svelte/icons/plug'
+  import BracesIcon from '@lucide/svelte/icons/braces'
+  import * as Tabs from '$lib/components/ui/tabs'
+  import StylePanel from './StylePanel.svelte'
+  import { hasStyle, layers } from '../screen/style'
+  import { hasBinding } from '../screen/bindings'
   import BindingInput from './BindingInput.svelte'
   import FieldSelect from './FieldSelect.svelte'
   import FieldsPicker from './FieldsPicker.svelte'
@@ -24,7 +29,7 @@
   import { conditionOps } from '../screen/bindings'
   import { iconNames, icons } from '../screen/icons'
   import { getDesigner } from './state.svelte'
-  import { bindingsFor, contextTable, withQueries } from './context'
+  import { bindingsFor, contextTable, themeGroup, withQueries } from './context'
   import { duplicate, remove, findIn } from './tree'
   import { formFields } from './templates'
   import type { Role } from '../api'
@@ -43,12 +48,31 @@
   // the one being edited.
   const liveScreens = $derived(d.screens.map((s) => (s.id === d.screen?.id && d.root ? { ...s, definition: d.root } : s)))
   const received = $derived(d.screen ? incoming(d.screen, liveScreens) : [])
-  const groups = $derived(node && d.root && d.screen ? bindingsFor(d.root, node.id, sources, d.screen.route, false, received) : [])
+  const theme = $derived(themeGroup(d.app.design.tokens))
+  const groups = $derived(node && d.root && d.screen ? [...bindingsFor(d.root, node.id, sources, d.screen.route, false, received), theme] : [])
   const actionGroups = $derived(node && d.root && d.screen ? bindingsFor(d.root, node.id, sources, d.screen.route, true, received) : [])
+  // The Style tab stays open while other components are picked.
+  let tab = $state<'settings' | 'style'>('settings')
+  const styleCount = $derived(node && hasStyle(node.props.style) ? layers.reduce((n, l) => n + Object.keys(node.props.style[l] ?? {}).length, 0) + (node.props.style.css ? 1 : 0) : 0)
+
+  // Choices, numbers, colours and switches can hold a binding instead:
+  // the braces button next to their label switches them to a text box.
+  const bindable = new Set(['segmented', 'select', 'number', 'color', 'boolean'])
+  let typing = $state<Record<string, boolean>>({})
+  const bound = (s: Setting) => bindable.has(s.kind) && (typing[sid(s)] || hasBinding(props[s.key]))
+  function toggleBound(s: Setting) {
+    if (bound(s)) {
+      typing[sid(s)] = false
+      if (hasBinding(props[s.key])) set(s.key, def?.defaults()[s.key])
+    } else typing[sid(s)] = true
+  }
   const nodeQuery = $derived(String(props.table ?? '').startsWith('query:') ? d.queries.find((q) => q.id === String(props.table).slice(6)) : undefined)
   const order = ['Data', '', 'Validation', 'Layout', 'Style', 'Conditions']
   const sections = $derived.by(() => {
-    const visible = (def?.settings ?? []).filter((s) => !s.show || s.show(props))
+    // A choice given a binding could be any of its options, so the
+    // settings that depend on a choice stay in view.
+    const boundChoice = (def?.settings ?? []).some((s) => (s.kind === 'segmented' || s.kind === 'select' || s.kind === 'boolean') && hasBinding(props[s.key]))
+    const visible = (def?.settings ?? []).filter((s) => !s.show || s.show(props) || boundChoice)
     return order.map((name) => ({ name, settings: visible.filter((s) => (s.section ?? '') === name) })).filter((g) => g.settings.length)
   })
 
@@ -110,6 +134,13 @@
   const sid = (s: Setting) => `s-${node?.id}-${s.key}`
 </script>
 
+{#snippet bindToggle(s: Setting)}
+  <button type="button" class={['hover:bg-muted grid size-6 place-items-center rounded', bound(s) ? 'text-primary' : 'text-muted-foreground/60 hover:text-foreground']}
+    title={bound(s) ? 'Back to the choices' : 'Use a binding or formula'} aria-label={`Bind ${s.label}`} onclick={() => toggleBound(s)}>
+    <BracesIcon class="size-3.5" />
+  </button>
+{/snippet}
+
 <div class="flex h-full flex-col">
   {#if !node || !def}
     <p class="text-muted-foreground p-4 text-sm">Select a component on the canvas or in the tree to change its settings.</p>
@@ -126,7 +157,17 @@
       {/if}
     </div>
 
+    <Tabs.Root value={tab} onValueChange={(v) => (tab = v as typeof tab)} class="border-b px-4 py-2">
+      <Tabs.List class="h-8 w-full">
+        <Tabs.Trigger value="settings" class="text-xs">Settings</Tabs.Trigger>
+        <Tabs.Trigger value="style" class="text-xs">Style{#if styleCount}<span class="bg-primary/15 text-primary rounded px-1 text-[10px]">{styleCount}</span>{/if}</Tabs.Trigger>
+      </Tabs.List>
+    </Tabs.Root>
+
     <div class="flex-1 overflow-y-auto">
+      {#if tab === 'style'}
+        {#key node.id}<StylePanel {node} {def} {groups} />{/key}
+      {:else}
       {#if node.id === 'root' && d.screen}
         <div class="flex flex-col gap-3 p-4">
           <div class="flex flex-col gap-1.5"><Label for="scr-name" class="text-xs">Screen name</Label>
@@ -160,15 +201,22 @@
             <Button variant="outline" size="sm" class="h-8" onclick={addFormFields}><WandIcon />Add a field for every column</Button>
           {/if}
           {#each sec.settings as s (s.key)}
-            {#if s.kind === 'boolean'}
+            {#if s.kind === 'boolean' && !bound(s)}
               <div class="flex items-center justify-between gap-3">
                 <Label for={sid(s)} class="text-xs font-normal">{s.label}</Label>
-                <Switch id={sid(s)} checked={!!props[s.key]} onCheckedChange={(v) => set(s.key, v)} />
+                <div class="flex items-center gap-1">{@render bindToggle(s)}<Switch id={sid(s)} checked={!!props[s.key]} onCheckedChange={(v) => set(s.key, v)} /></div>
               </div>
             {:else}
               <div class="flex flex-col gap-1.5">
-                <Label for={sid(s)} class="text-xs">{s.label}</Label>
-                {#if s.kind === 'text'}
+                <div class="flex items-center justify-between gap-2">
+                  <Label for={sid(s)} class="text-xs">{s.label}</Label>
+                  {#if bindable.has(s.kind)}{@render bindToggle(s)}{/if}
+                </div>
+                {#if bound(s)}
+                  <BindingInput id={sid(s)} mono value={String(props[s.key] ?? '')} onChange={(v) => set(s.key, v)} {groups}
+                    placeholder={s.options ? s.options.map((o) => o.value).join(', ') : s.kind === 'boolean' ? 'true or false' : ''} />
+                  <p class="text-muted-foreground text-[11px]">{s.options ? `Gives one of: ${s.options.map((o) => o.value).join(', ')}.` : s.kind === 'boolean' ? 'True, yes or 1 turns it on.' : s.kind === 'color' ? 'Gives a colour, such as #dc2626 or {{ theme.primary }}.' : 'Gives a number.'}</p>
+                {:else if s.kind === 'text'}
                   <BindingInput id={sid(s)} value={props[s.key] ?? ''} onChange={(v) => set(s.key, v)} {groups} placeholder={s.placeholder} />
                 {:else if s.kind === 'textarea'}
                   <BindingInput id={sid(s)} multiline value={props[s.key] ?? ''} onChange={(v) => set(s.key, v)} {groups} placeholder={s.placeholder} />
@@ -255,6 +303,7 @@
         </div>
         <Separator />
       {/each}
+      {/if}
     </div>
   {/if}
 </div>

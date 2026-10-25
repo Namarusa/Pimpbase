@@ -29,7 +29,15 @@ export interface Design {
   title: string
   chartPalette?: string
   chartColors?: string[]
+  // radius is the corner roundness: none, sm, md (the default), lg or xl.
+  radius?: string
+  // font is the app's typeface: inter, system, serif, mono or rounded.
+  font?: string
+  // tokens are named values styles use, as {{ theme.<name> }}.
+  tokens?: DesignToken[]
 }
+
+export interface DesignToken { name: string; value: string }
 
 // Action is one step run when a button is clicked, a row is chosen or a
 // form is saved. String values may hold {{ bindings }}.
@@ -95,6 +103,9 @@ export interface ComponentDef {
   tableSource?: boolean
   defaults: () => Record<string, any>
   children?: () => Node[]
+  // innerLayout says the component lays out its children in an inner
+  // element (it adds p.$layout to it), so Layout styles go there.
+  innerLayout?: boolean
   // wrapperClass adds classes to the box around the component.
   wrapperClass?: (props: Record<string, any>) => string
   settings: Setting[]
@@ -114,6 +125,7 @@ export interface Scope {
   form?: Record<string, any>
   result?: any
   device?: 'desktop' | 'tablet' | 'phone'
+  theme?: Record<string, string>
   [key: string]: any
 }
 

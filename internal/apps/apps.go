@@ -42,7 +42,28 @@ type Design struct {
 	ChartPalette string `json:"chartPalette"`
 	// ChartColors are the five #rrggbb colours of the "custom" palette.
 	ChartColors []string `json:"chartColors"`
+	// Radius is the corner roundness: none, sm, md, lg or xl; empty is md.
+	Radius string `json:"radius,omitempty"`
+	// Font is the typeface: inter, system, serif, mono or rounded; empty is inter.
+	Font string `json:"font,omitempty"`
+	// Tokens are named CSS values that component styles read as
+	// {{ theme.<name> }}.
+	Tokens []Token `json:"tokens,omitempty"`
 }
+
+// Token is one named value of an app's theme, such as brand = #0f766e.
+type Token struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+// Radii and Fonts are the corner roundness and typefaces an app may choose.
+var (
+	Radii = []string{"none", "sm", "md", "lg", "xl"}
+	Fonts = []string{"inter", "system", "serif", "mono", "rounded"}
+)
+
+var tokenNameRe = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,39}$`)
 
 // Quotas cap what one app may use, so one busy or runaway app cannot
 // starve the others. Zero means no limit. Workspace owners and admins set
@@ -132,6 +153,31 @@ func (d *Design) normalize() error {
 	}
 	if d.ChartPalette == "custom" && len(d.ChartColors) == 0 {
 		return &InvalidError{"a custom chart palette needs its colours"}
+	}
+	if d.Radius != "" && !slices.Contains(Radii, d.Radius) {
+		return &InvalidError{"corners are one of " + strings.Join(Radii, ", ")}
+	}
+	if d.Font != "" && !slices.Contains(Fonts, d.Font) {
+		return &InvalidError{"the font is one of " + strings.Join(Fonts, ", ")}
+	}
+	if len(d.Tokens) > 100 {
+		return &InvalidError{"a theme has at most 100 tokens"}
+	}
+	seen := map[string]bool{}
+	for i, t := range d.Tokens {
+		t.Value = strings.TrimSpace(t.Value)
+		d.Tokens[i] = t
+		if !tokenNameRe.MatchString(t.Name) {
+			return &InvalidError{"token names start with a letter and hold only letters, digits and _ (at most 40)"}
+		}
+		if seen[strings.ToLower(t.Name)] {
+			return &InvalidError{"the token " + t.Name + " is named twice"}
+		}
+		seen[strings.ToLower(t.Name)] = true
+		// A value goes into a CSS variable, so it cannot end its rule.
+		if t.Value == "" || len(t.Value) > 300 || strings.ContainsAny(t.Value, ";{}<>\\") {
+			return &InvalidError{"the token " + t.Name + " needs a CSS value of at most 300 characters, without ; { } < > or \\"}
+		}
 	}
 	d.Title = strings.TrimSpace(d.Title)
 	if len(d.Title) > 100 {

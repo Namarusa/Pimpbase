@@ -12,7 +12,7 @@
   import { session } from '../lib/session.svelte'
   import { Runtime } from '../lib/screen/context.svelte'
   import { matchRoute } from '../lib/screen/bindings'
-  import { themeVars } from '../lib/screen/theme'
+  import { themeScope, themeVars } from '../lib/screen/theme'
   import ScreenHost from '../lib/screen/ScreenHost.svelte'
   import ConfirmHost from '../lib/screen/ConfirmHost.svelte'
   import AppFrame from '../lib/screen/AppFrame.svelte'
@@ -118,6 +118,7 @@
           <ScreenHost {rt} root={matched.screen.definition} scope={() => ({
             user: info!.user, app: { id: info!.app.id, name: info!.app.name, slug: info!.app.slug },
             url: matched.params, query: Object.fromEntries(new URLSearchParams(route.search)), state: rt.state,
+            theme: themeScope(info!.app.design),
           })} />
         {/key}
       {:else if info.screens.length === 0}

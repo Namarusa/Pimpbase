@@ -25,7 +25,7 @@
         <div class="text-lg font-semibold leading-none">{p.title || (panel ? 'Side panel' : 'Dialog')}</div>
         {#if p.description}<div class="text-muted-foreground text-sm">{p.description}</div>{/if}
       </div>
-      <div class={['flex flex-col', gapClass[p.gap]]}><Children {node} empty="Add the dialog’s content here" /></div>
+      <div class={['flex flex-col', gapClass[p.gap], p.$layout]}><Children {node} empty="Add the dialog’s content here" /></div>
     </div>
   {:else}
     <div class="text-muted-foreground flex items-center gap-2 rounded-md border border-dashed px-3 py-2 text-xs">
@@ -35,22 +35,22 @@
   {/if}
 {:else if panel}
   <Sheet.Root bind:open={getOpen, setOpen}>
-    <Sheet.Content side={p.side === 'left' ? 'left' : 'right'} class="w-full overflow-y-auto sm:max-w-lg">
+    <Sheet.Content side={p.side === 'left' ? 'left' : 'right'} class={['w-full overflow-y-auto sm:max-w-lg', p.$surface]}>
       <Sheet.Header>
         <Sheet.Title>{p.title}</Sheet.Title>
         {#if p.description}<Sheet.Description>{p.description}</Sheet.Description>{/if}
       </Sheet.Header>
-      <div class={['@container flex flex-col px-4 pb-6', gapClass[p.gap]]}><Children {node} /></div>
+      <div class={['@container flex flex-col px-4 pb-6', gapClass[p.gap], p.$layout]}><Children {node} /></div>
     </Sheet.Content>
   </Sheet.Root>
 {:else}
   <Dialog.Root bind:open={getOpen, setOpen}>
-    <Dialog.Content class={['max-h-[90vh] overflow-y-auto', width[p.size] ?? width.md]}>
+    <Dialog.Content class={['max-h-[90vh] overflow-y-auto', width[p.size] ?? width.md, p.$surface]}>
       <Dialog.Header>
         <Dialog.Title>{p.title}</Dialog.Title>
         {#if p.description}<Dialog.Description>{p.description}</Dialog.Description>{/if}
       </Dialog.Header>
-      <div class={['@container flex flex-col', gapClass[p.gap]]}><Children {node} /></div>
+      <div class={['@container flex flex-col', gapClass[p.gap], p.$layout]}><Children {node} /></div>
     </Dialog.Content>
   </Dialog.Root>
 {/if}

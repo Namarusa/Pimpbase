@@ -98,7 +98,7 @@
   {:else if loadError}
     <p class="text-destructive text-sm">{loadError}</p>
   {:else}
-    <div class={['grid', cols[p.columns] ?? cols['1'], gapClass[p.gap ?? 'md']]}>
+    <div class={['grid', cols[p.columns] ?? cols['1'], gapClass[p.gap ?? 'md'], p.$layout]}>
       <Children {node} empty="Add form fields here" />
     </div>
   {/if}
