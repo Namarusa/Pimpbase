@@ -142,6 +142,28 @@ docker compose -f deploy/compose.cluster.yml up -d --build  # Postgres, 2 server
 pimpbase backup --out backup.zip                            # SQLite backup while serving
 ```
 
+### Docker
+
+The image (`docker build -t pimpbase .`, about 75 MB) is the same static
+binary on a distroless base. It runs as the non-root user 65532, listens on
+8080, and checks itself with `pimpbase healthcheck` (`/readyz`).
+
+- **Keep `/data` on a volume.** It holds the SQLite databases, and uploaded
+  files too unless `PIMPBASE_FILES` sends them elsewhere. `/backups` is
+  where `PIMPBASE_BACKUP_DIR` writes in `docker-compose.yml`.
+- Named volumes need nothing more. A host folder must be writable by
+  user 65532: `sudo chown -R 65532:65532 ./pimpbase-data`.
+- Behind HTTPS set `PIMPBASE_PUBLIC_URL` (links in emails, OAuth and
+  webhooks), `PIMPBASE_SECURE_COOKIES=true` and, when a proxy sets
+  `X-Forwarded-For`, `PIMPBASE_BEHIND_PROXY=true`.
+- Every `serve` flag has a `PIMPBASE_*` variable (`docker run pimpbase serve -h`
+  lists them): `PIMPBASE_POSTGRES`, `PIMPBASE_FILES`, `PIMPBASE_SMTP`,
+  `PIMPBASE_MAIL_FROM`, `PIMPBASE_METRICS_TOKEN`, `PIMPBASE_RATE_LIMIT`, AI
+  keys such as `PIMPBASE_ANTHROPIC_KEY`, and so on.
+- The first person to open the app creates the owner account, so finish
+  setup before exposing a new server to the internet.
+- Back up while running: `docker compose exec pimpbase pimpbase backup --out /backups/now.zip`.
+
 - `/healthz`, `/readyz` (fails while draining) and Prometheus `/metrics`.
 - Per-client rate limit (`--rate-limit`, 100 requests a second by default)
   and per-app quotas on rows, file megabytes, requests a minute and flow runs

@@ -148,8 +148,8 @@ running it; if that server stops, the run is marked failed.
 
 ## Deployment
 
-- `Dockerfile` builds the same static binary on a distroless base (52 MB
-  image, runs as non-root, healthcheck with `pimpbase healthcheck`).
+- `Dockerfile` builds the same static binary on a distroless base (about 75 MB
+  image, runs as non-root user 65532, `/data`, `/backups` and `/files` owned by it, healthcheck with `pimpbase healthcheck`).
 - `docker-compose.yml`: one server on SQLite with daily backups in a volume.
 - `deploy/compose.cluster.yml`: Postgres, two Pimpbase servers sharing a files
   volume, and Caddy balancing between them on `/readyz`. Scale with

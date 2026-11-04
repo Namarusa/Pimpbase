@@ -13,12 +13,16 @@ RUN go mod download
 COPY . .
 ARG VERSION=dev
 RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/pimpbase ./cmd/pimpbase \
- && mkdir -p /out/data /out/backups
+ && mkdir -p /out/data /out/backups /out/files
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/pimpbase /usr/local/bin/pimpbase
 COPY --from=build --chown=nonroot:nonroot /out/data /data
 COPY --from=build --chown=nonroot:nonroot /out/backups /backups
+# Shared uploads folder for --files dir:/files (deploy/compose.cluster.yml).
+# It must exist in the image so a new named volume mounted here is owned by
+# the nonroot user; otherwise every upload fails with permission denied.
+COPY --from=build --chown=nonroot:nonroot /out/files /files
 ENV PIMPBASE_ADDR=:8080 \
     PIMPBASE_DATA=/data
 VOLUME ["/data"]
