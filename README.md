@@ -313,7 +313,7 @@ Any text setting accepts bindings such as `{{ row.Title }}`,
 Screen formulas use the language of table formulas and run in the browser
 with the same results (both engines are tested against one set of
 cases). They read `row.X` (or `[X]` for the current row), `form.X`,
-`user.x`, `state.x`, `url.x`, `data.x`, `device` (`desktop`, `tablet` or
+`user.x`, `state.x`, `url.x`, `data.x`, `components.[Name].value`, `device` (`desktop`, `tablet` or
 `phone`), and `row.[Unit price]` for names with spaces.
 
 Every component has **Show when**, a formula such as
@@ -324,10 +324,35 @@ The designer shows every component (conditional ones outlined) until you turn on
 **Conditions** in its toolbar. Hidden components are not mounted, so they
 load no data. These rules only change what the page shows; they cannot
 change **Visible to**. Use Visible to, table permissions and row rules to
-keep data from people, since those are enforced by the server. Buttons, forms and table rows run action lists:
-navigate, open a URL, save or delete a row, open or close a dialog, show a
-toast, refresh data, set state, ask for confirmation, export CSV, print or
-save as PDF, sign out. Printing leaves out the app's navigation and any
+keep data from people, since those are enforced by the server.
+
+**Components talk to each other.** Each field, form, table, list, card
+grid, repeater, data or row provider and dialog has a name in the tree
+("Text field 1" until you rename it), and every binding picker lists them
+under **Components**: `{{ components["Search box"].value }}` is what is
+typed or chosen in a field (in a form or not), `components.Orders.rows`,
+`.total` and `.loading` are a table's or provider's rows, a table also
+gives `.search`, `.selectedRows` and `.selectedIds`, a form `.values` and
+`.valid`, a dialog `.open`. Renaming a component rewrites the bindings that
+use it. A table's filter or an API query's parameters that read a
+component or variable reload when it changes, so a search box in front of a
+query needs no button. Formulas read them as `components.[Search box].value`.
+
+**Screen variables** are declared in the screen settings with a first value
+(bindings allowed, such as `{{ query.status }}`), read as `{{ state.name }}`
+and changed with the **Update variable** action (set, reset or clear). The
+screen settings also hold actions to run **when the screen opens**.
+
+Buttons, forms, table and list rows, fields (**When the value changes**,
+with the new value as `{{ value }}`; text fields also **When Enter is
+pressed**) and screens run action lists. Data: save, duplicate, delete or
+fetch a row, run an API query or a flow, refresh data, update a variable,
+export CSV, clear a table's selection, take a payment. Screen: go to a
+screen, open a web address, open or close a dialog or side panel, show a
+notification, scroll to a component, copy to the clipboard, download a
+file, print or save as PDF. Form: update or reset a field's value, focus a
+field, clear a form, check a form. Logic: continue only if a test passes,
+ask to confirm. App: sign out. Printing leaves out the app's navigation and any
 component marked "Hide when printing", and prints dark themes light.
 
 Every component also has a **Style** tab with the CSS a builder needs:
@@ -424,7 +449,8 @@ read).
 
 On screens, data providers, tables, lists, cards, charts and stats can use
 an API query instead of a table, passing its parameters from bindings such
-as `{{ state.category }}` or `{{ url.id }}`; the **Run API query** action
+as `{{ components["Search box"].value }}`, `{{ state.category }}` or
+`{{ url.id }}` (the query runs again when they change); the **Run API query** action
 calls a query from a button or form and gives its answer to later actions as
 `{{ result }}` and, if named, to `{{ state.<name> }}`.
 

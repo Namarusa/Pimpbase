@@ -1,7 +1,7 @@
 <script lang="ts">
   import * as Pagination from '$lib/components/ui/pagination'
   import Children from '../Children.svelte'
-  import { extendScope, getRuntime, getScope } from '../context.svelte'
+  import { extendScope, getRuntime, getScope, shareValues } from '../context.svelte'
   import { RowSource } from '../rows.svelte'
   import { gapClass } from '../styles'
   import type { Node } from '../types'
@@ -12,6 +12,7 @@
   let page = $state(1)
   const limit = $derived(Number(p.limit) || 50)
   const src = new RowSource(rt, node.id, () => ({ props: p, scope: scope(), offset: (page - 1) * limit, limit }))
+  shareValues(node.id, () => ({ rows: src.rows, total: src.total, loading: src.loading }))
   extendScope(() => ({ data: { rows: src.rows, total: src.total, loading: src.loading, table: src.table } }))
 </script>
 

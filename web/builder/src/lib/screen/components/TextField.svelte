@@ -9,6 +9,7 @@
 </script>
 
 <FieldShell {f} help={p.help}>
-  <Input id={f.id} type={p.inputType || 'text'} placeholder={p.placeholder} disabled={f.disabled} aria-invalid={!!f.error}
-    value={f.value ?? ''} oninput={(e) => (f.value = e.currentTarget.value)} onblur={() => f.touch()} />
+  <Input id={f.id} bind:ref={f.el} type={p.inputType || 'text'} placeholder={p.placeholder} disabled={f.disabled} aria-invalid={!!f.error}
+    value={f.value ?? ''} oninput={(e) => (f.value = e.currentTarget.value)} onblur={() => f.touch()}
+    onkeydown={(e) => { if (e.key === 'Enter' && !e.isComposing) { if (p.onEnter?.length) e.preventDefault(); f.enter() } }} />
 </FieldShell>

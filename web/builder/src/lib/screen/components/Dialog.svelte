@@ -2,7 +2,7 @@
   import * as Dialog from '$lib/components/ui/dialog'
   import * as Sheet from '$lib/components/ui/sheet'
   import Children from '../Children.svelte'
-  import { extendScope, getRuntime, pathTo } from '../context.svelte'
+  import { extendScope, getRuntime, pathTo, shareValues } from '../context.svelte'
   import { gapClass } from '../styles'
   import type { Node } from '../types'
 
@@ -14,6 +14,7 @@
 
   const getOpen = () => !!rt.dialogs[node.id]
   const setOpen = (v: boolean) => (rt.dialogs[node.id] = v)
+  shareValues(node.id, () => ({ open: getOpen() }))
   const showInline = $derived(rt.editing && !!rt.selected && !!pathTo(node, rt.selected))
   const width: Record<string, string> = { sm: 'sm:max-w-sm', md: 'sm:max-w-lg', lg: 'sm:max-w-2xl', xl: 'sm:max-w-4xl' }
 </script>

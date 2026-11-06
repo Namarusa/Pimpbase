@@ -12,6 +12,7 @@
   import NavigateEditor from './NavigateEditor.svelte'
   import { actionInfo, actionTypes, describe } from '../screen/actions'
   import { registry } from '../screen/registry'
+  import { isInput } from '../screen/components'
   import { getDesigner } from './state.svelte'
   import { all } from './tree'
   import type { BindingGroup } from './context'
@@ -25,6 +26,18 @@
   const nodes = $derived(d.root ? all(d.root) : [])
   const dialogs = $derived(nodes.filter((n) => n.type === 'dialog' || n.type === 'side_panel'))
   const dataNodes = $derived(nodes.filter((n) => ['data_provider', 'row_provider', 'table', 'list', 'cards', 'chart', 'stat', 'repeater', 'form'].includes(n.type)))
+  const inputNodes = $derived(nodes.filter((n) => isInput(n.type)))
+  const formNodes = $derived(nodes.filter((n) => n.type === 'form'))
+  const anyNodes = $derived(nodes.filter((n) => n.id !== 'root'))
+  const pick = (kind: string, type: string) => kind === 'dialog' ? dialogs : kind === 'input' ? inputNodes : kind === 'form' ? formNodes : kind === 'anycomponent' ? (type === 'clear_selection' ? nodes.filter((n) => n.type === 'table') : anyNodes) : dataNodes
+  const emptyText: Record<string, string> = { dialog: 'Add a Dialog or Side panel to this screen first.', input: 'Add a field (text, select, …) to this screen first.', form: 'Add a form to this screen first.', anycomponent: 'Nothing to pick on this screen yet.' }
+  const groupNames = ['Data', 'Screen', 'Form', 'Logic', 'App'] as const
+  // Variable names this screen declares or sets, for the Update variable action.
+  const variableNames = $derived([...new Set([
+    ...((d.root?.props.variables ?? []) as { name: string }[]).map((v) => v.name),
+    ...nodes.flatMap((n) => Object.values(n.props).flatMap((v) => (Array.isArray(v) ? v.filter((a) => a?.type === 'set_state' && a.key).map((a) => a.key) : []))),
+  ].filter(Boolean))])
+  const listId = `vars-${Math.random().toString(36).slice(2, 8)}`
   const none = '\u0000none'
 
   const set = (i: number, key: string, v: any) => onChange(list.map((a, j) => (j === i ? { ...a, [key]: v } : a)))
@@ -33,6 +46,9 @@
     if (type === 'toast') { a.kind = 'success'; a.message = 'Done' }
     if ((type === 'save_row' || type === 'delete_row' || type === 'export_csv') && d.tables[0]) a.table = d.tables[0].id
     if (type === 'save_row') a.values = []
+    if (type === 'set_state' || type === 'set_value') a.mode = 'set'
+    if (type === 'continue_if') a.op = 'equals'
+    if (type === 'copy') a.text = ''
     onChange([...list, a])
   }
   const label = (id: string) => {
@@ -52,7 +68,7 @@
         <Button variant="ghost" size="icon" class="size-6" aria-label="Remove action" onclick={() => onChange(list.filter((_, j) => j !== i))}><XIcon class="size-3" /></Button>
       </div>
       <div class="flex flex-col gap-2 p-2">
-        {#each info?.fields ?? [] as f (f.key)}
+        {#each (info?.fields ?? []).filter((f) => !f.show || f.show(a)) as f (f.key)}
           {#if f.kind === 'boolean'}
             <div class="flex items-center gap-2"><Switch id={`a${i}${f.key}`} checked={!!a[f.key]} onCheckedChange={(v) => set(i, f.key, v)} /><Label for={`a${i}${f.key}`} class="text-xs font-normal">{f.label}</Label></div>
           {:else}
@@ -60,6 +76,10 @@
               <Label class="text-muted-foreground text-xs font-normal">{f.label}</Label>
               {#if f.kind === 'screen'}
                 <NavigateEditor action={a} screens={d.screens} {groups} onChange={(na) => onChange(list.map((x, j) => (j === i ? na : x)))} />
+              {:else if f.kind === 'text' && a.type === 'set_state' && f.key === 'key'}
+                <BindingInput value={a[f.key] ?? ''} onChange={(v) => set(i, f.key, v)} {groups} placeholder={f.placeholder} list={listId} />
+                <datalist id={listId}>{#each variableNames as v (v)}<option value={v}></option>{/each}</datalist>
+                <span class="text-muted-foreground text-[11px]">Read it anywhere as <code class="font-mono">{`{{ state.${a.key || 'name'} }}`}</code>.</span>
               {:else if f.kind === 'text'}
                 <BindingInput value={a[f.key] ?? ''} onChange={(v) => set(i, f.key, v)} {groups} placeholder={f.placeholder} />
               {:else if f.kind === 'select'}
@@ -72,14 +92,14 @@
                   <Select.Trigger size="sm" class="w-full">{d.table(a.table)?.name ?? 'Choose a table'}</Select.Trigger>
                   <Select.Content>{#each d.tables as t (t.id)}<Select.Item value={t.id} label={t.name}>{t.name}</Select.Item>{/each}</Select.Content>
                 </Select.Root>
-              {:else if f.kind === 'dialog' || f.kind === 'component'}
-                {@const opts = f.kind === 'dialog' ? dialogs : dataNodes}
+              {:else if f.kind === 'dialog' || f.kind === 'component' || f.kind === 'input' || f.kind === 'form' || f.kind === 'anycomponent'}
+                {@const opts = pick(f.kind, a.type)}
                 <Select.Root type="single" value={a[f.key] ?? ''} onValueChange={(v) => set(i, f.key, v === none ? '' : v)}>
-                  <Select.Trigger size="sm" class="w-full">{a[f.key] ? label(a[f.key]) : f.kind === 'dialog' ? (a.type === 'close_dialog' ? 'All dialogs' : 'Choose a dialog') : 'Everything'}</Select.Trigger>
+                  <Select.Trigger size="sm" class="w-full">{a[f.key] ? label(a[f.key]) || 'A deleted component' : f.kind === 'dialog' ? (a.type === 'close_dialog' ? 'All dialogs' : 'Choose a dialog') : f.kind === 'component' ? 'Everything' : 'Choose'}</Select.Trigger>
                   <Select.Content>
                     {#if f.kind === 'component' || a.type === 'close_dialog'}<Select.Item value={none} label="All">{f.kind === 'dialog' ? 'All dialogs' : 'Everything'}</Select.Item>{/if}
                     {#each opts as n (n.id)}<Select.Item value={n.id} label={label(n.id)}>{label(n.id)}</Select.Item>{/each}
-                    {#if f.kind === 'dialog' && dialogs.length === 0}<div class="text-muted-foreground px-2 py-1.5 text-xs">Add a Dialog or Side panel to this screen first.</div>{/if}
+                    {#if f.kind !== 'component' && opts.length === 0}<div class="text-muted-foreground px-2 py-1.5 text-xs">{emptyText[f.kind]}</div>{/if}
                   </Select.Content>
                 </Select.Root>
               {:else if f.kind === 'query'}
@@ -142,8 +162,14 @@
     <DropdownMenu.Trigger>
       {#snippet child({ props })}<Button {...props} variant="outline" size="sm" class="h-8 w-full border-dashed"><PlusIcon />Add action</Button>{/snippet}
     </DropdownMenu.Trigger>
-    <DropdownMenu.Content class="w-56">
-      {#each actionTypes as t (t.type)}<DropdownMenu.Item onclick={() => add(t.type)}>{t.label}</DropdownMenu.Item>{/each}
+    <DropdownMenu.Content class="max-h-96 w-60 overflow-y-auto">
+      {#each groupNames as g, gi (g)}
+        {#if gi}<DropdownMenu.Separator />{/if}
+        <DropdownMenu.Group>
+          <DropdownMenu.GroupHeading class="text-muted-foreground text-[11px] font-semibold tracking-wider uppercase">{g}</DropdownMenu.GroupHeading>
+          {#each actionTypes.filter((t) => t.group === g) as t (t.type)}<DropdownMenu.Item onclick={() => add(t.type)}>{t.label}</DropdownMenu.Item>{/each}
+        </DropdownMenu.Group>
+      {/each}
     </DropdownMenu.Content>
   </DropdownMenu.Root>
 </div>

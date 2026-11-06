@@ -13,7 +13,7 @@
   import TrashIcon from '@lucide/svelte/icons/trash'
   import DownloadIcon from '@lucide/svelte/icons/download'
   import { api, type Field, type Row, type RowId } from '../../api'
-  import { getRuntime, getScope } from '../context.svelte'
+  import { getRuntime, getScope, shareValues } from '../context.svelte'
   import { RowSource } from '../rows.svelte'
   import { runActions } from '../actions'
   import { resolveFilter, toText } from '../bindings'
@@ -41,6 +41,12 @@
   const src = new RowSource(rt, node.id, () => ({
     props: p, scope: scope(), offset: page * size, limit: size, sort, desc: sort ? desc : undefined, search: searchQ,
   }))
+
+  // Other components read the rows, the search text and the ticked rows.
+  shareValues(node.id, () => ({
+    rows: view.rows, total: view.total, loading: src.loading, search: searchQ,
+    selectedIds: selected, selectedRows: src.rows.filter((r) => selected.includes(r._id)),
+  }), { clear: () => { selected = [] } })
 
   const columns = $derived.by((): Field[] => {
     const fields = src.table?.fields ?? []

@@ -1,6 +1,6 @@
 // The runtime every rendered screen shares, and the scope each component
 // sees. Both travel through Svelte context.
-import { getContext, setContext } from 'svelte'
+import { getContext, setContext, untrack } from 'svelte'
 import type { RuntimeFlow, RuntimeQuery, Table } from '../api'
 import { queryTable } from '../apis/bindings'
 import type { Node, Scope } from './types'
@@ -21,6 +21,8 @@ export class Runtime {
   // editing is true inside the builder's canvas.
   editing: boolean
   state = $state<Record<string, any>>({})
+  // variables are the open screen's declared variables (see variables.ts).
+  variables: { name: string; value?: string }[] = []
   // dialogs maps a dialog component id to whether it is open.
   dialogs = $state<Record<string, boolean>>({})
   // dialogScopes keeps the scope a dialog was opened from, so a dialog
@@ -37,7 +39,7 @@ export class Runtime {
   selected = $state<string | null>(null)
   hovered = $state<string | null>(null)
   navigate: (path: string) => void
-  toast: (kind: 'success' | 'error' | 'info', message: string) => void
+  toast: (kind: 'success' | 'error' | 'info' | 'warning', message: string) => void
   confirm: (title: string, message: string) => Promise<boolean>
   select: (id: string) => void
 
@@ -45,7 +47,7 @@ export class Runtime {
     appId: string; appSlug: string; tables: Table[]; editing: boolean
     queries?: RuntimeQuery[]; flows?: RuntimeFlow[]; screens?: ScreenRef[]; env?: 'development' | 'production'
     navigate: (path: string) => void
-    toast: (kind: 'success' | 'error' | 'info', message: string) => void
+    toast: (kind: 'success' | 'error' | 'info' | 'warning', message: string) => void
     confirm: (title: string, message: string) => Promise<boolean>
     select?: (id: string) => void
   }) {
@@ -82,10 +84,52 @@ export class Runtime {
     return id ? this.queries.find((q) => q.id === id || q.name === id) : undefined
   }
 
+  // Component values (see components.ts): each mounted component that
+  // shares values registers a getter here, and actions that change a
+  // component (set its value, clear or check a form) find its controls.
+  private shared = new Map<string, () => Record<string, any>>()
+  private controls = new Map<string, Controls>()
+  // sharedRev changes whenever a component comes or goes, so bindings that
+  // read one notice it appear.
+  sharedRev = $state(0)
+
+  // share registers a component's values and controls; call it from an
+  // $effect, and run what it returns when the component goes.
+  share(id: string, get: () => Record<string, any>, controls?: Controls): () => void {
+    this.shared.set(id, get)
+    if (controls) this.controls.set(id, controls)
+    untrack(() => this.sharedRev++)
+    return () => {
+      if (this.shared.get(id) === get) {
+        this.shared.delete(id)
+        this.controls.delete(id)
+        untrack(() => this.sharedRev++)
+      }
+    }
+  }
+
+  // sharedValues reads a component's values by id.
+  sharedValues(id: string): Record<string, any> | undefined {
+    void this.sharedRev
+    return this.shared.get(id)?.()
+  }
+
+  control(id: string): Controls | undefined {
+    return this.controls.get(id)
+  }
+
   reload(target?: string) {
     if (target) this.refresh[target] = (this.refresh[target] ?? 0) + 1
     else this.refresh.all++
   }
+}
+
+// Controls are what actions may do to a component.
+export interface Controls {
+  setValue?: (v: any) => void
+  clear?: () => void
+  validate?: () => boolean
+  focus?: () => void
 }
 
 const runtimeKey = Symbol('runtime')
@@ -203,4 +247,11 @@ export function pathTo(root: Node, id: string): Node[] | null {
     if (p) return [root, ...p]
   }
   return null
+}
+
+// shareValues lets the other components of the screen read this one's
+// values (see components.ts) while it is on the screen.
+export function shareValues(id: string, get: () => Record<string, any>, controls?: Controls) {
+  const rt = getRuntime()
+  $effect(() => rt.share(id, get, controls))
 }

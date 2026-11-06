@@ -1,7 +1,7 @@
 <script lang="ts">
   import { api, rowKey, type Row } from '../../api'
   import Children from '../Children.svelte'
-  import { extendScope, getRuntime } from '../context.svelte'
+  import { extendScope, getRuntime, shareValues } from '../context.svelte'
   import { Skeleton } from '$lib/components/ui/skeleton'
   import { gapClass } from '../styles'
   import type { Node } from '../types'
@@ -28,6 +28,7 @@
     api.row(rt.appId, t.id, id).then((r) => { row = r; error = '' }).catch((e) => { row = null; error = e.status === 404 ? 'This row no longer exists.' : e.message }).finally(() => (loading = false))
   })
   extendScope(() => ({ row: row ?? {}, rowTable: table }))
+  shareValues(node.id, () => ({ row, loading }))
 </script>
 
 <div class={['flex flex-col', gapClass[p.gap]]}>

@@ -7,6 +7,7 @@ import type { Query, Table } from '../api'
 import type { Node } from '../screen/types'
 import { queryTable } from '../apis/bindings'
 import { themeColors } from '../screen/theme'
+import { componentRef, isInput, shared } from '../screen/components'
 
 // queryTables describes API queries as tables ("query:<id>"), so field
 // pickers offer their columns.
@@ -82,14 +83,34 @@ export function bindingsFor(root: Node, id: string, tables: Table[], route: stri
   const query = received.filter((r) => r.path.startsWith('query.')).map((r) => ({ path: r.path, hint: sent(r) }))
   if (query.length) groups.push({ label: 'Query string', items: query, note: 'Extra values other screens send when they open this one.' })
 
-  const state = new Set<string>()
+  if (forActions && self && isInput(self.type)) {
+    groups.unshift({ label: 'This field', items: [{ path: 'value', hint: 'the new value' }] })
+  }
+
+  // Every component that shares values, by name: a search box's text, a
+  // table's ticked rows, a form's values.
+  const comps: { path: string; hint?: string }[] = []
+  for (const n of all(root)) {
+    const keys = shared[n.type]
+    // A component's own settings do not read its own values (a table
+    // filtered by its own rows would reload forever), but its actions may.
+    if (n.id === 'root' || !keys || !n.name?.trim() || (!forActions && n.id === self?.id)) continue
+    comps.push({ path: componentRef(n.name.trim()), hint: registry[n.type]?.label })
+    for (const k of keys) comps.push({ path: componentRef(n.name.trim(), k.key), hint: k.hint })
+  }
+  if (comps.length) groups.push({ label: 'Components', open: true, items: comps, note: 'Values of the components on this screen, by their name in the tree. A table or query that reads one reloads when it changes.' })
+
+  // Variables: the screen's own, those Update variable actions set, and
+  // older fields that kept their value in state.
+  const state = new Map<string, string | undefined>()
+  for (const v of (root.props.variables ?? []) as { name: string; value?: string }[]) if (v?.name) state.set(v.name, 'screen variable')
   for (const n of all(root)) {
     for (const v of Object.values(n.props)) {
-      if (Array.isArray(v)) for (const a of v) if (a?.type === 'set_state' && a.key) state.add(a.key)
+      if (Array.isArray(v)) for (const a of v) if ((a?.type === 'set_state' && a.key) || (a?.stateKey && typeof a.stateKey === 'string')) { const k = a.key ?? a.stateKey; if (!state.has(k)) state.set(k, a.type === 'set_state' ? 'set by an action' : 'action result') }
     }
-    if (n.type.endsWith('_input') && !path.some((p) => p.type === 'form') && n.props.field && !(pathTo(root, n.id) ?? []).some((p) => p.type === 'form')) state.add(n.props.stateKey || n.props.field)
+    if (isInput(n.type) && n.props.field && !(pathTo(root, n.id) ?? []).some((p) => p.type === 'form')) { const k = n.props.stateKey || n.props.field; if (!state.has(k)) state.set(k, 'field outside a form') }
   }
-  if (state.size) groups.push({ label: 'State', items: [...state].map((s) => ({ path: `state.${s}` })) })
+  if (state.size) groups.push({ label: 'Variables', items: [...state].map(([s, hint]) => ({ path: `state.${s}`, hint })), note: 'Add variables in the screen settings; change them with the Update variable action.' })
 
   groups.push({ label: 'Signed-in user', items: [{ path: 'user.name' }, { path: 'user.email' }, { path: 'user.id' }] })
   groups.push({ label: 'App', items: [{ path: 'app.name' }] })

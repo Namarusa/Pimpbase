@@ -117,13 +117,14 @@ const source: Setting[] = [
 ]
 
 const fieldBase = (kinds?: Setting['fieldTypes']): Setting[] => [
-  { key: 'field', label: 'Field', kind: 'field', fieldTypes: kinds, help: 'The column of the form’s table this saves to. Outside a form, the value goes to {{ state.<field> }}.' },
+  { key: 'field', label: 'Field', kind: 'field', fieldTypes: kinds, help: 'The column of the form’s table this saves to. Other components read what is typed or chosen as {{ components["<name>"].value }}, inside a form or not.' },
   { key: 'label', label: 'Label', kind: 'text' },
   { key: 'placeholder', label: 'Placeholder', kind: 'text' },
   { key: 'help', label: 'Help text', kind: 'text' },
   { key: 'defaultValue', label: 'Default value', kind: 'text' },
   { key: 'required', label: 'Required', kind: 'boolean', section: 'Validation' },
   { key: 'disabled', label: 'Read only', kind: 'boolean', section: 'Validation' },
+  { key: 'onChange', label: 'When the value changes', kind: 'actions', section: 'Events', help: 'Runs when a choice is made, or after a pause in typing. {{ value }} is the new value.' },
 ]
 
 const textRules: Setting[] = [
@@ -534,7 +535,8 @@ const defs: ComponentDef[] = [
     type: 'text_input', label: 'Text field', category: 'Form', icon: TextCursorInputIcon, component: TextField, parents: formParents,
     description: 'One line of text, an email, a web address, a phone number or a password.',
     defaults: () => ({ field: '', label: '', placeholder: '', inputType: 'text' }),
-    settings: [...fieldBase(['text', 'longtext']), { key: 'inputType', label: 'Kind', kind: 'select', options: opts(['text', 'Text'], ['email', 'Email'], ['url', 'Web address'], ['tel', 'Phone'], ['password', 'Password']) }, ...textRules],
+    settings: [...fieldBase(['text', 'longtext']), { key: 'inputType', label: 'Kind', kind: 'select', options: opts(['text', 'Text'], ['email', 'Email'], ['url', 'Web address'], ['tel', 'Phone'], ['password', 'Password']) }, ...textRules,
+      { key: 'onEnter', label: 'When Enter is pressed', kind: 'actions', section: 'Events', help: 'Say for a search box: refresh a query, or go to a results screen. {{ value }} is the text.' }],
   },
   {
     type: 'textarea_input', label: 'Long text field', category: 'Form', icon: WholeWordIcon, component: TextareaField, parents: formParents,
