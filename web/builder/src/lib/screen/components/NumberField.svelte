@@ -13,6 +13,7 @@
     {#if p.prefix}<span class="text-muted-foreground absolute top-1/2 left-3 -translate-y-1/2 text-sm">{p.prefix}</span>{/if}
     <Input id={f.id} type="number" step={p.step || 'any'} min={p.min} max={p.max} placeholder={p.placeholder} disabled={f.disabled}
       aria-invalid={!!f.error} class={p.prefix ? 'pl-7' : ''}
-      value={f.value ?? ''} oninput={(e) => (f.value = e.currentTarget.value === '' ? null : Number(e.currentTarget.value))} onblur={() => f.touch()} />
+      value={f.value ?? ''} oninput={(e) => (f.value = e.currentTarget.value === '' ? null : Number(e.currentTarget.value))} onblur={() => f.touch()}
+      onkeydown={(e) => { if (e.key === 'Enter') f.commit() }} />
   </div>
 </FieldShell>

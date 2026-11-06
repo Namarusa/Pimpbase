@@ -8,7 +8,7 @@
 import { compile, evaluate, formatLayout, FormulaError, type Checked, type Type, type Value } from '../formula/formula.ts'
 import type { Scope } from './types'
 
-export const scopeNames = ['user', 'app', 'url', 'query', 'state', 'data', 'row', 'index', 'form', 'result', 'device', 'theme']
+export const scopeNames = ['user', 'app', 'url', 'query', 'state', 'data', 'row', 'index', 'form', 'result', 'device', 'theme', 'components', 'value']
 
 const known = new Set(scopeNames)
 

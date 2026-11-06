@@ -1,7 +1,7 @@
 <script lang="ts">
   import Children from '../Children.svelte'
   import RowScope from './RowScope.svelte'
-  import { getRuntime, getScope } from '../context.svelte'
+  import { getRuntime, getScope, shareValues } from '../context.svelte'
   import { RowSource } from '../rows.svelte'
   import { gapClass, gridColsClass } from '../styles'
   import { Skeleton } from '$lib/components/ui/skeleton'
@@ -11,6 +11,7 @@
   const rt = getRuntime()
   const scope = getScope()
   const src = new RowSource(rt, node.id, () => ({ props: p, scope: scope() }))
+  shareValues(node.id, () => ({ rows: src.rows, total: src.total, loading: src.loading }))
   const layout = $derived(p.layout === 'grid' ? ['grid', gridColsClass[p.columns] ?? gridColsClass['3']] : p.layout === 'row' ? ['flex flex-row flex-wrap'] : ['flex flex-col'])
   // The builder shows a few copies; that is enough to design one.
   const rows = $derived(rt.editing ? src.rows.slice(0, 6) : src.rows)

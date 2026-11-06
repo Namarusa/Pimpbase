@@ -5,7 +5,7 @@
   import { api, rowKey } from '../../api'
   import { writable } from '../../format'
   import Children from '../Children.svelte'
-  import { FormState, extendScope, getRuntime, getScope, setForm } from '../context.svelte'
+  import { FormState, extendScope, getRuntime, getScope, setForm, shareValues } from '../context.svelte'
   import { runActions } from '../actions'
   import { gapClass } from '../styles'
   import type { Node } from '../types'
@@ -89,6 +89,11 @@
     form.submitted = false
     rt.reload()
   }
+  // Other components read the form's values; actions clear or check it.
+  shareValues(node.id, () => ({ values: form.values, valid: Object.keys(form.errors).length === 0, submitting: form.submitting }), {
+    clear: () => { for (const k of Object.keys(form.values)) delete form.values[k]; for (const k of Object.keys(form.errors)) delete form.errors[k]; form.submitted = false },
+    validate: () => { form.submitted = true; return form.validate() },
+  })
   const cols: Record<string, string> = { '1': 'grid-cols-1', '2': 'grid-cols-1 @md:grid-cols-2', '3': 'grid-cols-1 @md:grid-cols-2 @xl:grid-cols-3' }
 </script>
 

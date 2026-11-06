@@ -30,13 +30,15 @@
   import { iconNames, icons } from '../screen/icons'
   import { getDesigner } from './state.svelte'
   import { bindingsFor, contextTable, themeGroup, withQueries } from './context'
-  import { duplicate, remove, findIn } from './tree'
+  import { all, duplicate, remove, findIn } from './tree'
   import { formFields } from './templates'
   import type { Role } from '../api'
   import RoleSelect from '../access/RoleSelect.svelte'
   import RolesPicker from '../access/RolesPicker.svelte'
   import type { Node, Setting } from '../screen/types'
   import { incoming } from '../screen/navigation'
+  import { componentRef, renameRefs, shared, sharesValues } from '../screen/components'
+  import VariablesEditor from './VariablesEditor.svelte'
 
   const d = getDesigner()
   const node = $derived(d.node)
@@ -67,7 +69,7 @@
     } else typing[sid(s)] = true
   }
   const nodeQuery = $derived(String(props.table ?? '').startsWith('query:') ? d.queries.find((q) => q.id === String(props.table).slice(6)) : undefined)
-  const order = ['Data', '', 'Validation', 'Layout', 'Style', 'Conditions']
+  const order = ['Data', '', 'Events', 'Validation', 'Layout', 'Style', 'Conditions']
   const sections = $derived.by(() => {
     // A choice given a binding could be any of its options, so the
     // settings that depend on a choice stay in view.
@@ -99,9 +101,17 @@
       }
     }, true)
   }
+  // rename also rewrites the bindings that read the component by name.
   function rename(v: string) {
     const id = node?.id
-    if (id) d.change((root) => { const n = findIn(root, id); if (n) n.name = v || undefined }, true)
+    if (!id) return
+    d.change((root) => {
+      const n = findIn(root, id)
+      if (!n) return
+      const old = n.name?.trim()
+      n.name = v || undefined
+      if (old && v.trim() && sharesValues(n.type)) renameRefs(root, old, v.trim())
+    }, true, id)
   }
   function addFormFields() {
     const id = node?.id
@@ -184,6 +194,13 @@
           </div>
           <div class="flex flex-col gap-1.5"><Label class="text-xs">Who can open it</Label>
             <RoleSelect roles={d.roles} value={d.screen.role} onChange={(v) => saveMeta({ role: v })} /></div>
+          <div class="flex flex-col gap-1.5"><Label class="text-xs">Variables</Label>
+            <VariablesEditor value={props.variables ?? []} onChange={(v) => set('variables', v.length ? v : undefined)} {groups} />
+          </div>
+          <div class="flex flex-col gap-1.5"><Label class="text-xs">When the screen opens</Label>
+            <ActionsEditor value={props.onLoad ?? []} onChange={(v) => set('onLoad', v.length ? v : undefined)} groups={actionGroups} />
+            <p class="text-muted-foreground text-xs">Runs each time someone opens this screen: fetch a row, run a query, set a variable.</p>
+          </div>
           {#if metaError}<p class="text-destructive text-xs">{metaError}</p>{/if}
         </div>
         <Separator />
@@ -191,6 +208,11 @@
         <div class="flex flex-col gap-1.5 px-4 pt-4">
           <Label for="node-name" class="text-xs">Name in the tree</Label>
           <Input id="node-name" class="h-8" placeholder={def.label} value={node.name ?? ''} oninput={(e) => rename(e.currentTarget.value)} />
+          {#if sharesValues(node.type) && node.name?.trim() && d.root && all(d.root).some((n) => n.id !== node.id && n.name?.trim().toLowerCase() === node.name?.trim().toLowerCase())}
+            <p class="text-destructive text-[11px]">Another component has this name; bindings need a name of its own.</p>
+          {:else if sharesValues(node.type) && node.name?.trim()}
+            <p class="text-muted-foreground text-[11px]">Other components read it as <code class="text-foreground font-mono">{`{{ ${componentRef(node.name.trim(), shared[node.type][0].key)} }}`}</code>{shared[node.type].length > 1 ? `, and ${shared[node.type].slice(1).map((k) => k.key).join(', ')}` : ''}.</p>
+          {/if}
         </div>
       {/if}
 

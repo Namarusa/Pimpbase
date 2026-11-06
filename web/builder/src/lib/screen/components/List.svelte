@@ -3,7 +3,7 @@
   import { Badge } from '$lib/components/ui/badge'
   import { Skeleton } from '$lib/components/ui/skeleton'
   import ChevronRightIcon from '@lucide/svelte/icons/chevron-right'
-  import { getRuntime, getScope } from '../context.svelte'
+  import { getRuntime, getScope, shareValues } from '../context.svelte'
   import { RowSource } from '../rows.svelte'
   import { runActions } from '../actions'
   import { toText } from '../bindings'
@@ -14,6 +14,7 @@
   const rt = getRuntime()
   const scope = getScope()
   const src = new RowSource(rt, node.id, () => ({ props: p, scope: scope() }))
+  shareValues(node.id, () => ({ rows: src.rows, total: src.total, loading: src.loading }))
   const clickable = $derived(!!p.onRowClick?.length)
   const title = (r: Row) => toText(r[p.titleField]) || (src.table?.primaryField ? toText(r[src.table.fields.find((f) => f.id === src.table!.primaryField)?.name ?? '']) : '') || `Row ${r._id}`
   const initials = (s: string) => s.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join('')

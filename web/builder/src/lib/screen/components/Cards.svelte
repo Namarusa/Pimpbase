@@ -2,7 +2,7 @@
   import * as Card from '$lib/components/ui/card'
   import { Badge } from '$lib/components/ui/badge'
   import { Skeleton } from '$lib/components/ui/skeleton'
-  import { getRuntime, getScope } from '../context.svelte'
+  import { getRuntime, getScope, shareValues } from '../context.svelte'
   import { RowSource } from '../rows.svelte'
   import { runActions } from '../actions'
   import { toText } from '../bindings'
@@ -15,6 +15,7 @@
   const rt = getRuntime()
   const scope = getScope()
   const src = new RowSource(rt, node.id, () => ({ props: p, scope: scope() }))
+  shareValues(node.id, () => ({ rows: src.rows, total: src.total, loading: src.loading }))
   const clickable = $derived(!!p.onRowClick?.length)
   const extra = $derived((Array.isArray(p.fields) ? p.fields : []).map((n: string) => src.table?.fields.find((f) => f.name === n)).filter(Boolean))
 

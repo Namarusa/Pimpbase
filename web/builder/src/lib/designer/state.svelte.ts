@@ -5,6 +5,11 @@ import { api, type App, type Flow, type Query, type RoleDef, type Table } from '
 import { queryTable } from '../apis/bindings'
 import type { Node, Screen } from '../screen/types'
 import { findIn } from './tree'
+import { nameComponents } from '../screen/components'
+import { registry } from '../screen/registry'
+
+// labels names generated component names: "Text field 1".
+const labels = (): Record<string, string> => Object.fromEntries(Object.values(registry).map((d) => [d.type, d.label]))
 
 export class Designer {
   app = $state<App>(null!)
@@ -43,11 +48,15 @@ export class Designer {
     this.selected = 'root'
     this.undoStack = []
     this.redoStack = []
+    // Components that share values need a name other bindings can use;
+    // screens made before names were given get them now.
+    if (this.screen && nameComponents(this.screen.definition, labels())) this.scheduleSave()
   }
 
   // change edits the tree. Quick successive edits, like typing, share one
   // undo step.
-  change(fn: (root: Node) => void, coalesce = false) {
+  // keep is a component whose name is being typed, left as it is.
+  change(fn: (root: Node) => void, coalesce = false, keep?: string) {
     if (!this.screen) return
     const now = Date.now()
     if (!coalesce || now - this.lastSnap > 800) {
@@ -57,6 +66,7 @@ export class Designer {
     }
     this.lastSnap = now
     fn(this.screen.definition)
+    nameComponents(this.screen.definition, labels(), keep)
     this.scheduleSave()
   }
 
